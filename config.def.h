@@ -1,0 +1,10 @@
+#define FONT            "-*-*-medium-*-*-*-14-*-*-*-*-*-*-*"
+#define UNPRESSEDBG     "#222222"
+#define UNPRESSEDFG     "#cccccc"
+#define PRESSEDBG       "#ffffff"
+#define PRESSEDFG       "#000000"
+#define DECORATIONBG    "#bbbbbb"
+#define DECORATIONFG    "#000000"
+#define ITEMW           130
+#define ITEMB           5
+#define BORDER          2

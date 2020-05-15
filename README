@@ -1,0 +1,26 @@
+                                 xmenu
+
+Xmenu is a menu utility for X.
+Xmenu receives a menu specification in stdin, shows a menu for the user
+to select one of the options, and outputs the option selected to stdout.
+
+§ Installation
+
+In order to build xmenu you need the Xlib header files.
+
+Edit config.mk to match your local setub (dwm is installed into the
+/usr/local prefix by default).  Then enter the following command to
+build and install dwm (if necessary as root).
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ make clean install                                                  │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+§ Running xmenu
+
+xmenu receives as input a menu specification where each line is a menu
+entry.  Each line can be indented with tabs to represent nested menus.
+Each line is made out of a label and a command separated by any number
+of tabs.
+
