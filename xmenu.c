@@ -56,6 +56,7 @@ struct Menu {
 	struct Item *selected;
 	int x, y, w, h;
 	unsigned level;
+	Drawable pixmap;
 	Window win;
 };
 
@@ -66,14 +67,14 @@ static void setupgeom(void);
 static void setupgrab(void);
 static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
-static void getmenuitem(Window win, int y,
-                        struct Menu **menu_ret, struct Item **item_ret);
+static void getmenuitem(Window win, int y, struct Menu **menu_ret, struct Item **item_ret);
 static void drawmenu(void);
 static void calcscreengeom(void);
 static void calcmenu(struct Menu *menu);
 static void setcurrmenu(struct Menu *currmenu_new);
 static void parsestdin(void);
 static void run(void);
+static void freewindow(struct Menu *menu);
 static void cleanupexit(void);
 static void usage(void);
 
@@ -239,7 +240,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	swa.background_pixel = dc.decoration[ColorBG];
 	swa.border_pixel = dc.decoration[ColorFG];
 	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
-	               | PointerMotionMask;
+	               | PointerMotionMask | LeaveWindowMask;
 	menu->win = XCreateWindow(dpy, rootwin, 0, 0, geom.itemw, geom.itemh, geom.border,
 	                          CopyFromParent, CopyFromParent, CopyFromParent,
 	                          CWOverrideRedirect | CWBackPixel | CWBorderPixel | CWEventMask,
@@ -399,6 +400,10 @@ calcmenu(struct Menu *menu)
 	sizeh.min_height = sizeh.max_height = menu->h;
 	XSetWMNormalHints(dpy, menu->win, &sizeh);
 
+	/* create pixmap */
+	menu->pixmap = XCreatePixmap(dpy, menu->win, menu->w, menu->h,
+	                             DefaultDepth(dpy, screen));
+
 	/* calculate positions of submenus */
 	for (item = menu->list; item != NULL; item = item->next) {
 		if (item->submenu != NULL)
@@ -472,7 +477,7 @@ drawmenu(void)
 
 			/* draw item box */
 			XSetForeground(dpy, dc.gc, color[ColorBG]);
-			XFillRectangle(dpy, menu->win, dc.gc, 0, item->y,
+			XFillRectangle(dpy, menu->pixmap, dc.gc, 0, item->y,
 			               geom.itemw, item->h);
 
 			/* continue if item is a separator */
@@ -484,7 +489,7 @@ drawmenu(void)
 			labelx = 0 + dc.fonth;
 			labely = item->y + dc.fonth + geom.itemb;
 			XSetForeground(dpy, dc.gc, color[ColorFG]);
-			XDrawString(dpy, menu->win, dc.gc, labelx, labely, item->label, labellen);
+			XDrawString(dpy, menu->pixmap, dc.gc, labelx, labely, item->label, labellen);
 
 			/* draw triangle, if item contains a submenu */
 			if (item->submenu != NULL) {
@@ -498,9 +503,12 @@ drawmenu(void)
 					{trianglex, triangley}
 				};
 
-				XFillPolygon(dpy, menu->win, dc.gc, triangle, LEN(triangle),
+				XFillPolygon(dpy, menu->pixmap, dc.gc, triangle, LEN(triangle),
 				             Convex, CoordModeOrigin);
 			}
+
+			XCopyArea(dpy, menu->pixmap, menu->win, dc.gc, 0, item->y,
+			          menu->w, item->h, 0, item->y);
 		}
 	}
 }
@@ -532,8 +540,8 @@ run(void)
 					previtem = item;
 				} else if (menu->selected != item)
 					menu->selected = item;
+				drawmenu();
 			}
-			drawmenu();
 			break;
 		case ButtonRelease:
 			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
@@ -551,14 +559,35 @@ run(void)
 				cleanupexit();
 			}
 			break;
+		case LeaveNotify:
+			currmenu->selected = NULL;
+			drawmenu();
+			break;
 		}
 	}
+}
+
+/* recursivelly free a pixmap */
+static void
+freewindow(struct Menu *menu)
+{
+	struct Item *item;
+
+	for (item = menu->list; item != NULL; item = item->next)
+		if (item->submenu != NULL)
+			freewindow(item->submenu);
+
+	XFreePixmap(dpy, menu->pixmap);
+	XDestroyWindow(dpy, menu->win);
 }
 
 /* cleanup and exit */
 static void
 cleanupexit(void)
 {
+	freewindow(rootmenu);
+	XFreeFont(dpy, dc.font);
+	XFreeGC(dpy, dc.gc);
 	XCloseDisplay(dpy);
 	exit(0);
 }
