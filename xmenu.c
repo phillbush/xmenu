@@ -493,13 +493,13 @@ drawmenu(void)
 
 			/* draw triangle, if item contains a submenu */
 			if (item->submenu != NULL) {
-				int trianglex = geom.itemw - (geom.itemb + dc.fonth);
-				int triangley = item->y + geom.itemb;
+				int trianglex = geom.itemw - dc.fonth + geom.itemb - 1;
+				int triangley = item->y + (3 * item->h)/8 -1;
 
 				XPoint triangle[] = {
 					{trianglex, triangley},
-					{trianglex + dc.fonth, triangley + dc.fonth/2},
-					{trianglex, triangley + dc.fonth},
+					{trianglex + item->h/8 + 1, item->y + item->h/2},
+					{trianglex, triangley + item->h/4 + 2},
 					{trianglex, triangley}
 				};
 
