@@ -8,13 +8,11 @@ to select one of the options, and outputs the option selected to stdout.
 
 In order to build xmenu you need the Xlib header files.
 
-Edit config.mk to match your local setub (dwm is installed into the
+Edit config.mk to match your local setup (xmenu is installed into the
 /usr/local prefix by default).  Then enter the following command to
-build and install dwm (if necessary as root).
+build and install xmenu (if necessary as root).
 
-┌─────────────────────────────────────────────────────────────────────┐
-│ make clean install                                                  │
-└─────────────────────────────────────────────────────────────────────┘
+	make clean install
 
 
 § Running xmenu

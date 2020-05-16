@@ -490,12 +490,14 @@ setcurrmenu(struct Menu *currmenu_new)
 		lcamenu = menu;
 	}
 
+	/* unmap menus from currmenu (inclusive) until lcamenu (exclusive) */
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
 		XUnmapWindow(dpy, menu->win);
 	}
 
 	currmenu = currmenu_new;
 
+	/* map menus from currmenu (inclusive) until lcamenu (exclusive) */
 	item = NULL;
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
 		XMapWindow(dpy, menu->win);
