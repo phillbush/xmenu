@@ -8,6 +8,7 @@
 
 /* macros */
 #define LEN(x) (sizeof (x) / sizeof (x[0]))
+#define MAX(x,y) ((x)>(y)?(x):(y))
 
 /* color enum */
 enum {ColorFG, ColorBG, ColorLast};
@@ -45,6 +46,7 @@ struct Item {
 	char *output;
 	int y;
 	int h;
+	size_t labellen;
 	struct Item *next;
 	struct Menu *submenu;
 };
@@ -212,6 +214,10 @@ allocitem(const char *label, const char *output)
 	}
 	item->y = 0;
 	item->h = item->label ? geom.itemh : geom.separator;
+	if (item->label == NULL)
+		item->labellen = 0;
+	else
+		item->labellen = strlen(item->label);
 	item->next = NULL;
 	item->submenu = NULL;
 
@@ -348,14 +354,19 @@ calcmenu(struct Menu *menu)
 	XWindowChanges changes;
 	XSizeHints sizeh;
 	struct Item *item;
+	int labelwidth;
 
-	/* calculate items positions and menu height */
+	/* calculate items positions and menu width and height */
+	menu->w = geom.itemw;
 	for (item = menu->list; item != NULL; item = item->next) {
 		item->y = menu->h;
 		if (item->label == NULL)   /* height for separator item */
 			menu->h += geom.separator;
 		else
 			menu->h += geom.itemh;
+
+		labelwidth = XTextWidth(dc.font, item->label, item->labellen) + dc.fonth * 2;
+		menu->w = MAX(menu->w, labelwidth);
 	}
 
 	/* calculate menu's x and y positions */
@@ -390,9 +401,10 @@ calcmenu(struct Menu *menu)
 
 	/* update menu geometry */
 	changes.height = menu->h;
+	changes.width = menu->w;
 	changes.x = menu->x;
 	changes.y = menu->y;
-	XConfigureWindow(dpy, menu->win, CWHeight | CWX | CWY, &changes);
+	XConfigureWindow(dpy, menu->win, CWWidth | CWHeight | CWX | CWY, &changes);
 
 	/* set window manager size hints */
 	sizeh.flags = PMaxSize | PMinSize;
@@ -464,7 +476,6 @@ drawmenu(void)
 	for (menu = currmenu; menu != NULL; menu = menu->parent) {
 		for (item = menu->list; item != NULL; item = item->next) {
 			unsigned long *color;
-			size_t labellen;
 			int labelx, labely;
 
 			/* determine item color */
@@ -478,22 +489,22 @@ drawmenu(void)
 			/* draw item box */
 			XSetForeground(dpy, dc.gc, color[ColorBG]);
 			XFillRectangle(dpy, menu->pixmap, dc.gc, 0, item->y,
-			               geom.itemw, item->h);
+			               menu->w, item->h);
 
 			/* continue if item is a separator */
 			if (item->label == NULL)
 				continue;
 
 			/* draw item label */
-			labellen = strlen(item->label);
 			labelx = 0 + dc.fonth;
 			labely = item->y + dc.fonth + geom.itemb;
 			XSetForeground(dpy, dc.gc, color[ColorFG]);
-			XDrawString(dpy, menu->pixmap, dc.gc, labelx, labely, item->label, labellen);
+			XDrawString(dpy, menu->pixmap, dc.gc, labelx, labely,
+			            item->label, item->labellen);
 
 			/* draw triangle, if item contains a submenu */
 			if (item->submenu != NULL) {
-				int trianglex = geom.itemw - dc.fonth + geom.itemb - 1;
+				int trianglex = menu->w - dc.fonth + geom.itemb - 1;
 				int triangley = item->y + (3 * item->h)/8 -1;
 
 				XPoint triangle[] = {
