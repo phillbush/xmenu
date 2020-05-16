@@ -54,6 +54,7 @@ struct Item {
 /* menu structure */
 struct Menu {
 	struct Menu *parent;
+	struct Item *caller;
 	struct Item *list;
 	struct Item *selected;
 	int x, y, w, h;
@@ -235,6 +236,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 		err(1, "malloc");
 	menu->parent = parent;
 	menu->list = list;
+	menu->caller = NULL;
 	menu->selected = NULL;
 	menu->w = geom.itemw;
 	menu->h = 0;    /* calculated by calcmenu() */
@@ -327,6 +329,7 @@ parsestdin(void)
 				;
 
 			item->submenu = menu;
+			menu->caller = item;
 
 			prevmenu = menu;
 		}
@@ -452,6 +455,7 @@ static void
 setcurrmenu(struct Menu *currmenu_new)
 {
 	struct Menu *menu;
+	struct Item *item;
 
 	if (currmenu_new == currmenu)
 		return;
@@ -462,8 +466,13 @@ setcurrmenu(struct Menu *currmenu_new)
 
 	currmenu = currmenu_new;
 
-	for (menu = currmenu; menu != NULL; menu = menu->parent)
+	item = NULL;
+	for (menu = currmenu; menu != NULL; menu = menu->parent) {
 		XMapWindow(dpy, menu->win);
+		if (item != NULL)
+			menu->selected = item;
+		item = menu->caller;
+	}
 }
 
 /* draw items of the current menu and of its ancestors */
@@ -488,6 +497,8 @@ drawmenu(void)
 
 			/* draw item box */
 			XSetForeground(dpy, dc.gc, color[ColorBG]);
+			XDrawRectangle(dpy, menu->pixmap, dc.gc, 0, item->y,
+			               menu->w, item->h);
 			XFillRectangle(dpy, menu->pixmap, dc.gc, 0, item->y,
 			               menu->w, item->h);
 
@@ -549,9 +560,11 @@ run(void)
 					else
 						setcurrmenu(menu);
 					previtem = item;
-				} else if (menu->selected != item)
+					drawmenu();
+				} else if (menu->selected != item) {
 					menu->selected = item;
-				drawmenu();
+					drawmenu();
+				}
 			}
 			break;
 		case ButtonRelease:
