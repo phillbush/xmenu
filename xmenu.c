@@ -43,7 +43,8 @@ struct ScreenGeometry {
 struct Item {
 	char *label;
 	char *output;
-	int y;      /* only y is necessary, item's x is always 0 relative to the menu*/
+	int y;
+	int h;
 	struct Item *next;
 	struct Menu *submenu;
 };
@@ -199,11 +200,17 @@ allocitem(const char *label, const char *output)
 
 	if ((item = malloc(sizeof *item)) == NULL)
 		err(1, "malloc");
-	if ((item->label = strdup(label)) == NULL)
-		err(1, "strdup");
-	if ((item->output = strdup(output)) == NULL)
-		err(1, "strdup");
+	if (*label == '\0') {
+		item->label = NULL;
+		item->output = NULL;
+	} else {
+		if ((item->label = strdup(label)) == NULL)
+			err(1, "strdup");
+		if ((item->output = strdup(output)) == NULL)
+			err(1, "strdup");
+	}
 	item->y = 0;
+	item->h = item->label ? geom.itemh : geom.separator;
 	item->next = NULL;
 	item->submenu = NULL;
 
@@ -343,7 +350,7 @@ calcmenu(struct Menu *menu)
 	/* calculate items positions and menu height */
 	for (item = menu->list; item != NULL; item = item->next) {
 		item->y = menu->h;
-		if (*item->label == '\0')   /* height for separator item */
+		if (item->label == NULL)   /* height for separator item */
 			menu->h += geom.separator;
 		else
 			menu->h += geom.itemh;
@@ -403,7 +410,7 @@ getmenuitem(Window win, int y,
 	for (menu = currmenu; menu != NULL; menu = menu->parent) {
 		if (menu->win == win) {
 			for (item = menu->list; item != NULL; item = item->next) {
-				if (y >= item->y && y <= item->y + geom.itemh) {
+				if (y >= item->y && y <= item->y + item->h) {
 					goto done;
 				}
 			}
@@ -443,40 +450,39 @@ drawmenu(void)
 	struct Item *item;
 
 	for (menu = currmenu; menu != NULL; menu = menu->parent) {
-		size_t nitems;      /* number of items before current item */
-
-		nitems = 0;
 		for (item = menu->list; item != NULL; item = item->next) {
 			unsigned long *color;
 			size_t labellen;
 			int labelx, labely;
-			int y;
 
 			/* determine item color */
-			if (item == menu->selected)
+			if (item->label == NULL)
+				color = dc.decoration;
+			else if (item == menu->selected)
 				color = dc.pressed;
 			else
 				color = dc.unpressed;
 
-			/* calculate item's y position */
-			y = nitems * geom.itemh;
-
 			/* draw item box */
 			XSetForeground(dpy, dc.gc, color[ColorBG]);
-			XFillRectangle(dpy, menu->win, dc.gc, 0, y,
-			               geom.itemw, geom.itemh);
+			XFillRectangle(dpy, menu->win, dc.gc, 0, item->y,
+			               geom.itemw, item->h);
+
+			/* continue if item is a separator */
+			if (item->label == NULL)
+				continue;
 
 			/* draw item label */
 			labellen = strlen(item->label);
 			labelx = 0 + dc.fonth;
-			labely = y + dc.fonth + geom.itemb;
+			labely = item->y + dc.fonth + geom.itemb;
 			XSetForeground(dpy, dc.gc, color[ColorFG]);
 			XDrawString(dpy, menu->win, dc.gc, labelx, labely, item->label, labellen);
 
 			/* draw triangle, if item contains a submenu */
 			if (item->submenu != NULL) {
 				int trianglex = geom.itemw - (geom.itemb + dc.fonth);
-				int triangley = y + geom.itemb;
+				int triangley = item->y + geom.itemb;
 
 				XPoint triangle[] = {
 					{trianglex, triangley},
@@ -488,8 +494,6 @@ drawmenu(void)
 				XFillPolygon(dpy, menu->win, dc.gc, triangle, LEN(triangle),
 				             Convex, CoordModeOrigin);
 			}
-
-			nitems++;
 		}
 	}
 }
@@ -527,6 +531,8 @@ run(void)
 		case ButtonRelease:
 			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
 			if (menu != NULL && item != NULL) {
+				if (item->label == NULL)
+					break;  /* ignore separators */
 				if (item->submenu != NULL) {
 					setcurrmenu(item->submenu);
 				} else {

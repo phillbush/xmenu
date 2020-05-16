@@ -22,5 +22,7 @@ build and install dwm (if necessary as root).
 xmenu receives as input a menu specification where each line is a menu
 entry.  Each line can be indented with tabs to represent nested menus.
 Each line is made out of a label and a command separated by any number
-of tabs.
+of tabs.  Lines without labels are menu separators.
 
+See the script ./xmenu.sh for an example of how xmenu can be used to
+draw a simple menu with submenus and separators.
