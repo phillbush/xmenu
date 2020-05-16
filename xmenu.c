@@ -29,7 +29,8 @@ struct Geometry {
 	int itemb;      /* item border */
 	int itemw;      /* item width */
 	int itemh;      /* item height */
-	int border;     /* window border */
+	int border;     /* window border width */
+	int separator;  /* menu separator width */
 };
 
 /* screen geometry structure */
@@ -42,7 +43,7 @@ struct ScreenGeometry {
 struct Item {
 	char *label;
 	char *output;
-	int x, y;
+	int y;      /* only y is necessary, item's x is always 0 relative to the menu*/
 	struct Item *next;
 	struct Menu *submenu;
 };
@@ -54,7 +55,6 @@ struct Menu {
 	struct Item *selected;
 	int x, y, w, h;
 	unsigned level;
-	unsigned nitems;
 	Window win;
 };
 
@@ -63,9 +63,9 @@ static unsigned long getcolor(const char *s);
 static void setupdc(void);
 static void setupgeom(void);
 static void setupgrab(void);
-static struct Item *allocitem(size_t count, const char *label, const char *output);
+static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
-static void getmenuitem(Window win, int x, int y,
+static void getmenuitem(Window win, int y,
                         struct Menu **menu_ret, struct Item **item_ret);
 static void drawmenu(void);
 static void calcscreengeom(void);
@@ -89,7 +89,7 @@ static struct Menu *currmenu = NULL;
 
 /* geometry variables */
 static struct Geometry geom;
-static struct ScreenGeometry sgeom;
+static struct ScreenGeometry screengeom;
 
 /* flag variables */
 static Bool override_redirect = True;
@@ -180,6 +180,7 @@ setupgeom(void)
 	geom.itemh = dc.fonth + ITEMB * 2;
 	geom.itemw = ITEMW;
 	geom.border = BORDER;
+	geom.separator = SEPARATOR;
 }
 
 /* grab pointer */
@@ -192,7 +193,7 @@ setupgrab(void)
 
 /* allocate an item */
 static struct Item *
-allocitem(size_t count, const char *label, const char *output)
+allocitem(const char *label, const char *output)
 {
 	struct Item *item;
 
@@ -202,8 +203,7 @@ allocitem(size_t count, const char *label, const char *output)
 		err(1, "strdup");
 	if ((item->output = strdup(output)) == NULL)
 		err(1, "strdup");
-	item->x = 0;
-	item->y = count * geom.itemh;
+	item->y = 0;
 	item->next = NULL;
 	item->submenu = NULL;
 
@@ -222,12 +222,11 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->parent = parent;
 	menu->list = list;
 	menu->selected = NULL;
-	menu->x = 0;
-	menu->y = 0;
 	menu->w = geom.itemw;
-	menu->h = geom.itemh;
+	menu->h = 0;    /* calculated by calcmenu() */
+	menu->x = 0;    /* calculated by calcmenu() */
+	menu->y = 0;    /* calculated by calcmenu() */
 	menu->level = level;
-	menu->nitems = 0;
 
 	swa.override_redirect = override_redirect;
 	swa.background_pixel = dc.decoration[ColorBG];
@@ -250,9 +249,10 @@ parsestdin(void)
 	char *label, *output;
 	unsigned level = 0;
 	unsigned i;
-	struct Item *item, *p;
-	struct Menu *menu;
- 	struct Menu *prevmenu = NULL;
+	struct Item *curritem = NULL;   /* item currently being read */
+ 	struct Menu *prevmenu = NULL;   /* menu the previous item was added to */
+	struct Item *item;              /* dummy item for for loops */
+	struct Menu *menu;              /* dummy menu for for loops */
  	size_t count = 0;   /* number of items in the current menu */
 
 	while (fgets(buf, BUFSIZ, stdin) != NULL) {
@@ -281,10 +281,10 @@ parsestdin(void)
 		if (*s == '\n')
 			*s = '\0';
 
-		item = allocitem(count, label, output);
+		curritem = allocitem(label, output);
 
 		if (prevmenu == NULL) {                 /* there is no menu yet */
-			 menu = allocmenu(NULL, item, level);
+			 menu = allocmenu(NULL, curritem, level);
 			 rootmenu = menu;
 			 prevmenu = menu;
 			 count = 1;
@@ -297,25 +297,26 @@ parsestdin(void)
 			if (menu == NULL)
 				errx(1, "reached NULL menu");
 
-			for (p = menu->list; p->next != NULL; p = p->next)
+			for (item = menu->list; item->next != NULL; item = item->next)
 				;
 
-			p->next = item;
+			item->next = curritem;
 			prevmenu = menu;
 		} else if (level == prevmenu->level) {  /* item is a continuation of current menu */
-			for (p = prevmenu->list; p->next != NULL; p = p->next)
+			for (item = prevmenu->list; item->next != NULL; item = item->next)
 				;
-			p->next = item;
+			item->next = curritem;
 		} else if (level > prevmenu->level) {   /* item begins a new menu */
-			menu = allocmenu(prevmenu, item, level);
+			menu = allocmenu(prevmenu, curritem, level);
 
-			for (p = prevmenu->list; p->next != NULL; p = p->next)
+			for (item = prevmenu->list; item->next != NULL; item = item->next)
 				;
 
-			p->submenu = menu;
+			item->submenu = menu;
 
 			prevmenu = menu;
 		}
+		count++;
 	}
 }
 
@@ -327,9 +328,9 @@ calcscreengeom(void)
 	int a, b;       /* unused variables */
 	unsigned mask;  /* unused variable */
 
-	XQueryPointer(dpy, rootwin, &w1, &w2, &sgeom.cursx, &sgeom.cursy, &a, &b, &mask);
-	sgeom.screenw = DisplayWidth(dpy, screen);
-	sgeom.screenh = DisplayHeight(dpy, screen);
+	XQueryPointer(dpy, rootwin, &w1, &w2, &screengeom.cursx, &screengeom.cursy, &a, &b, &mask);
+	screengeom.screenw = DisplayWidth(dpy, screen);
+	screengeom.screenh = DisplayHeight(dpy, screen);
 }
 
 /* recursivelly calculate height and position of the menus */
@@ -337,50 +338,45 @@ static void
 calcmenu(struct Menu *menu)
 {
 	XWindowChanges changes;
-	struct Item *item, *p;
-	size_t i;
+	struct Item *item;
 
-	/* calculate number of items */
-	i = 0;
-	for (item = menu->list; item != NULL; item = item->next)
-		i++;
-	menu->nitems = i;
-	menu->h = geom.itemh * i;
+	/* calculate items positions and menu height */
+	for (item = menu->list; item != NULL; item = item->next) {
+		item->y = menu->h;
+		if (*item->label == '\0')   /* height for separator item */
+			menu->h += geom.separator;
+		else
+			menu->h += geom.itemh;
+	}
 
 	/* calculate menu's x and y positions */
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
-		if (sgeom.screenw - sgeom.cursx >= menu->w)
-			menu->x = sgeom.cursx;
-		else if (sgeom.cursx > menu->w)
-			menu->x = sgeom.cursx - menu->w;
+		if (screengeom.screenw - screengeom.cursx >= menu->w)
+			menu->x = screengeom.cursx;
+		else if (screengeom.cursx > menu->w)
+			menu->x = screengeom.cursx - menu->w;
 
-		if (sgeom.screenh - sgeom.cursy >= menu->h)
-			menu->y = sgeom.cursy;
-		else if (sgeom.screenh > menu->h)
-			menu->y = sgeom.screenh - menu->h;
+		if (screengeom.screenh - screengeom.cursy >= menu->h)
+			menu->y = screengeom.cursy;
+		else if (screengeom.screenh > menu->h)
+			menu->y = screengeom.screenh - menu->h;
 	} else {                    /* else, calculate in respect to parent menu */
 
 		/* search for the item in parent menu that generates this menu */
-		for (p = menu->parent->list; p->submenu != menu; p = p->next)
+		for (item = menu->parent->list; item->submenu != menu; item = item->next)
 			;
 
-		if (sgeom.screenw - (menu->parent->x + menu->parent->w) >= menu->w)
+		if (screengeom.screenw - (menu->parent->x + menu->parent->w) >= menu->w)
 			menu->x = menu->parent->x + menu->parent->w;
 		else if (menu->parent->x > menu->w)
 			menu->x = menu->parent->x - menu->w;
 
-		if (sgeom.screenh - p->y > menu->h)
-			menu->y = p->y;
-		else if (sgeom.screenh - menu->parent->y > menu->h)
+		if (screengeom.screenh - (item->y + menu->parent->y) > menu->h)
+			menu->y = item->y + menu->parent->y;
+		else if (screengeom.screenh - menu->parent->y > menu->h)
 			menu->y = menu->parent->y;
-		else if (sgeom.screenh > menu->h)
-			menu->y = sgeom.screenh - menu->h;
-	}
-
-	/* calculate position of each item in the menu */
-	for (i = 0, item = menu->list; item != NULL; item = item->next, i++) {
-		item->x = menu->x;
-		item->y = menu->y + i * geom.itemh;
+		else if (screengeom.screenh > menu->h)
+			menu->y = screengeom.screenh - menu->h;
 	}
 
 	/* update menu geometry */
@@ -389,6 +385,7 @@ calcmenu(struct Menu *menu)
 	changes.y = menu->y;
 	XConfigureWindow(dpy, menu->win, CWHeight | CWX | CWY, &changes);
 
+	/* calculate positions of submenus */
 	for (item = menu->list; item != NULL; item = item->next) {
 		if (item->submenu != NULL)
 			calcmenu(item->submenu);
@@ -397,7 +394,7 @@ calcmenu(struct Menu *menu)
 
 /* get menu and item of given window and position */
 static void
-getmenuitem(Window win, int x, int y,
+getmenuitem(Window win, int y,
             struct Menu **menu_ret, struct Item **item_ret)
 {
 	struct Menu *menu = NULL;
@@ -406,8 +403,7 @@ getmenuitem(Window win, int x, int y,
 	for (menu = currmenu; menu != NULL; menu = menu->parent) {
 		if (menu->win == win) {
 			for (item = menu->list; item != NULL; item = item->next) {
-				if (x >= item->x && x <= item->x + geom.itemw &&
-				    y >= item->y && y <= item->y + geom.itemh) {
+				if (y >= item->y && y <= item->y + geom.itemh) {
 					goto done;
 				}
 			}
@@ -515,8 +511,7 @@ run(void)
 			drawmenu();
 			break;
 		case MotionNotify:
-			getmenuitem(ev.xbutton.window, ev.xbutton.x_root, ev.xbutton.y_root,
-			            &menu, &item);
+			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
 			if (menu != NULL && item != NULL) {
 				if (previtem != item) {
 					if (item->submenu != NULL)
@@ -530,8 +525,7 @@ run(void)
 			drawmenu();
 			break;
 		case ButtonRelease:
-			getmenuitem(ev.xbutton.window, ev.xbutton.x_root, ev.xbutton.y_root,
-			            &menu, &item);
+			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
 			if (menu != NULL && item != NULL) {
 				if (item->submenu != NULL) {
 					setcurrmenu(item->submenu);

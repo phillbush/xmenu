@@ -8,3 +8,4 @@
 #define ITEMW           130
 #define ITEMB           5
 #define BORDER          2
+#define SEPARATOR       2
