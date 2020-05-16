@@ -345,6 +345,7 @@ static void
 calcmenu(struct Menu *menu)
 {
 	XWindowChanges changes;
+	XSizeHints sizeh;
 	struct Item *item;
 
 	/* calculate items positions and menu height */
@@ -391,6 +392,12 @@ calcmenu(struct Menu *menu)
 	changes.x = menu->x;
 	changes.y = menu->y;
 	XConfigureWindow(dpy, menu->win, CWHeight | CWX | CWY, &changes);
+
+	/* set window manager size hints */
+	sizeh.flags = PMaxSize | PMinSize;
+	sizeh.min_width = sizeh.max_width = menu->w;
+	sizeh.min_height = sizeh.max_height = menu->h;
+	XSetWMNormalHints(dpy, menu->win, &sizeh);
 
 	/* calculate positions of submenus */
 	for (item = menu->list; item != NULL; item = item->next) {
