@@ -9,6 +9,7 @@
 /* macros */
 #define LEN(x) (sizeof (x) / sizeof (x[0]))
 #define MAX(x,y) ((x)>(y)?(x):(y))
+#define MIN(x,y) ((x)<(y)?(x):(y))
 
 /* color enum */
 enum {ColorFG, ColorBG, ColorLast};
@@ -42,25 +43,25 @@ struct ScreenGeometry {
 
 /* menu item structure */
 struct Item {
-	char *label;
-	char *output;
-	int y;
-	int h;
-	size_t labellen;
-	struct Item *next;
-	struct Menu *submenu;
+	char *label;            /* string to be drawed on menu */
+	char *output;           /* string to be outputed when item is clicked */
+	int y;                  /* item y position relative to menu */
+	int h;                  /* item height */
+	size_t labellen;        /* strlen(label) */
+	struct Item *next;      /* next item */
+	struct Menu *submenu;   /* submenu spawned by clicking on item */
 };
 
 /* menu structure */
 struct Menu {
-	struct Menu *parent;
-	struct Item *caller;
-	struct Item *list;
-	struct Item *selected;
-	int x, y, w, h;
-	unsigned level;
-	Drawable pixmap;
-	Window win;
+	struct Menu *parent;    /* parent menu */
+	struct Item *caller;    /* item that spawned the menu */
+	struct Item *list;      /* list of items contained by the menu */
+	struct Item *selected;  /* item currently selected in the menu */
+	int x, y, w, h;         /* menu geometry */
+	unsigned level;         /* menu level relative to root */
+	Drawable pixmap;        /* pixmap to draw the menu on */
+	Window win;             /* menu window to map on the screen */
 };
 
 /* function declarations */
@@ -137,6 +138,10 @@ main(int argc, char *argv[])
 		errx(1, "no menu generated");
 	calcscreengeom();
 	calcmenu(rootmenu);
+
+	/* map root menu */
+	currmenu = rootmenu;
+	XMapWindow(dpy, rootmenu->win);
 
 	/* run event loop */
 	run();
@@ -454,20 +459,45 @@ done:
 static void
 setcurrmenu(struct Menu *currmenu_new)
 {
-	struct Menu *menu;
+	struct Menu *menu, *menu_;
 	struct Item *item;
+	struct Menu *lcamenu;   /* lowest common ancestor menu */
+	unsigned minlevel;      /* level of the closest to root menu */
+	unsigned maxlevel;      /* level of the closest to root menu */
 
 	if (currmenu_new == currmenu)
 		return;
 
-	for (menu = currmenu; menu != NULL; menu = menu->parent) {
+	/* find lowest common ancestor menu */
+	lcamenu = rootmenu;
+	if (currmenu != NULL) {
+		minlevel = MIN(currmenu_new->level, currmenu->level);
+		maxlevel = MAX(currmenu_new->level, currmenu->level);
+		if (currmenu_new->level == maxlevel) {
+			menu = currmenu_new;
+			menu_ = currmenu;
+		} else {
+			menu = currmenu;
+			menu_ = currmenu_new;
+		}
+		while (menu->level > minlevel)
+			menu = menu->parent;
+
+		while (menu != menu_) {
+			menu = menu->parent;
+			menu_ = menu_->parent;
+		}
+		lcamenu = menu;
+	}
+
+	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
 		XUnmapWindow(dpy, menu->win);
 	}
 
 	currmenu = currmenu_new;
 
 	item = NULL;
-	for (menu = currmenu; menu != NULL; menu = menu->parent) {
+	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
 		XMapWindow(dpy, menu->win);
 		if (item != NULL)
 			menu->selected = item;
