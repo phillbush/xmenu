@@ -10,9 +10,6 @@ ${PROG}: ${OBJS}
 
 ${OBJS}: config.h
 
-config.h: config.def.h
-	cp config.def.h $@
-
 .c.o:
 	${CC} ${CFLAGS} -c $<
 
