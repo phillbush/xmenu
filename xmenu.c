@@ -6,6 +6,10 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xresource.h>
+#include <X11/XKBlib.h>
+
+#define ITEMPREV 0
+#define ITEMNEXT 1
 
 /* macros */
 #define LEN(x) (sizeof (x) / sizeof (x[0]))
@@ -49,6 +53,7 @@ struct Item {
 	int y;                  /* item y position relative to menu */
 	int h;                  /* item height */
 	size_t labellen;        /* strlen(label) */
+	struct Item *prev;      /* previous item */
 	struct Item *next;      /* next item */
 	struct Menu *submenu;   /* submenu spawned by clicking on item */
 };
@@ -248,8 +253,13 @@ setupgeom(void)
 static void
 setupgrab(void)
 {
-	XGrabPointer(dpy, rootwin, True, ButtonPressMask | ButtonReleaseMask,
-	             GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+	if (XGrabPointer(dpy, rootwin, True, ButtonPressMask,
+	                 GrabModeAsync, GrabModeAsync, None,
+	                 None, CurrentTime) != GrabSuccess)
+		errx(1, "cannot grab pointer");
+	if (XGrabKeyboard(dpy, rootwin, True, GrabModeAsync,
+	                  GrabModeAsync, CurrentTime) != GrabSuccess)
+		errx(1, "cannot grab keyboard");
 }
 
 /* allocate an item */
@@ -360,6 +370,8 @@ parsestdin(void)
 			 rootmenu = menu;
 			 prevmenu = menu;
 			 count = 1;
+			 curritem->prev = NULL;
+			 curritem->next = NULL;
 		} else if (level < prevmenu->level) {   /* item is continuation of a parent menu*/
 			for (menu = prevmenu, i = level;
 			      menu != NULL && i < prevmenu->level;
@@ -373,11 +385,19 @@ parsestdin(void)
 				;
 
 			item->next = curritem;
+
+			curritem->prev = item;
+			curritem->next = NULL;
+
 			prevmenu = menu;
 		} else if (level == prevmenu->level) {  /* item is a continuation of current menu */
 			for (item = prevmenu->list; item->next != NULL; item = item->next)
 				;
 			item->next = curritem;
+
+			curritem->prev = item;
+			curritem->next = NULL;
+
 		} else if (level > prevmenu->level) {   /* item begins a new menu */
 			menu = allocmenu(prevmenu, curritem, level);
 
@@ -386,6 +406,9 @@ parsestdin(void)
 
 			item->submenu = menu;
 			menu->caller = item;
+
+			curritem->prev = NULL;
+			curritem->next = NULL;
 
 			prevmenu = menu;
 		}
@@ -616,6 +639,47 @@ drawmenu(void)
 	}
 }
 
+/* cycle through the items; non-zero direction is next, zero is prev */
+static struct Item *
+itemcycle(int direction)
+{
+	struct Item *item;
+	struct Item *lastitem;
+
+	item = NULL;
+
+	if (direction == ITEMNEXT) {
+		if (currmenu->selected == NULL)
+			item = currmenu->list;
+		else if (currmenu->selected->next != NULL)
+			item = currmenu->selected->next;
+
+		while (item != NULL && item->label == NULL)
+			item = item->next;
+
+		if (item == NULL)
+			item = currmenu->list;
+	} else {
+		for (lastitem = currmenu->list;
+		     lastitem != NULL && lastitem->next != NULL;
+		     lastitem = lastitem->next)
+			;
+
+		if (currmenu->selected == NULL)
+			item = lastitem;
+		else if (currmenu->selected->prev != NULL)
+			item = currmenu->selected->prev;
+
+		while (item != NULL && item->label == NULL)
+			item = item->prev;
+
+		if (item == NULL)
+			item = lastitem;
+	}
+
+	return item;
+}
+
 /* run event loop */
 static void
 run(void)
@@ -623,12 +687,14 @@ run(void)
 	struct Menu *menu;
 	struct Item *item;
 	struct Item *previtem = NULL;
+	KeySym ksym;
 	XEvent ev;
 
 	while (!XNextEvent(dpy, &ev)) {
 		switch(ev.type) {
 		case Expose:
-			drawmenu();
+			if (ev.xexpose.count == 0)
+				drawmenu();
 			break;
 		case MotionNotify:
 			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
@@ -649,6 +715,7 @@ run(void)
 		case ButtonRelease:
 			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
 			if (menu != NULL && item != NULL) {
+selectitem:
 				if (item->label == NULL)
 					break;  /* ignore separators */
 				if (item->submenu != NULL) {
@@ -657,10 +724,45 @@ run(void)
 					printf("%s\n", item->output);
 					return;
 				}
+				currmenu->selected = currmenu->list;
 				drawmenu();
+				break;
 			} else {
 				return;
 			}
+		case ButtonPress:
+			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
+			if (menu == NULL || item == NULL)
+				return;
+			break;
+		case KeyPress:
+			ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
+
+			if (ksym == XK_Escape && currmenu == rootmenu)
+				return;
+
+			/* Shift-Tab = ISO_Left_Tab */
+			if (ksym == XK_Tab && (ev.xkey.state & ShiftMask))
+				ksym = XK_ISO_Left_Tab;
+
+			/* cycle through menu */
+			item = NULL;
+			if (ksym == XK_ISO_Left_Tab || ksym == XK_Up) {
+				item = itemcycle(ITEMPREV);
+			} else if (ksym == XK_Tab || ksym == XK_Down) {
+				item = itemcycle(ITEMNEXT);
+			} else if ((ksym == XK_Return || ksym == XK_Right) &&
+			           currmenu->selected != NULL) {
+				item = currmenu->selected;
+				goto selectitem;
+			} else if ((ksym == XK_Escape || ksym == XK_Left) &&
+			           currmenu->parent != NULL) {
+				item = currmenu->parent->selected;
+				setcurrmenu(currmenu->parent);
+			} else
+				break;
+			currmenu->selected = item;
+			drawmenu();
 			break;
 		case LeaveNotify:
 			currmenu->selected = NULL;

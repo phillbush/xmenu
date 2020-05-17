@@ -37,6 +37,28 @@ separating the item above from the item below.
 The command is the string that will be output after selecting the item.
 .IP
 The newline terminates the item specification.
+.SH USAGE
+.B xmenu
+is controlled by the mouse,
+but can also be controlled by the keyboard.
+Items can be selected using the arrow keys,
+Tab (with and without Shift),
+Enter and Esc.
+.TP
+.BR Down ", " Tab
+Cycle through the items in the regular direction.
+.TP
+.BR Up ", " Shift-Tab
+Cycle through the items in the reverse direction.
+.TP
+.BR Right ", " Enter
+Select the highlighted item.
+.TP
+.B Left
+Go to the menu above.
+.TP
+.B Esc
+Go to the menu above or exit xmenu.
 .SH RESOURCES
 .B
 xmenu
@@ -83,7 +105,7 @@ The output is redirected to xargs to make a command to be run by the shell.
 .EX
 #!/bin/sh
 
-cat <<EOF | ./xmenu | xargs sh -c
+cat <<EOF | xmenu | xargs sh -c
 Applications
 	Web Browser	firefox
 	Image editor	gimp

@@ -1,4 +1,4 @@
-# progrma name
+# program name
 PROG = xmenu
 
 # paths
