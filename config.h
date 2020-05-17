@@ -1,11 +1,11 @@
-#define FONT            "-*-*-medium-*-*-*-14-*-*-*-*-*-*-*"
-#define UNPRESSEDBG     "#FFFFFF"
-#define UNPRESSEDFG     "#2E3436"
-#define PRESSEDBG       "#3584E4"
-#define PRESSEDFG       "#FFFFFF"
-#define DECORATIONBG    "#CDC7C2"
-#define DECORATIONFG    "#E6E6E6"
-#define ITEMW           130
-#define ITEMB           4
-#define BORDER          1
-#define SEPARATOR       1
+static const char *font = "-*-*-medium-*-*-*-14-*-*-*-*-*-*-*";
+static const char *background = "#FFFFFF";
+static const char *foreground = "#2E3436";
+static const char *selbackground = "#3584E4";
+static const char *selforeground = "#FFFFFF";
+static const char *separator = "#CDC7C2";
+static const char *border = "#E6E6E6";
+static int width = 130;
+static int itemborder = 4;
+static int menuborder = 1;
+static int separatorsize = 1;

@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xresource.h>
 
 /* macros */
 #define LEN(x) (sizeof (x) / sizeof (x[0]))
@@ -16,8 +17,8 @@ enum {ColorFG, ColorBG, ColorLast};
 
 /* draw context structure */
 struct DC {
-	unsigned long unpressed[ColorLast];
-	unsigned long pressed[ColorLast];
+	unsigned long normal[ColorLast];
+	unsigned long selected[ColorLast];
 	unsigned long decoration[ColorLast];
 
 	Drawable d;
@@ -66,6 +67,7 @@ struct Menu {
 
 /* function declarations */
 static unsigned long getcolor(const char *s);
+static void getresources(void);
 static void setupdc(void);
 static void setupgeom(void);
 static void setupgrab(void);
@@ -128,6 +130,7 @@ main(int argc, char *argv[])
 	colormap = DefaultColormap(dpy, screen);
 
 	/* setup */
+	getresources();
 	setupdc();
 	setupgeom();
 	setupgrab();
@@ -151,6 +154,52 @@ main(int argc, char *argv[])
 	return 0;
 }
 
+/* read xrdb for configuration options */
+static void
+getresources(void)
+{
+	char *xrm;
+	long n;
+
+	XrmInitialize();
+	if ((xrm = XResourceManagerString(dpy))) {
+		char *type;
+		XrmDatabase xdb;
+		XrmValue xval;
+
+		xdb = XrmGetStringDatabase(xrm);
+
+		if (XrmGetResource(xdb, "xmenu.menuborder", "*", &type, &xval) == True)
+			if ((n = strtol(xval.addr, NULL, 10)) > 0)
+				menuborder = n;
+		if (XrmGetResource(xdb, "xmenu.separatorsize", "*", &type, &xval) == True)
+			if ((n = strtol(xval.addr, NULL, 10)) > 0)
+				separatorsize = n;
+		if (XrmGetResource(xdb, "xmenu.itemborder", "*", &type, &xval) == True)
+			if ((n = strtol(xval.addr, NULL, 10)) > 0)
+				itemborder = n;
+		if (XrmGetResource(xdb, "xmenu.width", "*", &type, &xval) == True)
+			if ((n = strtol(xval.addr, NULL, 10)) > 0)
+				width = n;
+		if (XrmGetResource(xdb, "xmenu.background", "*", &type, &xval) == True)
+			background = strdup(xval.addr);
+		if (XrmGetResource(xdb, "xmenu.foreground", "*", &type, &xval) == True)
+			foreground = strdup(xval.addr);
+		if (XrmGetResource(xdb, "xmenu.selbackground", "*", &type, &xval) == True)
+			selbackground = strdup(xval.addr);
+		if (XrmGetResource(xdb, "xmenu.selforeground", "*", &type, &xval) == True)
+			selforeground = strdup(xval.addr);
+		if (XrmGetResource(xdb, "xmenu.separator", "*", &type, &xval) == True)
+			separator = strdup(xval.addr);
+		if (XrmGetResource(xdb, "xmenu.border", "*", &type, &xval) == True)
+			border = strdup(xval.addr);
+		if (XrmGetResource(xdb, "xmenu.font", "*", &type, &xval) == True)
+			font = strdup(xval.addr);
+
+		XrmDestroyDatabase(xdb);
+	}
+}
+
 /* get color from color string */
 static unsigned long
 getcolor(const char *s)
@@ -167,15 +216,15 @@ static void
 setupdc(void)
 {
 	/* get color pixels */
-	dc.unpressed[ColorBG] = getcolor(UNPRESSEDBG);
-	dc.unpressed[ColorFG] = getcolor(UNPRESSEDFG);
-	dc.pressed[ColorBG] = getcolor(PRESSEDBG);
-	dc.pressed[ColorFG] = getcolor(PRESSEDFG);
-	dc.decoration[ColorBG] = getcolor(DECORATIONBG);
-	dc.decoration[ColorFG] = getcolor(DECORATIONFG);
+	dc.normal[ColorBG] = getcolor(background);
+	dc.normal[ColorFG] = getcolor(foreground);
+	dc.selected[ColorBG] = getcolor(selbackground);
+	dc.selected[ColorFG] = getcolor(selforeground);
+	dc.decoration[ColorBG] = getcolor(separator);
+	dc.decoration[ColorFG] = getcolor(border);
 
 	/* try to get font */
-	if ((dc.font = XLoadQueryFont(dpy, FONT)) == NULL)
+	if ((dc.font = XLoadQueryFont(dpy, font)) == NULL)
 		errx(1, "cannot load font");
 	dc.fonth = dc.font->ascent + dc.font->descent;
 
@@ -188,11 +237,11 @@ setupdc(void)
 static void
 setupgeom(void)
 {
-	geom.itemb = ITEMB;
-	geom.itemh = dc.fonth + ITEMB * 2;
-	geom.itemw = ITEMW;
-	geom.border = BORDER;
-	geom.separator = SEPARATOR;
+	geom.itemb = itemborder;
+	geom.itemh = dc.fonth + itemborder * 2;
+	geom.itemw = width;
+	geom.border = menuborder;
+	geom.separator = separatorsize;
 }
 
 /* grab pointer */
@@ -396,10 +445,10 @@ calcmenu(struct Menu *menu)
 		for (item = menu->parent->list; item->submenu != menu; item = item->next)
 			;
 
-		if (screengeom.screenw - (menu->parent->x + menu->parent->w) >= menu->w)
-			menu->x = menu->parent->x + menu->parent->w;
-		else if (menu->parent->x > menu->w)
-			menu->x = menu->parent->x - menu->w;
+		if (screengeom.screenw - (menu->parent->x + menu->parent->w + geom.border) >= menu->w)
+			menu->x = menu->parent->x + menu->parent->w + geom.border;
+		else if (menu->parent->x > menu->w + geom.border)
+			menu->x = menu->parent->x - menu->w - geom.border;
 
 		if (screengeom.screenh - (item->y + menu->parent->y) > menu->h)
 			menu->y = item->y + menu->parent->y;
@@ -522,12 +571,14 @@ drawmenu(void)
 			int labelx, labely;
 
 			/* determine item color */
-			if (item->label == NULL)
-				color = dc.decoration;
-			else if (item == menu->selected)
-				color = dc.pressed;
+			if (item == menu->selected)
+				color = dc.selected;
 			else
-				color = dc.unpressed;
+				color = dc.normal;
+
+			/* continue if item is a separator */
+			if (item->label == NULL)
+				continue;
 
 			/* draw item box */
 			XSetForeground(dpy, dc.gc, color[ColorBG]);
@@ -535,10 +586,6 @@ drawmenu(void)
 			               menu->w, item->h);
 			XFillRectangle(dpy, menu->pixmap, dc.gc, 0, item->y,
 			               menu->w, item->h);
-
-			/* continue if item is a separator */
-			if (item->label == NULL)
-				continue;
 
 			/* draw item label */
 			labelx = 0 + dc.fonth;
