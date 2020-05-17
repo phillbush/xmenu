@@ -11,4 +11,3 @@ Terminal (st)		st
 Shutdown		poweroff
 Reboot			reboot
 EOF
-

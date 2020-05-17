@@ -1,0 +1,66 @@
+.TH PROG 1
+.SH NAME
+xmenu \- menu utility for X
+.SH SYNOPSIS
+.B xmenu
+.RB [ \-w ]
+.SH DESCRIPTION
+.B xmenu
+is a menu for X,
+it reads a list of newline-separated items from stdin,
+shows a menu for the user to select one of the items,
+and outputs the item selected to stdout.
+.PP
+The options are as follows:
+.TP
+.B -w
+Asks the window manager to draw a border around the menus.
+Without this options, the menus do not have border drawn by the window manager.
+.PP
+Each item read from stdin has the following format:
+.IP
+.EX
+ITEM := TABS LABEL TABS COMMAND NEWLINE
+.EE
+.PP
+That means, each item is composed by
+tabs, followed by a label, followed by more tabs, followed by a command,
+and ended by a newline.
+.IP
+The initial tabs indicate the menu hierarchy:
+items indented with a tab is shown in a submenu of the preceding item not indented.
+.IP
+The label is the string that will be shown as a item in the menu.
+An item without label is considered a separator and is drawn as a thin line in the menu
+separating the item above from the item below.
+.IP
+The command is the string that will be output after selecting the item.
+.IP
+The newline terminates the item specification.
+.SH EXAMPLES
+The following is an script exemplifying the use
+.BR xmenu .
+The output is redirected to xargs to make a command to be run by the shell.
+.IP
+.EX
+#!/bin/sh
+
+cat <<EOF | ./xmenu | xargs sh -c
+Applications
+	Web Browser	firefox
+	Image editor	gimp
+Terminal (xterm)	xterm
+Terminal (urxvt)	urxvt
+Terminal (st)		st
+
+Shutdown			poweroff
+Reboot			reboot
+EOF
+.EE
+.PP
+For example, by selecting \(lqApplications\(rq, a new menu will appear.
+Selecting \(lqWeb Browser\(rq in the new menu will open firefox.
+.SH SEE ALSO
+.IR dmenu (1),
+.IR 9menu (1),
+.IR thingmenu (1)

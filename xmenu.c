@@ -79,7 +79,7 @@ static void setcurrmenu(struct Menu *currmenu_new);
 static void parsestdin(void);
 static void run(void);
 static void freewindow(struct Menu *menu);
-static void cleanupexit(void);
+static void cleanup(void);
 static void usage(void);
 
 /* X variables */
@@ -146,7 +146,9 @@ main(int argc, char *argv[])
 	/* run event loop */
 	run();
 
-	return 1;   /* UNREACHABLE */
+	cleanup();
+
+	return 0;
 }
 
 /* get color from color string */
@@ -576,8 +578,6 @@ run(void)
 	struct Item *previtem = NULL;
 	XEvent ev;
 
-	setcurrmenu(rootmenu);
-
 	while (!XNextEvent(dpy, &ev)) {
 		switch(ev.type) {
 		case Expose:
@@ -608,11 +608,11 @@ run(void)
 					setcurrmenu(item->submenu);
 				} else {
 					printf("%s\n", item->output);
-					cleanupexit();
+					return;
 				}
 				drawmenu();
 			} else {
-				cleanupexit();
+				return;
 			}
 			break;
 		case LeaveNotify:
@@ -639,19 +639,18 @@ freewindow(struct Menu *menu)
 
 /* cleanup and exit */
 static void
-cleanupexit(void)
+cleanup(void)
 {
 	freewindow(rootmenu);
 	XFreeFont(dpy, dc.font);
 	XFreeGC(dpy, dc.gc);
 	XCloseDisplay(dpy);
-	exit(0);
 }
 
 /* show usage */
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-w] menuname\n");
+	(void)fprintf(stderr, "usage: xmenu [-w]\n");
 	exit(1);
 }
