@@ -83,6 +83,7 @@ static void getmenuitem(Window win, int y, struct Menu **menu_ret, struct Item *
 static void drawmenu(void);
 static void calcscreengeom(void);
 static void calcmenu(struct Menu *menu);
+static void recalcmenu(struct Menu *menu);
 static void grabpointer(void);
 static void grabkeyboard(void);
 static void setcurrmenu(struct Menu *currmenu_new);
@@ -99,6 +100,7 @@ static Visual *visual;
 static Window rootwin;
 static int screen;
 static struct DC dc;
+static Atom wmdelete;
 
 /* menu variables */
 static struct Menu *rootmenu = NULL;
@@ -143,6 +145,7 @@ main(int argc, char *argv[])
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
+	wmdelete=XInternAtom(dpy, "WM_DELETE_WINDOW", True);
 
 	/* setup */
 	getresources();
@@ -317,6 +320,8 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	                          CWOverrideRedirect | CWBackPixel | CWBorderPixel | CWEventMask,
 	                          &swa);
 
+	XSetWMProtocols(dpy, menu->win, &wmdelete, 1);
+
 	return menu;
 }
 
@@ -467,18 +472,13 @@ calcmenu(struct Menu *menu)
 
 		XStringListToTextProperty(menutitle, menutitlecount, &textprop);
 	} else {                    /* else, calculate in respect to parent menu */
-
-		/* search for the item in parent menu that generates this menu */
-		for (item = menu->parent->list; item->submenu != menu; item = item->next)
-			;
-
 		if (screengeom.screenw - (menu->parent->x + menu->parent->w + geom.border) >= menu->w)
 			menu->x = menu->parent->x + menu->parent->w + geom.border;
 		else if (menu->parent->x > menu->w + geom.border)
 			menu->x = menu->parent->x - menu->w - geom.border;
 
-		if (screengeom.screenh - (item->y + menu->parent->y) > menu->h)
-			menu->y = item->y + menu->parent->y;
+		if (screengeom.screenh - (menu->caller->y + menu->parent->y) > menu->h)
+			menu->y = menu->caller->y + menu->parent->y;
 		else if (screengeom.screenh - menu->parent->y > menu->h)
 			menu->y = menu->parent->y;
 		else if (screengeom.screenh > menu->h)
@@ -511,6 +511,32 @@ calcmenu(struct Menu *menu)
 		if (item->submenu != NULL)
 			calcmenu(item->submenu);
 	}
+}
+
+/* recalculate menu position in respect to its parent */
+static void
+recalcmenu(struct Menu *menu)
+{
+	XWindowAttributes parentwin;
+
+	if (menu->parent == NULL)
+		return;
+
+	XGetWindowAttributes(dpy, menu->parent->win, &parentwin);
+
+	if (screengeom.screenw - (parentwin.x + menu->parent->w + geom.border) >= menu->w)
+		menu->x = parentwin.x + menu->parent->w + geom.border;
+	else if (parentwin.x > menu->w + geom.border)
+		menu->x = parentwin.x - menu->w - geom.border;
+
+	if (screengeom.screenh - (menu->caller->y + parentwin.y) > menu->h)
+		menu->y = menu->caller->y + parentwin.y;
+	else if (screengeom.screenh - parentwin.y > menu->h)
+		menu->y = parentwin.y;
+	else if (screengeom.screenh > menu->h)
+		menu->y = screengeom.screenh - menu->h;
+
+	XMoveWindow(dpy, menu->win, menu->x, menu->y);
 }
 
 /* try to grab pointer, we may have to wait for another process to ungrab */
@@ -607,6 +633,7 @@ setcurrmenu(struct Menu *currmenu_new)
 
 	/* unmap menus from currmenu (inclusive) until lcamenu (exclusive) */
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
+		menu->selected = NULL;
 		XUnmapWindow(dpy, menu->win);
 	}
 
@@ -615,6 +642,8 @@ setcurrmenu(struct Menu *currmenu_new)
 	/* map menus from currmenu (inclusive) until lcamenu (exclusive) */
 	item = NULL;
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
+		if (override_redirect == False)
+			recalcmenu(menu);
 		XMapWindow(dpy, menu->win);
 		if (item != NULL)
 			menu->selected = item;
@@ -810,6 +839,8 @@ selectitem:
 			currmenu->selected = NULL;
 			drawmenu();
 			break;
+		case ClientMessage:     /* user closed a window */
+			return;
 		}
 	}
 }
