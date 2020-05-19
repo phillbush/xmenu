@@ -1,6 +1,6 @@
 #!/bin/sh
 
-cat <<EOF | xmenu | xargs sh -c &
+cat <<EOF | xmenu | sh &
 Applications
 	Web Browser	firefox
 	Image editor	gimp
