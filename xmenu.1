@@ -4,6 +4,7 @@ xmenu \- menu utility for X
 .SH SYNOPSIS
 .B xmenu
 .RB [ \-w ]
+.RI [ title... ]
 .SH DESCRIPTION
 .B xmenu
 is a menu for X,
@@ -35,8 +36,13 @@ An item without label is considered a separator and is drawn as a thin line in t
 separating the item above from the item below.
 .IP
 The command is the string that will be output after selecting the item.
+If the item spawns a submenu, the command is the title of the menu.
 .IP
 The newline terminates the item specification.
+.PP
+If the argument
+.I title
+is given, the title of the menu window is set to it.
 .SH USAGE
 .B xmenu
 is controlled by the mouse,

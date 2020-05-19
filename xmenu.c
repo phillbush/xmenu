@@ -827,6 +827,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-w]\n");
+	(void)fprintf(stderr, "usage: xmenu [-w] title...\n");
 	exit(1);
 }
