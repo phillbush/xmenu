@@ -77,13 +77,14 @@ static void getcolor(const char *s, XftColor *color);
 static void getresources(void);
 static void setupdc(void);
 static void setupgeom(void);
-static void setupgrab(void);
 static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
 static void getmenuitem(Window win, int y, struct Menu **menu_ret, struct Item **item_ret);
 static void drawmenu(void);
 static void calcscreengeom(void);
 static void calcmenu(struct Menu *menu);
+static void grabpointer(void);
+static void grabkeyboard(void);
 static void setcurrmenu(struct Menu *currmenu_new);
 static void parsestdin(void);
 static void run(void);
@@ -156,8 +157,10 @@ main(int argc, char *argv[])
 	calcmenu(rootmenu);
 
 	/* grab mouse and keyboard */
-	if (override_redirect)
-		setupgrab();
+	if (override_redirect) {
+		grabpointer();
+		grabkeyboard();
+	}
 
 	/* map root menu */
 	currmenu = rootmenu;
@@ -254,19 +257,6 @@ setupgeom(void)
 	geom.itemw = width;
 	geom.border = menuborder;
 	geom.separator = separatorsize;
-}
-
-/* grab pointer */
-static void
-setupgrab(void)
-{
-	if (XGrabPointer(dpy, rootwin, True, ButtonPressMask,
-	                 GrabModeAsync, GrabModeAsync, None,
-	                 None, CurrentTime) != GrabSuccess)
-		errx(1, "cannot grab pointer");
-	if (XGrabKeyboard(dpy, rootwin, True, GrabModeAsync,
-	                  GrabModeAsync, CurrentTime) != GrabSuccess)
-		errx(1, "cannot grab keyboard");
 }
 
 /* allocate an item */
@@ -521,6 +511,39 @@ calcmenu(struct Menu *menu)
 		if (item->submenu != NULL)
 			calcmenu(item->submenu);
 	}
+}
+
+/* try to grab pointer, we may have to wait for another process to ungrab */
+static void
+grabpointer(void)
+{
+	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000  };
+	int i;
+
+	for (i = 0; i < 1000; i++) {
+		if (XGrabPointer(dpy, rootwin, True, ButtonPressMask,
+		                 GrabModeAsync, GrabModeAsync, None,
+		                 None, CurrentTime) == GrabSuccess)
+			return;
+		nanosleep(&ts, NULL);
+	}
+	errx(1, "cannot grab keyboard");
+}
+
+/* try to grab keyboard, we may have to wait for another process to ungrab */
+static void
+grabkeyboard(void)
+{
+	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000  };
+	int i;
+
+	for (i = 0; i < 1000; i++) {
+		if (XGrabKeyboard(dpy, rootwin, True, GrabModeAsync,
+		                  GrabModeAsync, CurrentTime) == GrabSuccess)
+			return;
+		nanosleep(&ts, NULL);
+	}
+	errx(1, "cannot grab keyboard");
 }
 
 /* get menu and item of given window and position */
