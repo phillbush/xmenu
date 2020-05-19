@@ -9,6 +9,7 @@
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
 
+#define PROGNAME "xmenu"
 #define ITEMPREV 0
 #define ITEMNEXT 1
 
@@ -101,6 +102,8 @@ static struct DC dc;
 /* menu variables */
 static struct Menu *rootmenu = NULL;
 static struct Menu *currmenu = NULL;
+static char **menutitle;
+static int menutitlecount;
 
 /* geometry variables */
 static struct Geometry geom;
@@ -128,6 +131,9 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
+
+	menutitle = argv;
+	menutitlecount = argc;
 
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
@@ -434,7 +440,9 @@ calcscreengeom(void)
 static void
 calcmenu(struct Menu *menu)
 {
+	static XClassHint classh = {PROGNAME, PROGNAME};
 	XWindowChanges changes;
+	XTextProperty textprop;
 	XSizeHints sizeh;
 	XGlyphInfo ext;
 	struct Item *item;
@@ -466,6 +474,8 @@ calcmenu(struct Menu *menu)
 			menu->y = screengeom.cursy;
 		else if (screengeom.screenh > menu->h)
 			menu->y = screengeom.screenh - menu->h;
+
+		XStringListToTextProperty(menutitle, menutitlecount, &textprop);
 	} else {                    /* else, calculate in respect to parent menu */
 
 		/* search for the item in parent menu that generates this menu */
@@ -483,6 +493,8 @@ calcmenu(struct Menu *menu)
 			menu->y = menu->parent->y;
 		else if (screengeom.screenh > menu->h)
 			menu->y = screengeom.screenh - menu->h;
+
+		XStringListToTextProperty(&(menu->caller->output), 1, &textprop);
 	}
 
 	/* update menu geometry */
@@ -492,11 +504,12 @@ calcmenu(struct Menu *menu)
 	changes.y = menu->y;
 	XConfigureWindow(dpy, menu->win, CWWidth | CWHeight | CWX | CWY, &changes);
 
-	/* set window manager size hints */
+	/* set window manager hints */
 	sizeh.flags = PMaxSize | PMinSize;
 	sizeh.min_width = sizeh.max_width = menu->w;
 	sizeh.min_height = sizeh.max_height = menu->h;
-	XSetWMNormalHints(dpy, menu->win, &sizeh);
+	XSetWMProperties(dpy, menu->win, &textprop, NULL, NULL, 0, &sizeh,
+	                 NULL, &classh);
 
 	/* create pixmap and XftDraw */
 	menu->pixmap = XCreatePixmap(dpy, menu->win, menu->w, menu->h,
