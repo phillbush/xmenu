@@ -7,6 +7,7 @@
 #include <X11/Xutil.h>
 #include <X11/Xresource.h>
 #include <X11/XKBlib.h>
+#include <X11/Xft/Xft.h>
 
 #define ITEMPREV 0
 #define ITEMNEXT 1
@@ -21,14 +22,13 @@ enum {ColorFG, ColorBG, ColorLast};
 
 /* draw context structure */
 struct DC {
-	unsigned long normal[ColorLast];
-	unsigned long selected[ColorLast];
-	unsigned long decoration[ColorLast];
+	XftColor normal[ColorLast];
+	XftColor selected[ColorLast];
+	XftColor decoration[ColorLast];
 
 	Drawable d;
 	GC gc;
-	XFontStruct *font;
-	int fonth;
+	XftFont *font;
 };
 
 /* menu geometry structure */
@@ -67,11 +67,12 @@ struct Menu {
 	int x, y, w, h;         /* menu geometry */
 	unsigned level;         /* menu level relative to root */
 	Drawable pixmap;        /* pixmap to draw the menu on */
+	XftDraw *draw;
 	Window win;             /* menu window to map on the screen */
 };
 
 /* function declarations */
-static unsigned long getcolor(const char *s);
+static void getcolor(const char *s, XftColor *color);
 static void getresources(void);
 static void setupdc(void);
 static void setupgeom(void);
@@ -92,6 +93,7 @@ static void usage(void);
 /* X variables */
 static Colormap colormap;
 static Display *dpy;
+static Visual *visual;
 static Window rootwin;
 static int screen;
 static struct DC dc;
@@ -131,6 +133,7 @@ main(int argc, char *argv[])
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
 		errx(1, "cannot open display");
 	screen = DefaultScreen(dpy);
+	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
 
@@ -138,7 +141,8 @@ main(int argc, char *argv[])
 	getresources();
 	setupdc();
 	setupgeom();
-	setupgrab();
+	if (override_redirect)
+		setupgrab();
 
 	/* generate menus and recalculate them */
 	parsestdin();
@@ -206,14 +210,11 @@ getresources(void)
 }
 
 /* get color from color string */
-static unsigned long
-getcolor(const char *s)
+static void
+getcolor(const char *s, XftColor *color)
 {
-	XColor color;
-
-	if(!XAllocNamedColor(dpy, colormap, s, &color, &color))
+	if(!XftColorAllocName(dpy, visual, colormap, s, color))
 		errx(1, "cannot allocate color: %s", s);
-	return color.pixel;
 }
 
 /* init draw context */
@@ -221,21 +222,19 @@ static void
 setupdc(void)
 {
 	/* get color pixels */
-	dc.normal[ColorBG] = getcolor(background);
-	dc.normal[ColorFG] = getcolor(foreground);
-	dc.selected[ColorBG] = getcolor(selbackground);
-	dc.selected[ColorFG] = getcolor(selforeground);
-	dc.decoration[ColorBG] = getcolor(separator);
-	dc.decoration[ColorFG] = getcolor(border);
+	getcolor(background,    &dc.normal[ColorBG]);
+	getcolor(foreground,    &dc.normal[ColorFG]);
+	getcolor(selbackground, &dc.selected[ColorBG]);
+	getcolor(selforeground, &dc.selected[ColorFG]);
+	getcolor(separator,     &dc.decoration[ColorBG]);
+	getcolor(border,        &dc.decoration[ColorFG]);
 
 	/* try to get font */
-	if ((dc.font = XLoadQueryFont(dpy, font)) == NULL)
+	if ((dc.font = XftFontOpenName(dpy, screen, font)) == NULL)
 		errx(1, "cannot load font");
-	dc.fonth = dc.font->ascent + dc.font->descent;
 
-	/* create GC and set its font */
+	/* create GC */
 	dc.gc = XCreateGC(dpy, rootwin, 0, NULL);
-	XSetFont(dpy, dc.gc, dc.font->fid);
 }
 
 /* init menu geometry values */
@@ -243,7 +242,7 @@ static void
 setupgeom(void)
 {
 	geom.itemb = itemborder;
-	geom.itemh = dc.fonth + itemborder * 2;
+	geom.itemh = dc.font->height + itemborder * 2;
 	geom.itemw = width;
 	geom.border = menuborder;
 	geom.separator = separatorsize;
@@ -311,8 +310,8 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->level = level;
 
 	swa.override_redirect = override_redirect;
-	swa.background_pixel = dc.decoration[ColorBG];
-	swa.border_pixel = dc.decoration[ColorFG];
+	swa.background_pixel = dc.decoration[ColorBG].pixel;
+	swa.border_pixel = dc.decoration[ColorFG].pixel;
 	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
 	               | PointerMotionMask | LeaveWindowMask;
 	menu->win = XCreateWindow(dpy, rootwin, 0, 0, geom.itemw, geom.itemh, geom.border,
@@ -435,6 +434,7 @@ calcmenu(struct Menu *menu)
 {
 	XWindowChanges changes;
 	XSizeHints sizeh;
+	XGlyphInfo ext;
 	struct Item *item;
 	int labelwidth;
 
@@ -447,7 +447,9 @@ calcmenu(struct Menu *menu)
 		else
 			menu->h += geom.itemh;
 
-		labelwidth = XTextWidth(dc.font, item->label, item->labellen) + dc.fonth * 2;
+		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)item->label,
+		                   item->labellen, &ext);
+		labelwidth = ext.xOff + dc.font->height * 2;
 		menu->w = MAX(menu->w, labelwidth);
 	}
 
@@ -494,9 +496,10 @@ calcmenu(struct Menu *menu)
 	sizeh.min_height = sizeh.max_height = menu->h;
 	XSetWMNormalHints(dpy, menu->win, &sizeh);
 
-	/* create pixmap */
+	/* create pixmap and XftDraw */
 	menu->pixmap = XCreatePixmap(dpy, menu->win, menu->w, menu->h,
 	                             DefaultDepth(dpy, screen));
+	menu->draw = XftDrawCreate(dpy, menu->pixmap, visual, colormap);
 
 	/* calculate positions of submenus */
 	for (item = menu->list; item != NULL; item = item->next) {
@@ -590,7 +593,7 @@ drawmenu(void)
 
 	for (menu = currmenu; menu != NULL; menu = menu->parent) {
 		for (item = menu->list; item != NULL; item = item->next) {
-			unsigned long *color;
+			XftColor *color;
 			int labelx, labely;
 
 			/* determine item color */
@@ -604,22 +607,23 @@ drawmenu(void)
 				continue;
 
 			/* draw item box */
-			XSetForeground(dpy, dc.gc, color[ColorBG]);
+			XSetForeground(dpy, dc.gc, color[ColorBG].pixel);
 			XDrawRectangle(dpy, menu->pixmap, dc.gc, 0, item->y,
 			               menu->w, item->h);
 			XFillRectangle(dpy, menu->pixmap, dc.gc, 0, item->y,
 			               menu->w, item->h);
 
 			/* draw item label */
-			labelx = 0 + dc.fonth;
-			labely = item->y + dc.fonth + geom.itemb;
-			XSetForeground(dpy, dc.gc, color[ColorFG]);
-			XDrawString(dpy, menu->pixmap, dc.gc, labelx, labely,
-			            item->label, item->labellen);
+			labelx = 0 + dc.font->height;
+			labely = item->y + dc.font->height + geom.itemb / 2;
+			XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
+			XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
+			                  labelx, labely, item->label,
+			                  item->labellen);
 
 			/* draw triangle, if item contains a submenu */
 			if (item->submenu != NULL) {
-				int trianglex = menu->w - dc.fonth + geom.itemb - 1;
+				int trianglex = menu->w - dc.font->height + geom.itemb - 1;
 				int triangley = item->y + (3 * item->h)/8 -1;
 
 				XPoint triangle[] = {
@@ -783,6 +787,7 @@ freewindow(struct Menu *menu)
 			freewindow(item->submenu);
 
 	XFreePixmap(dpy, menu->pixmap);
+	XftDrawDestroy(menu->draw);
 	XDestroyWindow(dpy, menu->win);
 }
 
@@ -791,7 +796,14 @@ static void
 cleanup(void)
 {
 	freewindow(rootmenu);
-	XFreeFont(dpy, dc.font);
+
+	XftColorFree(dpy, visual, colormap, &dc.normal[ColorBG]);
+	XftColorFree(dpy, visual, colormap, &dc.normal[ColorFG]);
+	XftColorFree(dpy, visual, colormap, &dc.selected[ColorBG]);
+	XftColorFree(dpy, visual, colormap, &dc.selected[ColorFG]);
+	XftColorFree(dpy, visual, colormap, &dc.decoration[ColorBG]);
+	XftColorFree(dpy, visual, colormap, &dc.decoration[ColorFG]);
+
 	XFreeGC(dpy, dc.gc);
 	XCloseDisplay(dpy);
 }
