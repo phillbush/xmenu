@@ -141,8 +141,6 @@ main(int argc, char *argv[])
 	getresources();
 	setupdc();
 	setupgeom();
-	if (override_redirect)
-		setupgrab();
 
 	/* generate menus and recalculate them */
 	parsestdin();
@@ -150,6 +148,10 @@ main(int argc, char *argv[])
 		errx(1, "no menu generated");
 	calcscreengeom();
 	calcmenu(rootmenu);
+
+	/* grab mouse and keyboard */
+	if (override_redirect)
+		setupgrab();
 
 	/* map root menu */
 	currmenu = rootmenu;
