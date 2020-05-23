@@ -73,6 +73,7 @@ struct Menu {
 };
 
 /* function declarations */
+static int menuexist(void);
 static void getcolor(const char *s, XftColor *color);
 static void getresources(void);
 static void setupdc(void);
@@ -113,7 +114,7 @@ static struct Geometry geom;
 static struct ScreenGeometry screengeom;
 
 /* flag variables */
-static Bool override_redirect = True;
+static int wflag = 0;
 
 #include "config.h"
 
@@ -125,7 +126,7 @@ main(int argc, char *argv[])
 	while ((ch = getopt(argc, argv, "w")) != -1) {
 		switch (ch) {
 		case 'w':
-			override_redirect = False;
+			wflag = 1;
 			break;
 		default:
 			usage();
@@ -147,6 +148,12 @@ main(int argc, char *argv[])
 	colormap = DefaultColormap(dpy, screen);
 	wmdelete=XInternAtom(dpy, "WM_DELETE_WINDOW", True);
 
+	/* exit if another menu exists */
+	if (menuexist()) {
+		XCloseDisplay(dpy);
+		return 1;
+	}
+
 	/* setup */
 	getresources();
 	setupdc();
@@ -160,7 +167,7 @@ main(int argc, char *argv[])
 	calcmenu(rootmenu);
 
 	/* grab mouse and keyboard */
-	if (override_redirect) {
+	if (!wflag) {
 		grabpointer();
 		grabkeyboard();
 	}
@@ -173,6 +180,27 @@ main(int argc, char *argv[])
 	run();
 
 	cleanup();
+	return 0;
+}
+
+/* check whether another menu exists */
+static int
+menuexist(void)
+{
+	Window wina, winb;  /* unused variables */
+	Window *children;
+	unsigned nchildren;
+	XClassHint classh;
+
+	if (XQueryTree(dpy, rootwin, &wina, &winb, &children, &nchildren) == 0)
+		errx(1, "could not query tree");
+
+	while (nchildren-- > 0) {
+		if (XGetClassHint(dpy, *children, &classh) != 0)
+			if (strcmp(classh.res_class, PROGNAME) == 0)
+				return 1;
+		children++;
+	}
 
 	return 0;
 }
@@ -310,7 +338,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->y = 0;    /* calculated by calcmenu() */
 	menu->level = level;
 
-	swa.override_redirect = override_redirect;
+	swa.override_redirect = (wflag) ? False : True;
 	swa.background_pixel = dc.decoration[ColorBG].pixel;
 	swa.border_pixel = dc.decoration[ColorFG].pixel;
 	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
@@ -431,7 +459,7 @@ calcscreengeom(void)
 	screengeom.screenh = DisplayHeight(dpy, screen);
 }
 
-/* recursivelly calculate height and position of the menus */
+/* recursivelly calculate menu geometry and set window hints */
 static void
 calcmenu(struct Menu *menu)
 {
@@ -642,7 +670,7 @@ setcurrmenu(struct Menu *currmenu_new)
 	/* map menus from currmenu (inclusive) until lcamenu (exclusive) */
 	item = NULL;
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
-		if (override_redirect == False)
+		if (wflag)
 			recalcmenu(menu);
 		XMapWindow(dpy, menu->win);
 		if (item != NULL)
