@@ -4,6 +4,10 @@ Xmenu is a menu utility for X.
 Xmenu receives a menu specification in stdin, shows a menu for the user
 to select one of the options, and outputs the option selected to stdout.
 
+NOTE: The -w (windowed) option was removed from the master branch.
+      It was too buggy in tiled window managers and requires more
+      code to be maintained.
+
 § Installation
 
 In order to build xmenu you need the Xlib header files.

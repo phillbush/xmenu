@@ -73,7 +73,6 @@ struct Menu {
 };
 
 /* function declarations */
-static int menuexist(void);
 static void getcolor(const char *s, XftColor *color);
 static void getresources(void);
 static void setupdc(void);
@@ -84,7 +83,6 @@ static void getmenuitem(Window win, int y, struct Menu **menu_ret, struct Item *
 static void drawmenu(void);
 static void calcscreengeom(void);
 static void calcmenu(struct Menu *menu);
-static void recalcmenu(struct Menu *menu);
 static void grabpointer(void);
 static void grabkeyboard(void);
 static void setcurrmenu(struct Menu *currmenu_new);
@@ -101,7 +99,6 @@ static Visual *visual;
 static Window rootwin;
 static int screen;
 static struct DC dc;
-static Atom wmdelete;
 
 /* menu variables */
 static struct Menu *rootmenu = NULL;
@@ -113,9 +110,6 @@ static int menutitlecount;
 static struct Geometry geom;
 static struct ScreenGeometry screengeom;
 
-/* flag variables */
-static int wflag = 0;
-
 #include "config.h"
 
 int
@@ -123,11 +117,8 @@ main(int argc, char *argv[])
 {
 	int ch;
 
-	while ((ch = getopt(argc, argv, "w")) != -1) {
+	while ((ch = getopt(argc, argv, "")) != -1) {
 		switch (ch) {
-		case 'w':
-			wflag = 1;
-			break;
 		default:
 			usage();
 			break;
@@ -146,13 +137,6 @@ main(int argc, char *argv[])
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
-	wmdelete=XInternAtom(dpy, "WM_DELETE_WINDOW", True);
-
-	/* exit if another menu exists */
-	if (menuexist()) {
-		XCloseDisplay(dpy);
-		return 1;
-	}
 
 	/* setup */
 	getresources();
@@ -167,41 +151,17 @@ main(int argc, char *argv[])
 	calcmenu(rootmenu);
 
 	/* grab mouse and keyboard */
-	if (!wflag) {
-		grabpointer();
-		grabkeyboard();
-	}
+	grabpointer();
+	grabkeyboard();
 
 	/* map root menu */
-	currmenu = rootmenu;
+	setcurrmenu(rootmenu);
 	XMapWindow(dpy, rootmenu->win);
 
 	/* run event loop */
 	run();
 
 	cleanup();
-	return 0;
-}
-
-/* check whether another menu exists */
-static int
-menuexist(void)
-{
-	Window wina, winb;  /* unused variables */
-	Window *children;
-	unsigned nchildren;
-	XClassHint classh;
-
-	if (XQueryTree(dpy, rootwin, &wina, &winb, &children, &nchildren) == 0)
-		errx(1, "could not query tree");
-
-	while (nchildren-- > 0) {
-		if (XGetClassHint(dpy, *children, &classh) != 0)
-			if (strcmp(classh.res_class, PROGNAME) == 0)
-				return 1;
-		children++;
-	}
-
 	return 0;
 }
 
@@ -338,7 +298,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->y = 0;    /* calculated by calcmenu() */
 	menu->level = level;
 
-	swa.override_redirect = (wflag) ? False : True;
+	swa.override_redirect = True;
 	swa.background_pixel = dc.decoration[ColorBG].pixel;
 	swa.border_pixel = dc.decoration[ColorFG].pixel;
 	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
@@ -347,8 +307,6 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	                          CopyFromParent, CopyFromParent, CopyFromParent,
 	                          CWOverrideRedirect | CWBackPixel | CWBorderPixel | CWEventMask,
 	                          &swa);
-
-	XSetWMProtocols(dpy, menu->win, &wmdelete, 1);
 
 	return menu;
 }
@@ -541,32 +499,6 @@ calcmenu(struct Menu *menu)
 	}
 }
 
-/* recalculate menu position in respect to its parent */
-static void
-recalcmenu(struct Menu *menu)
-{
-	XWindowAttributes parentwin;
-
-	if (menu->parent == NULL)
-		return;
-
-	XGetWindowAttributes(dpy, menu->parent->win, &parentwin);
-
-	if (screengeom.screenw - (parentwin.x + menu->parent->w + geom.border) >= menu->w)
-		menu->x = parentwin.x + menu->parent->w + geom.border;
-	else if (parentwin.x > menu->w + geom.border)
-		menu->x = parentwin.x - menu->w - geom.border;
-
-	if (screengeom.screenh - (menu->caller->y + parentwin.y) > menu->h)
-		menu->y = menu->caller->y + parentwin.y;
-	else if (screengeom.screenh - parentwin.y > menu->h)
-		menu->y = parentwin.y;
-	else if (screengeom.screenh > menu->h)
-		menu->y = screengeom.screenh - menu->h;
-
-	XMoveWindow(dpy, menu->win, menu->x, menu->y);
-}
-
 /* try to grab pointer, we may have to wait for another process to ungrab */
 static void
 grabpointer(void)
@@ -634,30 +566,34 @@ setcurrmenu(struct Menu *currmenu_new)
 	unsigned minlevel;      /* level of the closest to root menu */
 	unsigned maxlevel;      /* level of the closest to root menu */
 
+	/* do not update currmenu to itself */
 	if (currmenu_new == currmenu)
 		return;
 
+	/* if there was no currmenu, skip calculations */
+	if (currmenu == NULL) {
+		currmenu = currmenu_new;
+		return;
+	}
+
 	/* find lowest common ancestor menu */
 	lcamenu = rootmenu;
-	if (currmenu != NULL) {
-		minlevel = MIN(currmenu_new->level, currmenu->level);
-		maxlevel = MAX(currmenu_new->level, currmenu->level);
-		if (currmenu_new->level == maxlevel) {
-			menu = currmenu_new;
-			menu_ = currmenu;
-		} else {
-			menu = currmenu;
-			menu_ = currmenu_new;
-		}
-		while (menu->level > minlevel)
-			menu = menu->parent;
-
-		while (menu != menu_) {
-			menu = menu->parent;
-			menu_ = menu_->parent;
-		}
-		lcamenu = menu;
+	minlevel = MIN(currmenu_new->level, currmenu->level);
+	maxlevel = MAX(currmenu_new->level, currmenu->level);
+	if (currmenu_new->level == maxlevel) {
+		menu = currmenu_new;
+		menu_ = currmenu;
+	} else {
+		menu = currmenu;
+		menu_ = currmenu_new;
 	}
+	while (menu->level > minlevel)
+		menu = menu->parent;
+	while (menu != menu_) {
+		menu = menu->parent;
+		menu_ = menu_->parent;
+	}
+	lcamenu = menu;
 
 	/* unmap menus from currmenu (inclusive) until lcamenu (exclusive) */
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
@@ -670,8 +606,6 @@ setcurrmenu(struct Menu *currmenu_new)
 	/* map menus from currmenu (inclusive) until lcamenu (exclusive) */
 	item = NULL;
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
-		if (wflag)
-			recalcmenu(menu);
 		XMapWindow(dpy, menu->win);
 		if (item != NULL)
 			menu->selected = item;
@@ -867,8 +801,6 @@ selectitem:
 			currmenu->selected = NULL;
 			drawmenu();
 			break;
-		case ClientMessage:     /* user closed a window */
-			return;
 		}
 	}
 }
@@ -909,6 +841,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-w] title...\n");
+	(void)fprintf(stderr, "usage: xmenu title...\n");
 	exit(1);
 }
