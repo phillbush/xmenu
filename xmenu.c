@@ -25,7 +25,8 @@ enum {ColorFG, ColorBG, ColorLast};
 struct DC {
 	XftColor normal[ColorLast];
 	XftColor selected[ColorLast];
-	XftColor decoration[ColorLast];
+	XftColor border;
+	XftColor separator;
 
 	Drawable d;
 	GC gc;
@@ -33,7 +34,7 @@ struct DC {
 };
 
 /* menu geometry structure */
-struct Geometry {
+struct MenuGeometry {
 	int itemb;      /* item border */
 	int itemw;      /* item width */
 	int itemh;      /* item height */
@@ -80,6 +81,8 @@ static void setupgeom(void);
 static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
 static void getmenuitem(Window win, int y, struct Menu **menu_ret, struct Item **item_ret);
+static void drawseparator(struct Menu *menu, struct Item *item);
+static void drawitem(struct Menu *menu, struct Item *item, XftColor *color);
 static void drawmenu(void);
 static void calcscreengeom(void);
 static void calcmenu(struct Menu *menu);
@@ -99,16 +102,14 @@ static Visual *visual;
 static Window rootwin;
 static int screen;
 static struct DC dc;
+static struct ScreenGeometry screengeom;
 
 /* menu variables */
 static struct Menu *rootmenu = NULL;
 static struct Menu *currmenu = NULL;
 static char **menutitle;
 static int menutitlecount;
-
-/* geometry variables */
-static struct Geometry geom;
-static struct ScreenGeometry screengeom;
+static struct MenuGeometry geom;
 
 #include "config.h"
 
@@ -154,10 +155,6 @@ main(int argc, char *argv[])
 	grabpointer();
 	grabkeyboard();
 
-	/* map root menu */
-	setcurrmenu(rootmenu);
-	XMapWindow(dpy, rootmenu->win);
-
 	/* run event loop */
 	run();
 
@@ -171,44 +168,44 @@ getresources(void)
 {
 	char *xrm;
 	long n;
+	char *type;
+	XrmDatabase xdb;
+	XrmValue xval;
 
 	XrmInitialize();
-	if ((xrm = XResourceManagerString(dpy))) {
-		char *type;
-		XrmDatabase xdb;
-		XrmValue xval;
+	if ((xrm = XResourceManagerString(dpy)) == NULL)
+		return;
 
-		xdb = XrmGetStringDatabase(xrm);
+	xdb = XrmGetStringDatabase(xrm);
 
-		if (XrmGetResource(xdb, "xmenu.menuborder", "*", &type, &xval) == True)
-			if ((n = strtol(xval.addr, NULL, 10)) > 0)
-				menuborder = n;
-		if (XrmGetResource(xdb, "xmenu.separatorsize", "*", &type, &xval) == True)
-			if ((n = strtol(xval.addr, NULL, 10)) > 0)
-				separatorsize = n;
-		if (XrmGetResource(xdb, "xmenu.itemborder", "*", &type, &xval) == True)
-			if ((n = strtol(xval.addr, NULL, 10)) > 0)
-				itemborder = n;
-		if (XrmGetResource(xdb, "xmenu.width", "*", &type, &xval) == True)
-			if ((n = strtol(xval.addr, NULL, 10)) > 0)
-				width = n;
-		if (XrmGetResource(xdb, "xmenu.background", "*", &type, &xval) == True)
-			background = strdup(xval.addr);
-		if (XrmGetResource(xdb, "xmenu.foreground", "*", &type, &xval) == True)
-			foreground = strdup(xval.addr);
-		if (XrmGetResource(xdb, "xmenu.selbackground", "*", &type, &xval) == True)
-			selbackground = strdup(xval.addr);
-		if (XrmGetResource(xdb, "xmenu.selforeground", "*", &type, &xval) == True)
-			selforeground = strdup(xval.addr);
-		if (XrmGetResource(xdb, "xmenu.separator", "*", &type, &xval) == True)
-			separator = strdup(xval.addr);
-		if (XrmGetResource(xdb, "xmenu.border", "*", &type, &xval) == True)
-			border = strdup(xval.addr);
-		if (XrmGetResource(xdb, "xmenu.font", "*", &type, &xval) == True)
-			font = strdup(xval.addr);
+	if (XrmGetResource(xdb, "xmenu.borderWidth", "*", &type, &xval) == True)
+		if ((n = strtol(xval.addr, NULL, 10)) > 0)
+			border_pixels = n;
+	if (XrmGetResource(xdb, "xmenu.separatorWidth", "*", &type, &xval) == True)
+		if ((n = strtol(xval.addr, NULL, 10)) > 0)
+			separator_pixels = n;
+	if (XrmGetResource(xdb, "xmenu.padding", "*", &type, &xval) == True)
+		if ((n = strtol(xval.addr, NULL, 10)) > 0)
+			padding_pixels = n;
+	if (XrmGetResource(xdb, "xmenu.width", "*", &type, &xval) == True)
+		if ((n = strtol(xval.addr, NULL, 10)) > 0)
+			width_pixels = n;
+	if (XrmGetResource(xdb, "xmenu.background", "*", &type, &xval) == True)
+		background_color = strdup(xval.addr);
+	if (XrmGetResource(xdb, "xmenu.foreground", "*", &type, &xval) == True)
+		foreground_color = strdup(xval.addr);
+	if (XrmGetResource(xdb, "xmenu.selbackground", "*", &type, &xval) == True)
+		selbackground_color = strdup(xval.addr);
+	if (XrmGetResource(xdb, "xmenu.selforeground", "*", &type, &xval) == True)
+		selforeground_color = strdup(xval.addr);
+	if (XrmGetResource(xdb, "xmenu.separator", "*", &type, &xval) == True)
+		separator_color = strdup(xval.addr);
+	if (XrmGetResource(xdb, "xmenu.border", "*", &type, &xval) == True)
+		border_color = strdup(xval.addr);
+	if (XrmGetResource(xdb, "xmenu.font", "*", &type, &xval) == True)
+		font = strdup(xval.addr);
 
-		XrmDestroyDatabase(xdb);
-	}
+	XrmDestroyDatabase(xdb);
 }
 
 /* get color from color string */
@@ -224,18 +221,18 @@ static void
 setupdc(void)
 {
 	/* get color pixels */
-	getcolor(background,    &dc.normal[ColorBG]);
-	getcolor(foreground,    &dc.normal[ColorFG]);
-	getcolor(selbackground, &dc.selected[ColorBG]);
-	getcolor(selforeground, &dc.selected[ColorFG]);
-	getcolor(separator,     &dc.decoration[ColorBG]);
-	getcolor(border,        &dc.decoration[ColorFG]);
+	getcolor(background_color,    &dc.normal[ColorBG]);
+	getcolor(foreground_color,    &dc.normal[ColorFG]);
+	getcolor(selbackground_color, &dc.selected[ColorBG]);
+	getcolor(selforeground_color, &dc.selected[ColorFG]);
+	getcolor(separator_color,     &dc.separator);
+	getcolor(border_color,        &dc.border);
 
 	/* try to get font */
 	if ((dc.font = XftFontOpenName(dpy, screen, font)) == NULL)
 		errx(1, "cannot load font");
 
-	/* create GC */
+	/* create common GC */
 	dc.gc = XCreateGC(dpy, rootwin, 0, NULL);
 }
 
@@ -243,11 +240,11 @@ setupdc(void)
 static void
 setupgeom(void)
 {
-	geom.itemb = itemborder;
-	geom.itemh = dc.font->height + itemborder * 2;
-	geom.itemw = width;
-	geom.border = menuborder;
-	geom.separator = separatorsize;
+	geom.itemb = padding_pixels;
+	geom.itemh = dc.font->height + padding_pixels * 2;
+	geom.itemw = width_pixels;
+	geom.border = border_pixels;
+	geom.separator = separator_pixels;
 }
 
 /* allocate an item */
@@ -299,13 +296,15 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->level = level;
 
 	swa.override_redirect = True;
-	swa.background_pixel = dc.decoration[ColorBG].pixel;
-	swa.border_pixel = dc.decoration[ColorFG].pixel;
+	swa.background_pixel = dc.normal[ColorBG].pixel;
+	swa.border_pixel = dc.border.pixel;
+	swa.save_under = True;  /* pop-up windows should save_under*/
 	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
 	               | PointerMotionMask | LeaveWindowMask;
 	menu->win = XCreateWindow(dpy, rootwin, 0, 0, geom.itemw, geom.itemh, geom.border,
 	                          CopyFromParent, CopyFromParent, CopyFromParent,
-	                          CWOverrideRedirect | CWBackPixel | CWBorderPixel | CWEventMask,
+	                          CWOverrideRedirect | CWBackPixel |
+	                          CWBorderPixel | CWEventMask | CWSaveUnder,
 	                          &swa);
 
 	return menu;
@@ -573,6 +572,7 @@ setcurrmenu(struct Menu *currmenu_new)
 	/* if there was no currmenu, skip calculations */
 	if (currmenu == NULL) {
 		currmenu = currmenu_new;
+		XMapWindow(dpy, currmenu->win);
 		return;
 	}
 
@@ -607,9 +607,49 @@ setcurrmenu(struct Menu *currmenu_new)
 	item = NULL;
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
 		XMapWindow(dpy, menu->win);
-		if (item != NULL)
-			menu->selected = item;
-		item = menu->caller;
+	}
+}
+
+/* draw separator item */
+static void
+drawseparator(struct Menu *menu, struct Item *item)
+{
+	int linex, liney, linew;
+
+	linex = dc.font->height;
+	liney = item->y + item->h/2;
+	linew = menu->w - dc.font->height;
+
+	XSetForeground(dpy, dc.gc, dc.separator.pixel);
+	XDrawLine(dpy, menu->pixmap, dc.gc, linex, liney, linew, liney);
+}
+
+/* draw regular item */
+static void
+drawitem(struct Menu *menu, struct Item *item, XftColor *color)
+{
+	int x, y;
+
+	x = 0 + dc.font->height;
+	y = item->y + dc.font->height + geom.itemb / 2;
+	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
+	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
+                      x, y, item->label, item->labellen);
+
+	/* draw triangle, if item contains a submenu */
+	if (item->submenu != NULL) {
+		x = menu->w - dc.font->height + geom.itemb - 1;
+		y = item->y + geom.itemh/2 - triangle_height/2 - 1;
+
+		XPoint triangle[] = {
+			{x, y},
+			{x + triangle_width, y + triangle_height/2},
+			{x, y + triangle_height},
+			{x, y}
+		};
+
+		XFillPolygon(dpy, menu->pixmap, dc.gc, triangle, LEN(triangle),
+		             Convex, CoordModeOrigin);
 	}
 }
 
@@ -623,52 +663,26 @@ drawmenu(void)
 	for (menu = currmenu; menu != NULL; menu = menu->parent) {
 		for (item = menu->list; item != NULL; item = item->next) {
 			XftColor *color;
-			int labelx, labely;
 
 			/* determine item color */
-			if (item == menu->selected)
+			if (item == menu->selected && item->label != NULL)
 				color = dc.selected;
 			else
 				color = dc.normal;
 
-			/* continue if item is a separator */
-			if (item->label == NULL)
-				continue;
-
 			/* draw item box */
 			XSetForeground(dpy, dc.gc, color[ColorBG].pixel);
-			XDrawRectangle(dpy, menu->pixmap, dc.gc, 0, item->y,
-			               menu->w, item->h);
 			XFillRectangle(dpy, menu->pixmap, dc.gc, 0, item->y,
 			               menu->w, item->h);
 
-			/* draw item label */
-			labelx = 0 + dc.font->height;
-			labely = item->y + dc.font->height + geom.itemb / 2;
-			XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
-			XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
-			                  labelx, labely, item->label,
-			                  item->labellen);
-
-			/* draw triangle, if item contains a submenu */
-			if (item->submenu != NULL) {
-				int trianglex = menu->w - dc.font->height + geom.itemb - 1;
-				int triangley = item->y + (3 * item->h)/8 -1;
-
-				XPoint triangle[] = {
-					{trianglex, triangley},
-					{trianglex + item->h/8 + 1, item->y + item->h/2},
-					{trianglex, triangley + item->h/4 + 2},
-					{trianglex, triangley}
-				};
-
-				XFillPolygon(dpy, menu->pixmap, dc.gc, triangle, LEN(triangle),
-				             Convex, CoordModeOrigin);
-			}
-
-			XCopyArea(dpy, menu->pixmap, menu->win, dc.gc, 0, item->y,
-			          menu->w, item->h, 0, item->y);
+			if (item->label == NULL)  /* item is a separator */
+				drawseparator(menu, item);
+			else                      /* item is a regular item */
+				drawitem(menu, item, color);
 		}
+
+		XCopyArea(dpy, menu->pixmap, menu->win, dc.gc, 0, 0,
+			      menu->w, menu->h, 0, 0);
 	}
 }
 
@@ -723,6 +737,8 @@ run(void)
 	KeySym ksym;
 	XEvent ev;
 
+	setcurrmenu(rootmenu);
+
 	while (!XNextEvent(dpy, &ev)) {
 		switch(ev.type) {
 		case Expose:
@@ -731,38 +747,34 @@ run(void)
 			break;
 		case MotionNotify:
 			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
-			if (menu != NULL && item != NULL) {
-				if (previtem != item) {
-					if (item->submenu != NULL)
-						setcurrmenu(item->submenu);
-					else
-						setcurrmenu(menu);
-					previtem = item;
-					drawmenu();
-				} else if (menu->selected != item) {
-					menu->selected = item;
-					drawmenu();
-				}
+			if (menu == NULL || item == NULL)
+				break;
+			if (previtem != item) {
+				menu->selected = item;
+				if (item->submenu != NULL)
+					setcurrmenu(item->submenu);
+				else
+					setcurrmenu(menu);
+				previtem = item;
+				drawmenu();
 			}
 			break;
 		case ButtonRelease:
 			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
-			if (menu != NULL && item != NULL) {
-selectitem:
-				if (item->label == NULL)
-					break;  /* ignore separators */
-				if (item->submenu != NULL) {
-					setcurrmenu(item->submenu);
-				} else {
-					printf("%s\n", item->output);
-					return;
-				}
-				currmenu->selected = currmenu->list;
-				drawmenu();
+			if (menu == NULL || item == NULL)
 				break;
+selectitem:
+			if (item->label == NULL)
+				break;  /* ignore separators */
+			if (item->submenu != NULL) {
+				setcurrmenu(item->submenu);
 			} else {
+				printf("%s\n", item->output);
 				return;
 			}
+			currmenu->selected = currmenu->list;
+			drawmenu();
+			break;
 		case ButtonPress:
 			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
 			if (menu == NULL || item == NULL)
@@ -798,6 +810,7 @@ selectitem:
 			drawmenu();
 			break;
 		case LeaveNotify:
+			previtem = NULL;
 			currmenu->selected = NULL;
 			drawmenu();
 			break;
@@ -805,7 +818,7 @@ selectitem:
 	}
 }
 
-/* recursivelly free a pixmap */
+/* recursivelly free pixmaps and destroy windows */
 static void
 freewindow(struct Menu *menu)
 {
@@ -830,8 +843,8 @@ cleanup(void)
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorFG]);
 	XftColorFree(dpy, visual, colormap, &dc.selected[ColorBG]);
 	XftColorFree(dpy, visual, colormap, &dc.selected[ColorFG]);
-	XftColorFree(dpy, visual, colormap, &dc.decoration[ColorBG]);
-	XftColorFree(dpy, visual, colormap, &dc.decoration[ColorFG]);
+	XftColorFree(dpy, visual, colormap, &dc.separator);
+	XftColorFree(dpy, visual, colormap, &dc.border);
 
 	XFreeGC(dpy, dc.gc);
 	XCloseDisplay(dpy);
