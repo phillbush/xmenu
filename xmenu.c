@@ -91,11 +91,11 @@ static void cleanup(struct Menu *rootmenu);
 static void usage(void);
 
 /* global variables (X stuff and geometries) */
-static Colormap colormap;
 static Display *dpy;
+static int screen;
 static Visual *visual;
 static Window rootwin;
-static int screen;
+static Colormap colormap;
 static struct DC dc;
 static struct Geometry geom;
 
@@ -116,6 +116,9 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
+
+	if (argc != 0)
+		usage();
 
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
@@ -305,16 +308,15 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 static struct Menu *
 parsestdin(void)
 {
-	struct Menu *rootmenu;
 	char *s, buf[BUFSIZ];
 	char *label, *output;
 	unsigned level = 0;
 	unsigned i;
 	struct Item *curritem = NULL;   /* item currently being read */
  	struct Menu *prevmenu = NULL;   /* menu the previous item was added to */
-	struct Item *item;              /* dummy item for for loops */
-	struct Menu *menu;              /* dummy menu for for loops */
- 	size_t count = 0;   /* number of items in the current menu */
+	struct Item *item;              /* dummy item for loops */
+	struct Menu *menu;              /* dummy menu for loops */
+	struct Menu *rootmenu;          /* menu to be returned */
 
  	rootmenu = NULL;
 
@@ -350,7 +352,6 @@ parsestdin(void)
 			 menu = allocmenu(NULL, curritem, level);
 			 rootmenu = menu;
 			 prevmenu = menu;
-			 count = 1;
 			 curritem->prev = NULL;
 			 curritem->next = NULL;
 		} else if (level < prevmenu->level) {   /* item is continuation of a parent menu*/
@@ -393,7 +394,6 @@ parsestdin(void)
 
 			prevmenu = menu;
 		}
-		count++;
 	}
 
 	return rootmenu;
@@ -729,20 +729,18 @@ run(struct Menu *currmenu)
 		case MotionNotify:
 			menu = getmenu(currmenu, ev.xbutton.window);
 			item = getitem(menu, ev.xbutton.y);
-			if (menu == NULL || item == NULL)
+			if (menu == NULL || item == NULL || previtem == item)
 				break;
-			if (previtem != item) {
-				previtem = item;
-				menu->selected = item;
-				if (item->submenu != NULL) {
-					currmenu = item->submenu;
-					currmenu->selected = NULL;
-				} else {
-					currmenu = menu;
-				}
-				mapmenu(currmenu);
-				drawmenu(currmenu);
+			previtem = item;
+			menu->selected = item;
+			if (item->submenu != NULL) {
+				currmenu = item->submenu;
+				currmenu->selected = NULL;
+			} else {
+				currmenu = menu;
 			}
+			mapmenu(currmenu);
+			drawmenu(currmenu);
 			break;
 		case ButtonRelease:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -846,6 +844,6 @@ cleanup(struct Menu *rootmenu)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu title...\n");
+	(void)fprintf(stderr, "usage: xmenu\n");
 	exit(1);
 }
