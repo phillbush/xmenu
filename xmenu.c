@@ -34,16 +34,10 @@ struct DC {
 };
 
 /* menu geometry structure */
-struct MenuGeometry {
-	int itemb;      /* item border */
-	int itemw;      /* item width */
-	int itemh;      /* item height */
-	int border;     /* window border width */
-	int separator;  /* menu separator width */
-};
-
-/* screen geometry structure */
-struct ScreenGeometry {
+struct Geometry {
+	int border;             /* window border width */
+	int separator;          /* menu separator width */
+	int itemw, itemh;       /* item width and height */
 	int cursx, cursy;       /* cursor position */
 	int screenw, screenh;   /* screen width and height */
 };
@@ -73,48 +67,44 @@ struct Menu {
 	Window win;             /* menu window to map on the screen */
 };
 
-/* function declarations */
-static void getcolor(const char *s, XftColor *color);
+/* functions declarations */
 static void getresources(void);
+static void getcolor(const char *s, XftColor *color);
 static void setupdc(void);
-static void setupgeom(void);
+static void calcgeom(void);
 static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
-static struct Menu *getmenu(Window win);
-static struct Item *getitem(struct Menu *menu, int y);
-static void drawseparator(struct Menu *menu, struct Item *item);
-static void drawitem(struct Menu *menu, struct Item *item, XftColor *color);
-static void drawmenu(void);
-static void calcscreengeom(void);
+static struct Menu *parsestdin(void);
 static void calcmenu(struct Menu *menu);
 static void grabpointer(void);
 static void grabkeyboard(void);
-static void setcurrmenu(struct Menu *currmenu_new);
-static void parsestdin(void);
-static void run(void);
+static struct Menu *getmenu(struct Menu *currmenu, Window win);
+static struct Item *getitem(struct Menu *menu, int y);
+static void mapmenu(struct Menu *currmenu);
+static void drawseparator(struct Menu *menu, struct Item *item);
+static void drawitem(struct Menu *menu, struct Item *item, XftColor *color);
+static void drawmenu(struct Menu *currmenu);
+static struct Item *itemcycle(struct Menu *currmenu, int direction);
+static void run(struct Menu *currmenu);
 static void freewindow(struct Menu *menu);
-static void cleanup(void);
+static void cleanup(struct Menu *rootmenu);
 static void usage(void);
 
-/* X variables */
+/* global variables (X stuff and geometries) */
 static Colormap colormap;
 static Display *dpy;
 static Visual *visual;
 static Window rootwin;
 static int screen;
 static struct DC dc;
-static struct ScreenGeometry screengeom;
-
-/* menu variables */
-static struct Menu *rootmenu = NULL;
-static struct Menu *currmenu = NULL;
-static struct MenuGeometry geom;
+static struct Geometry geom;
 
 #include "config.h"
 
 int
 main(int argc, char *argv[])
 {
+	struct Menu *rootmenu;
 	int ch;
 
 	while ((ch = getopt(argc, argv, "")) != -1) {
@@ -138,13 +128,12 @@ main(int argc, char *argv[])
 	/* setup */
 	getresources();
 	setupdc();
-	setupgeom();
+	calcgeom();
 
 	/* generate menus and recalculate them */
-	parsestdin();
+	rootmenu = parsestdin();
 	if (rootmenu == NULL)
 		errx(1, "no menu generated");
-	calcscreengeom();
 	calcmenu(rootmenu);
 
 	/* grab mouse and keyboard */
@@ -152,9 +141,9 @@ main(int argc, char *argv[])
 	grabkeyboard();
 
 	/* run event loop */
-	run();
+	run(rootmenu);
 
-	cleanup();
+	cleanup(rootmenu);
 	return 0;
 }
 
@@ -232,11 +221,17 @@ setupdc(void)
 	dc.gc = XCreateGC(dpy, rootwin, 0, NULL);
 }
 
-/* init menu geometry values */
+/* calculate menu and screen geometry */
 static void
-setupgeom(void)
+calcgeom(void)
 {
-	geom.itemb = padding_pixels;
+	Window w1, w2;  /* unused variables */
+	int a, b;       /* unused variables */
+	unsigned mask;  /* unused variable */
+
+	XQueryPointer(dpy, rootwin, &w1, &w2, &geom.cursx, &geom.cursy, &a, &b, &mask);
+	geom.screenw = DisplayWidth(dpy, screen);
+	geom.screenh = DisplayHeight(dpy, screen);
 	geom.itemh = dc.font->height + padding_pixels * 2;
 	geom.itemw = width_pixels;
 	geom.border = border_pixels;
@@ -307,9 +302,10 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 }
 
 /* create menus and items from the stdin */
-static void
+static struct Menu *
 parsestdin(void)
 {
+	struct Menu *rootmenu;
 	char *s, buf[BUFSIZ];
 	char *label, *output;
 	unsigned level = 0;
@@ -319,6 +315,8 @@ parsestdin(void)
 	struct Item *item;              /* dummy item for for loops */
 	struct Menu *menu;              /* dummy menu for for loops */
  	size_t count = 0;   /* number of items in the current menu */
+
+ 	rootmenu = NULL;
 
 	while (fgets(buf, BUFSIZ, stdin) != NULL) {
 		level = 0;
@@ -397,19 +395,8 @@ parsestdin(void)
 		}
 		count++;
 	}
-}
 
-/* calculate screen geometry */
-static void
-calcscreengeom(void)
-{
-	Window w1, w2;  /* unused variables */
-	int a, b;       /* unused variables */
-	unsigned mask;  /* unused variable */
-
-	XQueryPointer(dpy, rootwin, &w1, &w2, &screengeom.cursx, &screengeom.cursy, &a, &b, &mask);
-	screengeom.screenw = DisplayWidth(dpy, screen);
-	screengeom.screenh = DisplayHeight(dpy, screen);
+	return rootmenu;
 }
 
 /* recursivelly calculate menu geometry and set window hints */
@@ -440,27 +427,27 @@ calcmenu(struct Menu *menu)
 
 	/* calculate menu's x and y positions */
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
-		if (screengeom.screenw - screengeom.cursx >= menu->w)
-			menu->x = screengeom.cursx;
-		else if (screengeom.cursx > menu->w)
-			menu->x = screengeom.cursx - menu->w;
+		if (geom.screenw - geom.cursx >= menu->w)
+			menu->x = geom.cursx;
+		else if (geom.cursx > menu->w)
+			menu->x = geom.cursx - menu->w;
 
-		if (screengeom.screenh - screengeom.cursy >= menu->h)
-			menu->y = screengeom.cursy;
-		else if (screengeom.screenh > menu->h)
-			menu->y = screengeom.screenh - menu->h;
+		if (geom.screenh - geom.cursy >= menu->h)
+			menu->y = geom.cursy;
+		else if (geom.screenh > menu->h)
+			menu->y = geom.screenh - menu->h;
 	} else {                    /* else, calculate in respect to parent menu */
-		if (screengeom.screenw - (menu->parent->x + menu->parent->w + geom.border) >= menu->w)
+		if (geom.screenw - (menu->parent->x + menu->parent->w + geom.border) >= menu->w)
 			menu->x = menu->parent->x + menu->parent->w + geom.border;
 		else if (menu->parent->x > menu->w + geom.border)
 			menu->x = menu->parent->x - menu->w - geom.border;
 
-		if (screengeom.screenh - (menu->caller->y + menu->parent->y) > menu->h)
+		if (geom.screenh - (menu->caller->y + menu->parent->y) > menu->h)
 			menu->y = menu->caller->y + menu->parent->y;
-		else if (screengeom.screenh - menu->parent->y > menu->h)
+		else if (geom.screenh - menu->parent->y > menu->h)
 			menu->y = menu->parent->y;
-		else if (screengeom.screenh > menu->h)
-			menu->y = screengeom.screenh - menu->h;
+		else if (geom.screenh > menu->h)
+			menu->y = geom.screenh - menu->h;
 	}
 
 	/* update menu geometry */
@@ -524,7 +511,7 @@ grabkeyboard(void)
 
 /* get menu of given window */
 static struct Menu *
-getmenu(Window win)
+getmenu(struct Menu *currmenu, Window win)
 {
 	struct Menu *menu;
 
@@ -551,37 +538,35 @@ getitem(struct Menu *menu, int y)
 	return NULL;
 }
 
-/* set currentmenu to menu, umap previous menus and map current menu and its parents */
+/* umap previous menus and map current menu and its parents */
 static void
-setcurrmenu(struct Menu *currmenu_new)
+mapmenu(struct Menu *currmenu)
 {
+	static struct Menu *prevmenu = NULL;
 	struct Menu *menu, *menu_;
-	struct Item *item;
 	struct Menu *lcamenu;   /* lowest common ancestor menu */
 	unsigned minlevel;      /* level of the closest to root menu */
 	unsigned maxlevel;      /* level of the closest to root menu */
 
-	/* do not update currmenu to itself */
-	if (currmenu_new == currmenu)
+	/* do not remap current menu if it wasn't updated*/
+	if (prevmenu == currmenu)
 		return;
 
-	/* if there was no currmenu, skip calculations */
-	if (currmenu == NULL) {
-		currmenu = currmenu_new;
+	/* if this is the first time mapping, skip calculations */
+	if (prevmenu == NULL) {
 		XMapWindow(dpy, currmenu->win);
-		return;
+		goto done;
 	}
 
 	/* find lowest common ancestor menu */
-	lcamenu = rootmenu;
-	minlevel = MIN(currmenu_new->level, currmenu->level);
-	maxlevel = MAX(currmenu_new->level, currmenu->level);
-	if (currmenu_new->level == maxlevel) {
-		menu = currmenu_new;
-		menu_ = currmenu;
-	} else {
+	minlevel = MIN(currmenu->level, prevmenu->level);
+	maxlevel = MAX(currmenu->level, prevmenu->level);
+	if (currmenu->level == maxlevel) {
 		menu = currmenu;
-		menu_ = currmenu_new;
+		menu_ = prevmenu;
+	} else {
+		menu = prevmenu;
+		menu_ = currmenu;
 	}
 	while (menu->level > minlevel)
 		menu = menu->parent;
@@ -592,18 +577,18 @@ setcurrmenu(struct Menu *currmenu_new)
 	lcamenu = menu;
 
 	/* unmap menus from currmenu (inclusive) until lcamenu (exclusive) */
-	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
+	for (menu = prevmenu; menu != lcamenu; menu = menu->parent) {
 		menu->selected = NULL;
 		XUnmapWindow(dpy, menu->win);
 	}
 
-	currmenu = currmenu_new;
-
 	/* map menus from currmenu (inclusive) until lcamenu (exclusive) */
-	item = NULL;
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
 		XMapWindow(dpy, menu->win);
 	}
+
+done:
+	prevmenu = currmenu;
 }
 
 /* draw separator item */
@@ -627,15 +612,15 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 	int x, y;
 
 	x = 0 + dc.font->height;
-	y = item->y + dc.font->height + geom.itemb / 2;
+	y = item->y + item->h/2 + dc.font->ascent/2 - 1;
 	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
                       x, y, item->label, item->labellen);
 
 	/* draw triangle, if item contains a submenu */
 	if (item->submenu != NULL) {
-		x = menu->w - dc.font->height + geom.itemb - 1;
-		y = item->y + geom.itemh/2 - triangle_height/2 - 1;
+		x = menu->w - dc.font->height/2 - triangle_width/2;
+		y = item->y + item->h/2 - triangle_height/2 - 1;
 
 		XPoint triangle[] = {
 			{x, y},
@@ -651,7 +636,7 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 
 /* draw items of the current menu and of its ancestors */
 static void
-drawmenu(void)
+drawmenu(struct Menu *currmenu)
 {
 	struct Menu *menu;
 	struct Item *item;
@@ -684,7 +669,7 @@ drawmenu(void)
 
 /* cycle through the items; non-zero direction is next, zero is prev */
 static struct Item *
-itemcycle(int direction)
+itemcycle(struct Menu *currmenu, int direction)
 {
 	struct Item *item;
 	struct Item *lastitem;
@@ -725,7 +710,7 @@ itemcycle(int direction)
 
 /* run event loop */
 static void
-run(void)
+run(struct Menu *currmenu)
 {
 	struct Menu *menu;
 	struct Item *item;
@@ -733,31 +718,34 @@ run(void)
 	KeySym ksym;
 	XEvent ev;
 
-	setcurrmenu(rootmenu);
+	mapmenu(currmenu);
 
 	while (!XNextEvent(dpy, &ev)) {
 		switch(ev.type) {
 		case Expose:
 			if (ev.xexpose.count == 0)
-				drawmenu();
+				drawmenu(currmenu);
 			break;
 		case MotionNotify:
-			menu = getmenu(ev.xbutton.window);
+			menu = getmenu(currmenu, ev.xbutton.window);
 			item = getitem(menu, ev.xbutton.y);
 			if (menu == NULL || item == NULL)
 				break;
 			if (previtem != item) {
-				menu->selected = item;
-				if (item->submenu != NULL)
-					setcurrmenu(item->submenu);
-				else
-					setcurrmenu(menu);
 				previtem = item;
-				drawmenu();
+				menu->selected = item;
+				if (item->submenu != NULL) {
+					currmenu = item->submenu;
+					currmenu->selected = NULL;
+				} else {
+					currmenu = menu;
+				}
+				mapmenu(currmenu);
+				drawmenu(currmenu);
 			}
 			break;
 		case ButtonRelease:
-			menu = getmenu(ev.xbutton.window);
+			menu = getmenu(currmenu, ev.xbutton.window);
 			item = getitem(menu, ev.xbutton.y);
 			if (menu == NULL || item == NULL)
 				break;
@@ -765,16 +753,17 @@ selectitem:
 			if (item->label == NULL)
 				break;  /* ignore separators */
 			if (item->submenu != NULL) {
-				setcurrmenu(item->submenu);
+				currmenu = item->submenu;
 			} else {
 				printf("%s\n", item->output);
 				return;
 			}
+			mapmenu(currmenu);
 			currmenu->selected = currmenu->list;
-			drawmenu();
+			drawmenu(currmenu);
 			break;
 		case ButtonPress:
-			menu = getmenu(ev.xbutton.window);
+			menu = getmenu(currmenu, ev.xbutton.window);
 			if (menu == NULL)
 				return;
 			break;
@@ -782,7 +771,7 @@ selectitem:
 			ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
 
 			/* esc closes xmenu when current menu is the root menu */
-			if (ksym == XK_Escape && currmenu == rootmenu)
+			if (ksym == XK_Escape && currmenu->parent == NULL)
 				return;
 
 			/* Shift-Tab = ISO_Left_Tab */
@@ -792,9 +781,9 @@ selectitem:
 			/* cycle through menu */
 			item = NULL;
 			if (ksym == XK_ISO_Left_Tab || ksym == XK_Up) {
-				item = itemcycle(ITEMPREV);
+				item = itemcycle(currmenu, ITEMPREV);
 			} else if (ksym == XK_Tab || ksym == XK_Down) {
-				item = itemcycle(ITEMNEXT);
+				item = itemcycle(currmenu, ITEMNEXT);
 			} else if ((ksym == XK_Return || ksym == XK_Right) &&
 			           currmenu->selected != NULL) {
 				item = currmenu->selected;
@@ -802,16 +791,17 @@ selectitem:
 			} else if ((ksym == XK_Escape || ksym == XK_Left) &&
 			           currmenu->parent != NULL) {
 				item = currmenu->parent->selected;
-				setcurrmenu(currmenu->parent);
+				currmenu = currmenu->parent;
+				mapmenu(currmenu);
 			} else
 				break;
 			currmenu->selected = item;
-			drawmenu();
+			drawmenu(currmenu);
 			break;
 		case LeaveNotify:
 			previtem = NULL;
 			currmenu->selected = NULL;
-			drawmenu();
+			drawmenu(currmenu);
 			break;
 		}
 	}
@@ -834,8 +824,11 @@ freewindow(struct Menu *menu)
 
 /* cleanup and exit */
 static void
-cleanup(void)
+cleanup(struct Menu *rootmenu)
 {
+	XUngrabPointer(dpy, CurrentTime);
+	XUngrabKeyboard(dpy, CurrentTime);
+
 	freewindow(rootmenu);
 
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorBG]);
