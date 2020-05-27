@@ -80,7 +80,8 @@ static void setupdc(void);
 static void setupgeom(void);
 static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
-static void getmenuitem(Window win, int y, struct Menu **menu_ret, struct Item **item_ret);
+static struct Menu *getmenu(Window win);
+static struct Item *getitem(struct Menu *menu, int y);
 static void drawseparator(struct Menu *menu, struct Item *item);
 static void drawitem(struct Menu *menu, struct Item *item, XftColor *color);
 static void drawmenu(void);
@@ -107,8 +108,6 @@ static struct ScreenGeometry screengeom;
 /* menu variables */
 static struct Menu *rootmenu = NULL;
 static struct Menu *currmenu = NULL;
-static char **menutitle;
-static int menutitlecount;
 static struct MenuGeometry geom;
 
 #include "config.h"
@@ -127,9 +126,6 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-
-	menutitle = argv;
-	menutitlecount = argc;
 
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
@@ -422,7 +418,6 @@ calcmenu(struct Menu *menu)
 {
 	static XClassHint classh = {PROGNAME, PROGNAME};
 	XWindowChanges changes;
-	XTextProperty textprop;
 	XSizeHints sizeh;
 	XGlyphInfo ext;
 	struct Item *item;
@@ -454,8 +449,6 @@ calcmenu(struct Menu *menu)
 			menu->y = screengeom.cursy;
 		else if (screengeom.screenh > menu->h)
 			menu->y = screengeom.screenh - menu->h;
-
-		XStringListToTextProperty(menutitle, menutitlecount, &textprop);
 	} else {                    /* else, calculate in respect to parent menu */
 		if (screengeom.screenw - (menu->parent->x + menu->parent->w + geom.border) >= menu->w)
 			menu->x = menu->parent->x + menu->parent->w + geom.border;
@@ -468,8 +461,6 @@ calcmenu(struct Menu *menu)
 			menu->y = menu->parent->y;
 		else if (screengeom.screenh > menu->h)
 			menu->y = screengeom.screenh - menu->h;
-
-		XStringListToTextProperty(&(menu->caller->output), 1, &textprop);
 	}
 
 	/* update menu geometry */
@@ -483,7 +474,7 @@ calcmenu(struct Menu *menu)
 	sizeh.flags = PMaxSize | PMinSize;
 	sizeh.min_width = sizeh.max_width = menu->w;
 	sizeh.min_height = sizeh.max_height = menu->h;
-	XSetWMProperties(dpy, menu->win, &textprop, NULL, NULL, 0, &sizeh,
+	XSetWMProperties(dpy, menu->win, NULL, NULL, NULL, 0, &sizeh,
 	                 NULL, &classh);
 
 	/* create pixmap and XftDraw */
@@ -531,28 +522,33 @@ grabkeyboard(void)
 	errx(1, "cannot grab keyboard");
 }
 
-/* get menu and item of given window and position */
-static void
-getmenuitem(Window win, int y,
-            struct Menu **menu_ret, struct Item **item_ret)
+/* get menu of given window */
+static struct Menu *
+getmenu(Window win)
 {
-	struct Menu *menu = NULL;
-	struct Item *item = NULL;
+	struct Menu *menu;
 
-	for (menu = currmenu; menu != NULL; menu = menu->parent) {
-		if (menu->win == win) {
-			for (item = menu->list; item != NULL; item = item->next) {
-				if (y >= item->y && y <= item->y + item->h) {
-					goto done;
-				}
-			}
-		}
-	}
+	for (menu = currmenu; menu != NULL; menu = menu->parent)
+		if (menu->win == win)
+			return menu;
 
+	return NULL;
+}
 
-done:
-	*menu_ret = menu;
-	*item_ret = item;
+/* get item of given menu and position */
+static struct Item *
+getitem(struct Menu *menu, int y)
+{
+	struct Item *item;
+
+	if (menu == NULL)
+		return NULL;
+
+	for (item = menu->list; item != NULL; item = item->next)
+		if (y >= item->y && y <= item->y + item->h)
+			return item;
+
+	return NULL;
 }
 
 /* set currentmenu to menu, umap previous menus and map current menu and its parents */
@@ -746,7 +742,8 @@ run(void)
 				drawmenu();
 			break;
 		case MotionNotify:
-			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
+			menu = getmenu(ev.xbutton.window);
+			item = getitem(menu, ev.xbutton.y);
 			if (menu == NULL || item == NULL)
 				break;
 			if (previtem != item) {
@@ -760,7 +757,8 @@ run(void)
 			}
 			break;
 		case ButtonRelease:
-			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
+			menu = getmenu(ev.xbutton.window);
+			item = getitem(menu, ev.xbutton.y);
 			if (menu == NULL || item == NULL)
 				break;
 selectitem:
@@ -776,13 +774,14 @@ selectitem:
 			drawmenu();
 			break;
 		case ButtonPress:
-			getmenuitem(ev.xbutton.window, ev.xbutton.y, &menu, &item);
-			if (menu == NULL || item == NULL)
+			menu = getmenu(ev.xbutton.window);
+			if (menu == NULL)
 				return;
 			break;
 		case KeyPress:
 			ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
 
+			/* esc closes xmenu when current menu is the root menu */
 			if (ksym == XK_Escape && currmenu == rootmenu)
 				return;
 
