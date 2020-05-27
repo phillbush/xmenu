@@ -555,7 +555,8 @@ mapmenu(struct Menu *currmenu)
 	/* if this is the first time mapping, skip calculations */
 	if (prevmenu == NULL) {
 		XMapWindow(dpy, currmenu->win);
-		goto done;
+		prevmenu = currmenu;
+		return;
 	}
 
 	/* find lowest common ancestor menu */
@@ -587,7 +588,6 @@ mapmenu(struct Menu *currmenu)
 		XMapWindow(dpy, menu->win);
 	}
 
-done:
 	prevmenu = currmenu;
 }
 
@@ -611,7 +611,7 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 {
 	int x, y;
 
-	x = 0 + dc.font->height;
+	x = dc.font->height;
 	y = item->y + item->h/2 + dc.font->ascent/2 - 1;
 	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
