@@ -86,7 +86,7 @@ static void drawitem(struct Menu *menu, struct Item *item, XftColor *color);
 static void drawmenu(struct Menu *currmenu);
 static struct Item *itemcycle(struct Menu *currmenu, int direction);
 static void run(struct Menu *currmenu);
-static void freewindow(struct Menu *menu);
+static void freemenu(struct Menu *menu);
 static void cleanup(struct Menu *rootmenu);
 static void usage(void);
 
@@ -409,6 +409,7 @@ calcmenu(struct Menu *menu)
 	XGlyphInfo ext;
 	struct Item *item;
 	int labelwidth;
+	int width, height;
 
 	/* calculate items positions and menu width and height */
 	menu->w = geom.itemw;
@@ -426,28 +427,30 @@ calcmenu(struct Menu *menu)
 	}
 
 	/* calculate menu's x and y positions */
+	width = menu->w + geom.border * 2;
+	height = menu->h + geom.border * 2;
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
 		if (geom.screenw - geom.cursx >= menu->w)
 			menu->x = geom.cursx;
-		else if (geom.cursx > menu->w)
-			menu->x = geom.cursx - menu->w;
+		else if (geom.cursx > width)
+			menu->x = geom.cursx - width;
 
-		if (geom.screenh - geom.cursy >= menu->h)
+		if (geom.screenh - geom.cursy >= height)
 			menu->y = geom.cursy;
-		else if (geom.screenh > menu->h)
-			menu->y = geom.screenh - menu->h;
+		else if (geom.screenh > height)
+			menu->y = geom.screenh - height;
 	} else {                    /* else, calculate in respect to parent menu */
-		if (geom.screenw - (menu->parent->x + menu->parent->w + geom.border) >= menu->w)
+		if (geom.screenw - (menu->parent->x + menu->parent->w + geom.border) >= width)
 			menu->x = menu->parent->x + menu->parent->w + geom.border;
 		else if (menu->parent->x > menu->w + geom.border)
 			menu->x = menu->parent->x - menu->w - geom.border;
 
-		if (geom.screenh - (menu->caller->y + menu->parent->y) > menu->h)
+		if (geom.screenh - (menu->caller->y + menu->parent->y) > height)
 			menu->y = menu->caller->y + menu->parent->y;
-		else if (geom.screenh - menu->parent->y > menu->h)
+		else if (geom.screenh - menu->parent->y > height)
 			menu->y = menu->parent->y;
-		else if (geom.screenh > menu->h)
-			menu->y = geom.screenh - menu->h;
+		else if (geom.screenh > height)
+			menu->y = geom.screenh - height;
 	}
 
 	/* update menu geometry */
@@ -807,17 +810,24 @@ selectitem:
 
 /* recursivelly free pixmaps and destroy windows */
 static void
-freewindow(struct Menu *menu)
+freemenu(struct Menu *menu)
 {
 	struct Item *item;
+	struct Item *tmp;
 
-	for (item = menu->list; item != NULL; item = item->next)
+	item = menu->list;
+	while (item != NULL) {
 		if (item->submenu != NULL)
-			freewindow(item->submenu);
+			freemenu(item->submenu);
+		tmp = item;
+		item = item->next;
+		free(tmp);
+	}
 
 	XFreePixmap(dpy, menu->pixmap);
 	XftDrawDestroy(menu->draw);
 	XDestroyWindow(dpy, menu->win);
+	free(menu);
 }
 
 /* cleanup and exit */
@@ -827,7 +837,7 @@ cleanup(struct Menu *rootmenu)
 	XUngrabPointer(dpy, CurrentTime);
 	XUngrabKeyboard(dpy, CurrentTime);
 
-	freewindow(rootmenu);
+	freemenu(rootmenu);
 
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorBG]);
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorFG]);
