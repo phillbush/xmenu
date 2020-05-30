@@ -75,7 +75,9 @@ static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
 static struct Menu *buildmenutree(unsigned level, const char *label, const char *output);
 static struct Menu *parsestdin(void);
-static void calcmenu(struct Geometry *geom, struct Menu *menu);
+static void setupmenusize(struct Geometry *geom, struct Menu *menu);
+static void setupmenupos(struct Geometry *geom, struct Menu *menu);
+static void setupmenu(struct Geometry *geom, struct Menu *menu);
 static void grabpointer(void);
 static void grabkeyboard(void);
 static struct Menu *getmenu(struct Menu *currmenu, Window win);
@@ -134,11 +136,11 @@ main(int argc, char *argv[])
 	setupdc();
 	calcgeom(&geom);
 
-	/* generate menus and recalculate them */
+	/* generate menus and set them up */
 	rootmenu = parsestdin();
 	if (rootmenu == NULL)
 		errx(1, "no menu generated");
-	calcmenu(&geom, rootmenu);
+	setupmenu(&geom, rootmenu);
 
 	/* grab mouse and keyboard */
 	grabpointer();
@@ -291,10 +293,10 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->list = list;
 	menu->caller = NULL;
 	menu->selected = NULL;
-	menu->w = 0;    /* calculated by calcmenu() */
-	menu->h = 0;    /* calculated by calcmenu() */
-	menu->x = 0;    /* calculated by calcmenu() */
-	menu->y = 0;    /* calculated by calcmenu() */
+	menu->w = 0;    /* calculated by setupmenu() */
+	menu->h = 0;    /* calculated by setupmenu() */
+	menu->x = 0;    /* calculated by setupmenu() */
+	menu->y = 0;    /* calculated by setupmenu() */
 	menu->level = level;
 
 	swa.override_redirect = True;
@@ -405,19 +407,14 @@ parsestdin(void)
 	return rootmenu;
 }
 
-/* recursivelly calculate menu geometry and set window hints */
+/* setup the size of a menu and the position of its items */
 static void
-calcmenu(struct Geometry *geom, struct Menu *menu)
+setupmenusize(struct Geometry *geom, struct Menu *menu)
 {
-	static XClassHint classh = {PROGNAME, PROGNAME};
-	XWindowChanges changes;
-	XSizeHints sizeh;
 	XGlyphInfo ext;
 	struct Item *item;
 	int labelwidth;
-	int width, height;
 
-	/* calculate items positions and menu width and height */
 	menu->w = geom->itemw;
 	for (item = menu->list; item != NULL; item = item->next) {
 		item->y = menu->h;
@@ -428,13 +425,20 @@ calcmenu(struct Geometry *geom, struct Menu *menu)
 			item->h = geom->itemh;
 		menu->h += item->h;
 
+		/* get length of item->label rendered in the font */
 		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)item->label,
 		                   item->labellen, &ext);
 		labelwidth = ext.xOff + dc.font->height * 2;
 		menu->w = MAX(menu->w, labelwidth);
 	}
+}
 
-	/* calculate menu's x and y positions */
+/* setup the position of a menu */
+static void
+setupmenupos(struct Geometry *geom, struct Menu *menu)
+{
+	int width, height;
+
 	width = menu->w + geom->border * 2;
 	height = menu->h + geom->border * 2;
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
@@ -460,6 +464,20 @@ calcmenu(struct Geometry *geom, struct Menu *menu)
 		else if (geom->screenh > height)
 			menu->y = geom->screenh - height;
 	}
+}
+
+/* recursivelly setup menu configuration and its pixmap */
+static void
+setupmenu(struct Geometry *geom, struct Menu *menu)
+{
+	struct Item *item;
+	static XClassHint classh = {PROGNAME, PROGNAME};
+	XWindowChanges changes;
+	XSizeHints sizeh;
+
+	/* setup size and position of menus */
+	setupmenusize(geom, menu);
+	setupmenupos(geom, menu);
 
 	/* update menu geometry */
 	changes.border_width = geom->border;
@@ -484,7 +502,7 @@ calcmenu(struct Geometry *geom, struct Menu *menu)
 	/* calculate positions of submenus */
 	for (item = menu->list; item != NULL; item = item->next) {
 		if (item->submenu != NULL)
-			calcmenu(geom, item->submenu);
+			setupmenu(geom, item->submenu);
 	}
 }
 
