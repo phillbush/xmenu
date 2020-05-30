@@ -90,7 +90,7 @@ static void freemenu(struct Menu *menu);
 static void cleanup(void);
 static void usage(void);
 
-/* global variables (X stuff and geometries) */
+/* X stuff */
 static Display *dpy;
 static int screen;
 static Visual *visual;
