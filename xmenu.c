@@ -70,12 +70,12 @@ struct Menu {
 static void getresources(void);
 static void getcolor(const char *s, XftColor *color);
 static void setupdc(void);
-static void calcgeom(void);
+static void calcgeom(struct Geometry *geom);
 static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
 static struct Menu * buildmenutree(unsigned level, const char *label, const char *output);
 static struct Menu *parsestdin(void);
-static void calcmenu(struct Menu *menu);
+static void calcmenu(struct Geometry *geom, struct Menu *menu);
 static void grabpointer(void);
 static void grabkeyboard(void);
 static struct Menu *getmenu(struct Menu *currmenu, Window win);
@@ -97,14 +97,15 @@ static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
 static struct DC dc;
-static struct Geometry geom;
 
 #include "config.h"
 
+/* xmenu: generate menu from stdin and print selected entry to stdout */
 int
 main(int argc, char *argv[])
 {
 	struct Menu *rootmenu;
+	struct Geometry geom;
 	int ch;
 
 	while ((ch = getopt(argc, argv, "")) != -1) {
@@ -131,13 +132,13 @@ main(int argc, char *argv[])
 	/* setup */
 	getresources();
 	setupdc();
-	calcgeom();
+	calcgeom(&geom);
 
 	/* generate menus and recalculate them */
 	rootmenu = parsestdin();
 	if (rootmenu == NULL)
 		errx(1, "no menu generated");
-	calcmenu(rootmenu);
+	calcmenu(&geom, rootmenu);
 
 	/* grab mouse and keyboard */
 	grabpointer();
@@ -229,19 +230,19 @@ setupdc(void)
 
 /* calculate menu and screen geometry */
 static void
-calcgeom(void)
+calcgeom(struct Geometry *geom)
 {
 	Window w1, w2;  /* unused variables */
 	int a, b;       /* unused variables */
 	unsigned mask;  /* unused variable */
 
-	XQueryPointer(dpy, rootwin, &w1, &w2, &geom.cursx, &geom.cursy, &a, &b, &mask);
-	geom.screenw = DisplayWidth(dpy, screen);
-	geom.screenh = DisplayHeight(dpy, screen);
-	geom.itemh = dc.font->height + padding_pixels * 2;
-	geom.itemw = width_pixels;
-	geom.border = border_pixels;
-	geom.separator = separator_pixels;
+	XQueryPointer(dpy, rootwin, &w1, &w2, &geom->cursx, &geom->cursy, &a, &b, &mask);
+	geom->screenw = DisplayWidth(dpy, screen);
+	geom->screenh = DisplayHeight(dpy, screen);
+	geom->itemh = dc.font->height + padding_pixels * 2;
+	geom->itemw = width_pixels;
+	geom->border = border_pixels;
+	geom->separator = separator_pixels;
 }
 
 /* allocate an item */
@@ -266,7 +267,7 @@ allocitem(const char *label, const char *output)
 		}
 	}
 	item->y = 0;
-	item->h = item->label ? geom.itemh : geom.separator;
+	item->h = 0;
 	if (item->label == NULL)
 		item->labellen = 0;
 	else
@@ -290,7 +291,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->list = list;
 	menu->caller = NULL;
 	menu->selected = NULL;
-	menu->w = geom.itemw;
+	menu->w = 0;    /* calculated by calcmenu() */
 	menu->h = 0;    /* calculated by calcmenu() */
 	menu->x = 0;    /* calculated by calcmenu() */
 	menu->y = 0;    /* calculated by calcmenu() */
@@ -302,7 +303,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	swa.save_under = True;  /* pop-up windows should save_under*/
 	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
 	               | PointerMotionMask | LeaveWindowMask;
-	menu->win = XCreateWindow(dpy, rootwin, 0, 0, geom.itemw, geom.itemh, geom.border,
+	menu->win = XCreateWindow(dpy, rootwin, 0, 0, 1, 1, 0,
 	                          CopyFromParent, CopyFromParent, CopyFromParent,
 	                          CWOverrideRedirect | CWBackPixel |
 	                          CWBorderPixel | CWEventMask | CWSaveUnder,
@@ -406,7 +407,7 @@ parsestdin(void)
 
 /* recursivelly calculate menu geometry and set window hints */
 static void
-calcmenu(struct Menu *menu)
+calcmenu(struct Geometry *geom, struct Menu *menu)
 {
 	static XClassHint classh = {PROGNAME, PROGNAME};
 	XWindowChanges changes;
@@ -417,13 +418,15 @@ calcmenu(struct Menu *menu)
 	int width, height;
 
 	/* calculate items positions and menu width and height */
-	menu->w = geom.itemw;
+	menu->w = geom->itemw;
 	for (item = menu->list; item != NULL; item = item->next) {
 		item->y = menu->h;
+
 		if (item->label == NULL)   /* height for separator item */
-			menu->h += geom.separator;
+			item->h = geom->separator;
 		else
-			menu->h += geom.itemh;
+			item->h = geom->itemh;
+		menu->h += item->h;
 
 		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)item->label,
 		                   item->labellen, &ext);
@@ -432,38 +435,39 @@ calcmenu(struct Menu *menu)
 	}
 
 	/* calculate menu's x and y positions */
-	width = menu->w + geom.border * 2;
-	height = menu->h + geom.border * 2;
+	width = menu->w + geom->border * 2;
+	height = menu->h + geom->border * 2;
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
-		if (geom.screenw - geom.cursx >= menu->w)
-			menu->x = geom.cursx;
-		else if (geom.cursx > width)
-			menu->x = geom.cursx - width;
+		if (geom->screenw - geom->cursx >= menu->w)
+			menu->x = geom->cursx;
+		else if (geom->cursx > width)
+			menu->x = geom->cursx - width;
 
-		if (geom.screenh - geom.cursy >= height)
-			menu->y = geom.cursy;
-		else if (geom.screenh > height)
-			menu->y = geom.screenh - height;
+		if (geom->screenh - geom->cursy >= height)
+			menu->y = geom->cursy;
+		else if (geom->screenh > height)
+			menu->y = geom->screenh - height;
 	} else {                    /* else, calculate in respect to parent menu */
-		if (geom.screenw - (menu->parent->x + menu->parent->w + geom.border) >= width)
-			menu->x = menu->parent->x + menu->parent->w + geom.border;
-		else if (menu->parent->x > menu->w + geom.border)
-			menu->x = menu->parent->x - menu->w - geom.border;
+		if (geom->screenw - (menu->parent->x + menu->parent->w + geom->border) >= width)
+			menu->x = menu->parent->x + menu->parent->w + geom->border;
+		else if (menu->parent->x > menu->w + geom->border)
+			menu->x = menu->parent->x - menu->w - geom->border;
 
-		if (geom.screenh - (menu->caller->y + menu->parent->y) > height)
+		if (geom->screenh - (menu->caller->y + menu->parent->y) > height)
 			menu->y = menu->caller->y + menu->parent->y;
-		else if (geom.screenh - menu->parent->y > height)
+		else if (geom->screenh - menu->parent->y > height)
 			menu->y = menu->parent->y;
-		else if (geom.screenh > height)
-			menu->y = geom.screenh - height;
+		else if (geom->screenh > height)
+			menu->y = geom->screenh - height;
 	}
 
 	/* update menu geometry */
+	changes.border_width = geom->border;
 	changes.height = menu->h;
 	changes.width = menu->w;
 	changes.x = menu->x;
 	changes.y = menu->y;
-	XConfigureWindow(dpy, menu->win, CWWidth | CWHeight | CWX | CWY, &changes);
+	XConfigureWindow(dpy, menu->win, CWBorderWidth | CWWidth | CWHeight | CWX | CWY, &changes);
 
 	/* set window manager hints */
 	sizeh.flags = PMaxSize | PMinSize;
@@ -480,7 +484,7 @@ calcmenu(struct Menu *menu)
 	/* calculate positions of submenus */
 	for (item = menu->list; item != NULL; item = item->next) {
 		if (item->submenu != NULL)
-			calcmenu(item->submenu);
+			calcmenu(geom, item->submenu);
 	}
 }
 
