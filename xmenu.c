@@ -73,7 +73,7 @@ static void setupdc(void);
 static void calcgeom(struct Geometry *geom);
 static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
-static struct Menu * buildmenutree(unsigned level, const char *label, const char *output);
+static struct Menu *buildmenutree(unsigned level, const char *label, const char *output);
 static struct Menu *parsestdin(void);
 static void calcmenu(struct Geometry *geom, struct Menu *menu);
 static void grabpointer(void);
