@@ -22,6 +22,20 @@ The files are:
 • ./xmenu.1:    The manual file (man page) for XMenu.
 • ./xmenu.c:    The source code of XMenu.
 • ./xmenu.sh:   A sample script illustrating how to use XMenu.
+• ./patches/    See the §Patches section
+
+
+§ Patches
+
+There are some patches that can be applied to XMenu in order to obtain
+novel functionalities.   The patches are located at ./patches.  There
+are the following patches:
+
+• ./patches/icons.diff:     Add suport to image icons before menu entries.
+
+To apply a patch, use the following command:
+
+	patch -p1 < patches/patch.diff
 
 
 § Installation
