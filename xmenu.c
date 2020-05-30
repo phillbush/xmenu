@@ -73,6 +73,7 @@ static void setupdc(void);
 static void calcgeom(void);
 static struct Item *allocitem(const char *label, const char *output);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
+static struct Menu * buildmenutree(unsigned level, const char *label, const char *output);
 static struct Menu *parsestdin(void);
 static void calcmenu(struct Menu *menu);
 static void grabpointer(void);
@@ -251,7 +252,7 @@ allocitem(const char *label, const char *output)
 
 	if ((item = malloc(sizeof *item)) == NULL)
 		err(1, "malloc");
-	if (*label == '\0') {
+	if (label == NULL) {
 		item->label = NULL;
 		item->output = NULL;
 	} else {
@@ -310,96 +311,92 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	return menu;
 }
 
+/* build the menu tree */
+static struct Menu *
+buildmenutree(unsigned level, const char *label, const char *output)
+{
+	static struct Menu *prevmenu = NULL;    /* menu the previous item was added to */
+	static struct Menu *rootmenu = NULL;    /* menu to be returned */
+	struct Item *curritem = NULL;           /* item currently being read */
+	struct Item *item;                      /* dummy item for loops */
+	struct Menu *menu;                      /* dummy menu for loops */
+	unsigned i;
+
+	/* create the item */
+	curritem = allocitem(label, output);
+
+	/* put the item in the menu tree */
+	if (prevmenu == NULL) {                 /* there is no menu yet */
+		 menu = allocmenu(NULL, curritem, level);
+		 rootmenu = menu;
+		 prevmenu = menu;
+		 curritem->prev = NULL;
+	} else if (level < prevmenu->level) {   /* item is continuation of a parent menu */
+		/* go up the menu tree until find the menu this item continues */
+		for (menu = prevmenu, i = level;
+			  menu != NULL && i != prevmenu->level;
+			  menu = menu->parent, i++)
+			;
+		if (menu == NULL)
+			errx(1, "reached NULL menu");
+
+		/* find last item in the new menu */
+		for (item = menu->list; item->next != NULL; item = item->next)
+			;
+
+		prevmenu = menu;
+		item->next = curritem;
+		curritem->prev = item;
+	} else if (level == prevmenu->level) {  /* item is a continuation of current menu */
+		/* find last item in the previous menu */
+		for (item = prevmenu->list; item->next != NULL; item = item->next)
+			;
+
+		item->next = curritem;
+		curritem->prev = item;
+	} else if (level > prevmenu->level) {   /* item begins a new menu */
+		menu = allocmenu(prevmenu, curritem, level);
+
+		/* find last item in the previous menu */
+		for (item = prevmenu->list; item->next != NULL; item = item->next)
+			;
+
+		prevmenu = menu;
+		menu->caller = item;
+		item->submenu = menu;
+		curritem->prev = NULL;
+	}
+
+	return rootmenu;
+}
+
 /* create menus and items from the stdin */
 static struct Menu *
 parsestdin(void)
 {
+	struct Menu *rootmenu;
 	char *s, buf[BUFSIZ];
 	char *label, *output;
 	unsigned level = 0;
-	unsigned i;
-	struct Item *curritem = NULL;   /* item currently being read */
- 	struct Menu *prevmenu = NULL;   /* menu the previous item was added to */
-	struct Item *item;              /* dummy item for loops */
-	struct Menu *menu;              /* dummy menu for loops */
-	struct Menu *rootmenu;          /* menu to be returned */
-
- 	rootmenu = NULL;
 
 	while (fgets(buf, BUFSIZ, stdin) != NULL) {
-		level = 0;
-		s = buf;
+		/* get the indentation level */
+		level = strspn(buf, "\t");
 
-		while (*s == '\t') {
-			level++;
-			s++;
+		/* get the label */
+		s = level + buf;
+		label = strtok(s, "\t\n");
+
+		/* get the output */
+		output = strtok(NULL, "\n");
+		if (output == NULL) {
+			output = label;
+		} else {
+			while (*output == '\t')
+				output++;
 		}
 
-		label = output = s;
-
-		while (*s != '\0' && *s != '\t' && *s != '\n')
-			s++;
-
-		while (*s == '\t')
-			*s++ = '\0';
-
-		if (*s != '\0' && *s != '\n')
-			output = s;
-
-		while (*s != '\0' && *s != '\n')
-			s++;
-
-		if (*s == '\n')
-			*s = '\0';
-
-		curritem = allocitem(label, output);
-
-		if (prevmenu == NULL) {                 /* there is no menu yet */
-			 menu = allocmenu(NULL, curritem, level);
-			 rootmenu = menu;
-			 prevmenu = menu;
-			 curritem->prev = NULL;
-			 curritem->next = NULL;
-		} else if (level < prevmenu->level) {   /* item is continuation of a parent menu*/
-			for (menu = prevmenu, i = level;
-			      menu != NULL && i < prevmenu->level;
-			      menu = menu->parent, i++)
-				;
-
-			if (menu == NULL)
-				errx(1, "reached NULL menu");
-
-			for (item = menu->list; item->next != NULL; item = item->next)
-				;
-
-			item->next = curritem;
-
-			curritem->prev = item;
-			curritem->next = NULL;
-
-			prevmenu = menu;
-		} else if (level == prevmenu->level) {  /* item is a continuation of current menu */
-			for (item = prevmenu->list; item->next != NULL; item = item->next)
-				;
-			item->next = curritem;
-
-			curritem->prev = item;
-			curritem->next = NULL;
-
-		} else if (level > prevmenu->level) {   /* item begins a new menu */
-			menu = allocmenu(prevmenu, curritem, level);
-
-			for (item = prevmenu->list; item->next != NULL; item = item->next)
-				;
-
-			item->submenu = menu;
-			menu->caller = item;
-
-			curritem->prev = NULL;
-			curritem->next = NULL;
-
-			prevmenu = menu;
-		}
+		rootmenu = buildmenutree(level, label, output);
 	}
 
 	return rootmenu;
