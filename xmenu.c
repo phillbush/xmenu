@@ -28,7 +28,6 @@ struct DC {
 	XftColor border;
 	XftColor separator;
 
-	Drawable d;
 	GC gc;
 	XftFont *font;
 };
@@ -598,14 +597,12 @@ mapmenu(struct Menu *currmenu)
 static void
 drawseparator(struct Menu *menu, struct Item *item)
 {
-	int linex, liney, linew;
+	int y;
 
-	linex = dc.font->height;
-	liney = item->y + item->h/2;
-	linew = menu->w - dc.font->height;
+	y = item->y + item->h/2;
 
 	XSetForeground(dpy, dc.gc, dc.separator.pixel);
-	XDrawLine(dpy, menu->pixmap, dc.gc, linex, liney, linew, liney);
+	XDrawLine(dpy, menu->pixmap, dc.gc, 0, y, menu->w, y);
 }
 
 /* draw regular item */
@@ -821,6 +818,8 @@ freemenu(struct Menu *menu)
 			freemenu(item->submenu);
 		tmp = item;
 		item = item->next;
+		free(tmp->label);
+		free(tmp->output);
 		free(tmp);
 	}
 

@@ -3,8 +3,6 @@
 xmenu \- menu utility for X
 .SH SYNOPSIS
 .B xmenu
-.RB [ \-w ]
-.RI [ title... ]
 .SH DESCRIPTION
 .B xmenu
 is a menu for X,
@@ -12,37 +10,28 @@ it reads a list of newline-separated items from stdin,
 shows a menu for the user to select one of the items,
 and outputs the item selected to stdout.
 .PP
-The options are as follows:
-.TP
-.B -w
-Asks the window manager to draw a border around the menus.
-Without this options, the menus do not have border drawn by the window manager.
-.PP
 Each item read from stdin has the following format:
 .IP
 .EX
-ITEM := TABS LABEL TABS COMMAND NEWLINE
+ITEM := [TABS] [LABEL [TABS OUTPUT]] NEWLINE
 .EE
 .PP
-That means, each item is composed by
-tabs, followed by a label, followed by more tabs, followed by a command,
-and ended by a newline.
+That means that each item is composed by
+tabs, followed by a label, followed by more tabs, followed by an output,
+and ended by a newline.  Brackets group optional elements.
 .IP
 The initial tabs indicate the menu hierarchy:
 items indented with a tab is shown in a submenu of the preceding item not indented.
+An item without initial tabs is a top-level item.
 .IP
 The label is the string that will be shown as a item in the menu.
 An item without label is considered a separator and is drawn as a thin line in the menu
 separating the item above from the item below.
 .IP
-The command is the string that will be output after selecting the item.
-If the item spawns a submenu, the command is the title of the menu.
+The output is the string that will be output after selecting the item.
+If an item does not have an output, its label is used as its output.
 .IP
 The newline terminates the item specification.
-.PP
-If the argument
-.I title
-is given, the title of the menu window is set to it.
 .SH USAGE
 .B xmenu
 is controlled by the mouse,
@@ -113,7 +102,7 @@ creating a command to be run by the shell.
 .EX
 #!/bin/sh
 
-cat <<EOF | xmenu | sh
+cat <<EOF | xmenu | sh &
 Applications
 	Web Browser	firefox
 	Image editor	gimp
