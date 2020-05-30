@@ -86,7 +86,7 @@ static void drawmenu(struct Menu *currmenu);
 static struct Item *itemcycle(struct Menu *currmenu, int direction);
 static void run(struct Menu *currmenu);
 static void freemenu(struct Menu *menu);
-static void cleanup(struct Menu *rootmenu);
+static void cleanup(void);
 static void usage(void);
 
 /* global variables (X stuff and geometries) */
@@ -145,7 +145,10 @@ main(int argc, char *argv[])
 	/* run event loop */
 	run(rootmenu);
 
-	cleanup(rootmenu);
+	/* freeing stuff */
+	freemenu(rootmenu);
+	cleanup();
+
 	return 0;
 }
 
@@ -254,8 +257,12 @@ allocitem(const char *label, const char *output)
 	} else {
 		if ((item->label = strdup(label)) == NULL)
 			err(1, "strdup");
-		if ((item->output = strdup(output)) == NULL)
-			err(1, "strdup");
+		if (label == output) {
+			item->output = item->label;
+		} else {
+			if ((item->output = strdup(output)) == NULL)
+				err(1, "strdup");
+		}
 	}
 	item->y = 0;
 	item->h = item->label ? geom.itemh : geom.separator;
@@ -818,7 +825,8 @@ freemenu(struct Menu *menu)
 			freemenu(item->submenu);
 		tmp = item;
 		item = item->next;
-		free(tmp->label);
+		if (tmp->label != tmp->output)
+			free(tmp->label);
 		free(tmp->output);
 		free(tmp);
 	}
@@ -831,12 +839,10 @@ freemenu(struct Menu *menu)
 
 /* cleanup and exit */
 static void
-cleanup(struct Menu *rootmenu)
+cleanup(void)
 {
 	XUngrabPointer(dpy, CurrentTime);
 	XUngrabKeyboard(dpy, CurrentTime);
-
-	freemenu(rootmenu);
 
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorBG]);
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorFG]);
