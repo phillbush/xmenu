@@ -379,6 +379,8 @@ parsestdin(void)
 	char *label, *output;
 	unsigned level = 0;
 
+	rootmenu = NULL;
+
 	while (fgets(buf, BUFSIZ, stdin) != NULL) {
 		/* get the indentation level */
 		level = strspn(buf, "\t");
