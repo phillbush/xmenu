@@ -11,6 +11,15 @@ The -w (windowed) option was removed from the master branch.  It was too
 buggy in tiled window managers and required more code to be maintained.
 
 
+§ Features
+
+XMenu comes with the following features:
+• XMenu reads something in and prints something out, the UNIX way.
+• Submenus (some menu entries can spawn another menu).
+• Separators (menu entries can be separated by a line).
+• Icons (menu entries can follow by an icon image).
+
+
 § Files
 
 The files are:
@@ -22,21 +31,14 @@ The files are:
 • ./xmenu.1:    The manual file (man page) for XMenu.
 • ./xmenu.c:    The source code of XMenu.
 • ./xmenu.sh:   A sample script illustrating how to use XMenu.
-
-
-§ Branches
-
-There are other branches in this git repository that adds novel
-functionalities to XMenu.
-
-• icons:    Add suport to image icons before menu entries.
+• ./icons/:     Icons for the sample script
 
 
 § Installation
 
 First, edit ./config.mk to match your local setup.
 
-In order to build XMenu you need the Xlib and the Xft header files.
+In order to build XMenu you need the Imlib2, Xlib and Xft header files.
 The default configuration for XMenu is specified in the file config.h,
 you can edit it, but most configuration can be changed at runtime via
 X resources.  Enter the following command to build XMenu.  This command

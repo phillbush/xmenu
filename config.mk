@@ -9,13 +9,12 @@ X11INC = /usr/X11R6/include
 X11LIB = /usr/X11R6/lib
 
 FREETYPEINC = /usr/include/freetype2
-FREETYPELIB = -lfontconfig -lXft
 # OpenBSD (uncomment)
-#FREETYPEINC = $(X11INC)/freetype2
+#FREETYPEINC = ${X11INC}/freetype2
 
 # includes and libs
-INCS = -I${X11INC} -I${FREETYPEINC}
-LIBS = -L${X11LIB} -L${FREETYPELIB} -lX11
+INCS = -I/usr/local/include -I${X11INC} -I${FREETYPEINC}
+LIBS = -L/usr/local/lib -L${X11LIB} -lfontconfig -lXft -lX11 -lImlib2
 
 # flags
 CPPFLAGS =

@@ -8,10 +8,12 @@
 #include <X11/Xresource.h>
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
+#include <Imlib2.h>
 
 #define PROGNAME "xmenu"
 #define ITEMPREV 0
 #define ITEMNEXT 1
+#define IMGPADDING 8
 
 /* macros */
 #define LEN(x) (sizeof (x) / sizeof (x[0]))
@@ -45,12 +47,14 @@ struct Geometry {
 struct Item {
 	char *label;            /* string to be drawed on menu */
 	char *output;           /* string to be outputed when item is clicked */
+	char *file;             /* filename of the image */
 	int y;                  /* item y position relative to menu */
 	int h;                  /* item height */
 	size_t labellen;        /* strlen(label) */
 	struct Item *prev;      /* previous item */
 	struct Item *next;      /* next item */
 	struct Menu *submenu;   /* submenu spawned by clicking on item */
+	Imlib_Image image;
 };
 
 /* menu structure */
@@ -71,9 +75,9 @@ static void getresources(void);
 static void getcolor(const char *s, XftColor *color);
 static void setupdc(void);
 static void calcgeom(struct Geometry *geom);
-static struct Item *allocitem(const char *label, const char *output);
+static struct Item *allocitem(const char *label, const char *output, char *file);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
-static struct Menu *buildmenutree(unsigned level, const char *label, const char *output);
+static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
 static struct Menu *parsestdin(void);
 static void setupmenusize(struct Geometry *geom, struct Menu *menu);
 static void setupmenupos(struct Geometry *geom, struct Menu *menu);
@@ -130,6 +134,13 @@ main(int argc, char *argv[])
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
+
+	/* imlib2 stuff */
+	imlib_set_cache_size(2048 * 1024);
+	imlib_context_set_dither(1);
+	imlib_context_set_display(dpy);
+	imlib_context_set_visual(visual);
+	imlib_context_set_colormap(colormap);
 
 	/* setup */
 	getresources();
@@ -249,7 +260,7 @@ calcgeom(struct Geometry *geom)
 
 /* allocate an item */
 static struct Item *
-allocitem(const char *label, const char *output)
+allocitem(const char *label, const char *output, char *file)
 {
 	struct Item *item;
 
@@ -268,6 +279,12 @@ allocitem(const char *label, const char *output)
 				err(1, "strdup");
 		}
 	}
+	if (file == NULL) {
+		item->file = NULL;
+	} else {
+		if ((item->file = strdup(file)) == NULL)
+			err(1, "strdup");
+	}
 	item->y = 0;
 	item->h = 0;
 	if (item->label == NULL)
@@ -276,6 +293,7 @@ allocitem(const char *label, const char *output)
 		item->labellen = strlen(item->label);
 	item->next = NULL;
 	item->submenu = NULL;
+	item->image = NULL;
 
 	return item;
 }
@@ -316,7 +334,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 
 /* build the menu tree */
 static struct Menu *
-buildmenutree(unsigned level, const char *label, const char *output)
+buildmenutree(unsigned level, const char *label, const char *output, char *file)
 {
 	static struct Menu *prevmenu = NULL;    /* menu the previous item was added to */
 	static struct Menu *rootmenu = NULL;    /* menu to be returned */
@@ -326,7 +344,7 @@ buildmenutree(unsigned level, const char *label, const char *output)
 	unsigned i;
 
 	/* create the item */
-	curritem = allocitem(label, output);
+	curritem = allocitem(label, output, file);
 
 	/* put the item in the menu tree */
 	if (prevmenu == NULL) {                 /* there is no menu yet */
@@ -379,7 +397,7 @@ parsestdin(void)
 {
 	struct Menu *rootmenu;
 	char *s, buf[BUFSIZ];
-	char *label, *output;
+	char *file, *label, *output;
 	unsigned level = 0;
 
 	rootmenu = NULL;
@@ -392,6 +410,13 @@ parsestdin(void)
 		s = level + buf;
 		label = strtok(s, "\t\n");
 
+		/* get the filename */
+		file = NULL;
+		if (label != NULL && strncmp(label, "IMG:", 4) == 0) {
+			file = label + 4;
+			label = strtok(NULL, "\t\n");
+		}
+
 		/* get the output */
 		output = strtok(NULL, "\n");
 		if (output == NULL) {
@@ -401,10 +426,34 @@ parsestdin(void)
 				output++;
 		}
 
-		rootmenu = buildmenutree(level, label, output);
+		rootmenu = buildmenutree(level, label, output, file);
 	}
 
 	return rootmenu;
+}
+
+/* load and scale image */
+static Imlib_Image
+loadimage(const char *file, int size)
+{
+	Imlib_Image image;
+	int width;
+	int height;
+	int imgsize;
+
+	image = imlib_load_image(file);
+	if (image == NULL)
+		errx(1, "cannot load image %s", file);
+
+	imlib_context_set_image(image);
+
+	width = imlib_image_get_width();
+	height = imlib_image_get_height();
+	imgsize = MIN(width, height);
+
+	image = imlib_create_cropped_scaled_image(0, 0, imgsize, imgsize, size, size);
+
+	return image;
 }
 
 /* setup the size of a menu and the position of its items */
@@ -428,8 +477,12 @@ setupmenusize(struct Geometry *geom, struct Menu *menu)
 		/* get length of item->label rendered in the font */
 		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)item->label,
 		                   item->labellen, &ext);
-		labelwidth = ext.xOff + dc.font->height * 2;
+		labelwidth = ext.xOff + dc.font->height * 2 + IMGPADDING * 2;
 		menu->w = MAX(menu->w, labelwidth);
+
+		/* create image */
+		if (item->file != NULL)
+			item->image = loadimage(item->file, dc.font->height);
 	}
 }
 
@@ -639,7 +692,7 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 {
 	int x, y;
 
-	x = dc.font->height;
+	x = dc.font->height + IMGPADDING;
 	y = item->y + item->h/2 + dc.font->ascent/2 - 1;
 	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
@@ -647,7 +700,7 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 
 	/* draw triangle, if item contains a submenu */
 	if (item->submenu != NULL) {
-		x = menu->w - dc.font->height/2 - triangle_width/2;
+		x = menu->w - dc.font->height/2 - IMGPADDING/2 - triangle_width/2 - 1;
 		y = item->y + item->h/2 - triangle_height/2 - 1;
 
 		XPoint triangle[] = {
@@ -659,6 +712,15 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 
 		XFillPolygon(dpy, menu->pixmap, dc.gc, triangle, LEN(triangle),
 		             Convex, CoordModeOrigin);
+	}
+
+	/* draw image */
+	if (item->file != NULL) {
+		x = IMGPADDING / 2;
+		y = item->y + (item->h - dc.font->height) / 2;
+		imlib_context_set_drawable(menu->pixmap);
+		imlib_context_set_image(item->image);
+		imlib_render_image_on_drawable(x, y);
 	}
 }
 
@@ -845,10 +907,17 @@ freemenu(struct Menu *menu)
 		if (item->submenu != NULL)
 			freemenu(item->submenu);
 		tmp = item;
-		item = item->next;
 		if (tmp->label != tmp->output)
 			free(tmp->label);
 		free(tmp->output);
+		if (tmp->file != NULL) {
+			free(tmp->file);
+			if (tmp->image != NULL) {
+				imlib_context_set_image(tmp->image);
+				imlib_free_image();
+			}
+		}
+		item = item->next;
 		free(tmp);
 	}
 

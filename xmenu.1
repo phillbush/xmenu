@@ -13,16 +13,20 @@ and outputs the item selected to stdout.
 Each item read from stdin has the following format:
 .IP
 .EX
-ITEM := [TABS] [LABEL [TABS OUTPUT]] NEWLINE
+ITEM := [TABS] [[IMAGE TABS] LABEL [TABS OUTPUT]] NEWLINE
 .EE
 .PP
 That means that each item is composed by
-tabs, followed by a label, followed by more tabs, followed by an output,
+tabs, followed by an optional image specification, followed by tabs
+followed by a label, followed by more tabs, followed by an output,
 and ended by a newline.  Brackets group optional elements.
 .IP
 The initial tabs indicate the menu hierarchy:
 items indented with a tab is shown in a submenu of the preceding item not indented.
 An item without initial tabs is a top-level item.
+.IP
+The image is a string of the form "IMG:/path/to/image.png".
+It specifies a image to be shown as icon at the left of the entry.
 .IP
 The label is the string that will be shown as a item in the menu.
 An item without label is considered a separator and is drawn as a thin line in the menu
@@ -104,14 +108,14 @@ creating a command to be run by the shell.
 
 cat <<EOF | xmenu | sh &
 Applications
-	Web Browser	firefox
-	Image editor	gimp
-Terminal (xterm)	xterm
-Terminal (urxvt)	urxvt
-Terminal (st)		st
+	IMG:./web.png	Web Browser	firefox
+	Image editor				gimp
+Terminal (xterm)				xterm
+Terminal (urxvt)				urxvt
+Terminal (st)					st
 
-Shutdown			poweroff
-Reboot			reboot
+Shutdown						poweroff
+Reboot						reboot
 EOF
 .EE
 .PP
