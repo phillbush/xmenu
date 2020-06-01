@@ -3,12 +3,20 @@
 xmenu \- menu utility for X
 .SH SYNOPSIS
 .B xmenu
+.RB [ \-w ]
+.RI [ title ]
 .SH DESCRIPTION
 .B xmenu
 is a menu for X,
 it reads a list of newline-separated items from stdin,
 shows a menu for the user to select one of the items,
 and outputs the item selected to stdout.
+.PP
+The options are as follows:
+.TP
+.B -w
+Asks the window manager to draw a border around the menus.
+This option may be buggy in some window managers, specially tiled ones.
 .PP
 Each item read from stdin has the following format:
 .IP
@@ -36,6 +44,10 @@ The output is the string that will be output after selecting the item.
 If an item does not have an output, its label is used as its output.
 .IP
 The newline terminates the item specification.
+.PP
+If the argument
+.I title
+is given, the title of the menu window is set to it.
 .SH USAGE
 .B xmenu
 is controlled by the mouse,

@@ -47,14 +47,14 @@ struct Geometry {
 struct Item {
 	char *label;            /* string to be drawed on menu */
 	char *output;           /* string to be outputed when item is clicked */
-	char *file;             /* filename of the image */
+	char *file;             /* filename of the icon */
 	int y;                  /* item y position relative to menu */
 	int h;                  /* item height */
 	size_t labellen;        /* strlen(label) */
 	struct Item *prev;      /* previous item */
 	struct Item *next;      /* next item */
 	struct Menu *submenu;   /* submenu spawned by clicking on item */
-	Imlib_Image image;
+	Imlib_Image icon;
 };
 
 /* menu structure */
@@ -81,7 +81,7 @@ static struct Menu *buildmenutree(unsigned level, const char *label, const char 
 static struct Menu *parsestdin(void);
 static void setupmenusize(struct Geometry *geom, struct Menu *menu);
 static void setupmenupos(struct Geometry *geom, struct Menu *menu);
-static void setupmenu(struct Geometry *geom, struct Menu *menu);
+static void setupmenu(struct Geometry *geom, struct Menu *menu, XClassHint *classh);
 static void grabpointer(void);
 static void grabkeyboard(void);
 static struct Menu *getmenu(struct Menu *currmenu, Window win);
@@ -103,6 +103,10 @@ static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
 static struct DC dc;
+static Atom wmdelete;
+
+/* flags */
+static int wflag = 0;   /* whether to let the window manager control XMenu */
 
 #include "config.h"
 
@@ -112,10 +116,14 @@ main(int argc, char *argv[])
 {
 	struct Menu *rootmenu;
 	struct Geometry geom;
+	XClassHint classh;
 	int ch;
 
-	while ((ch = getopt(argc, argv, "")) != -1) {
+	while ((ch = getopt(argc, argv, "w")) != -1) {
 		switch (ch) {
+		case 'w':
+			wflag = 1;
+			break;
 		default:
 			usage();
 			break;
@@ -124,7 +132,7 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (argc != 0)
+	if (argc > 1)
 		usage();
 
 	/* open connection to server and set X variables */
@@ -134,6 +142,7 @@ main(int argc, char *argv[])
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
+	wmdelete=XInternAtom(dpy, "WM_DELETE_WINDOW", True);
 
 	/* imlib2 stuff */
 	imlib_set_cache_size(2048 * 1024);
@@ -147,15 +156,24 @@ main(int argc, char *argv[])
 	setupdc();
 	calcgeom(&geom);
 
+	/* set window class */
+	classh.res_class = PROGNAME;
+	if (argc == 1)
+		classh.res_name = *argv;
+	else
+		classh.res_name = PROGNAME;
+
 	/* generate menus and set them up */
 	rootmenu = parsestdin();
 	if (rootmenu == NULL)
 		errx(1, "no menu generated");
-	setupmenu(&geom, rootmenu);
+	setupmenu(&geom, rootmenu, &classh);
 
 	/* grab mouse and keyboard */
-	grabpointer();
-	grabkeyboard();
+	if (!wflag) {
+		grabpointer();
+		grabkeyboard();
+	}
 
 	/* run event loop */
 	run(rootmenu);
@@ -293,7 +311,7 @@ allocitem(const char *label, const char *output, char *file)
 		item->labellen = strlen(item->label);
 	item->next = NULL;
 	item->submenu = NULL;
-	item->image = NULL;
+	item->icon = NULL;
 
 	return item;
 }
@@ -317,17 +335,21 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->y = 0;    /* calculated by setupmenu() */
 	menu->level = level;
 
-	swa.override_redirect = True;
+	swa.override_redirect = (wflag) ? False : True;
 	swa.background_pixel = dc.normal[ColorBG].pixel;
 	swa.border_pixel = dc.border.pixel;
 	swa.save_under = True;  /* pop-up windows should save_under*/
 	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
 	               | PointerMotionMask | LeaveWindowMask;
+	if (wflag)
+		swa.event_mask |= StructureNotifyMask;
 	menu->win = XCreateWindow(dpy, rootwin, 0, 0, 1, 1, 0,
 	                          CopyFromParent, CopyFromParent, CopyFromParent,
 	                          CWOverrideRedirect | CWBackPixel |
 	                          CWBorderPixel | CWEventMask | CWSaveUnder,
 	                          &swa);
+
+	XSetWMProtocols(dpy, menu->win, &wmdelete, 1);
 
 	return menu;
 }
@@ -432,28 +454,28 @@ parsestdin(void)
 	return rootmenu;
 }
 
-/* load and scale image */
+/* load and scale icon */
 static Imlib_Image
-loadimage(const char *file, int size)
+loadicon(const char *file, int size)
 {
-	Imlib_Image image;
+	Imlib_Image icon;
 	int width;
 	int height;
 	int imgsize;
 
-	image = imlib_load_image(file);
-	if (image == NULL)
-		errx(1, "cannot load image %s", file);
+	icon = imlib_load_image(file);
+	if (icon == NULL)
+		errx(1, "cannot load icon %s", file);
 
-	imlib_context_set_image(image);
+	imlib_context_set_image(icon);
 
 	width = imlib_image_get_width();
 	height = imlib_image_get_height();
 	imgsize = MIN(width, height);
 
-	image = imlib_create_cropped_scaled_image(0, 0, imgsize, imgsize, size, size);
+	icon = imlib_create_cropped_scaled_image(0, 0, imgsize, imgsize, size, size);
 
-	return image;
+	return icon;
 }
 
 /* setup the size of a menu and the position of its items */
@@ -480,17 +502,25 @@ setupmenusize(struct Geometry *geom, struct Menu *menu)
 		labelwidth = ext.xOff + dc.font->height * 2 + IMGPADDING * 2;
 		menu->w = MAX(menu->w, labelwidth);
 
-		/* create image */
+		/* create icon */
 		if (item->file != NULL)
-			item->image = loadimage(item->file, dc.font->height);
+			item->icon = loadicon(item->file, dc.font->height);
 	}
 }
 
 /* setup the position of a menu */
 static void
-setupmenupos(struct Geometry *geom, struct Menu *menu)
+setupmenupos(struct Geometry *g, struct Menu *menu)
 {
+	static struct Geometry *geom = NULL;
 	int width, height;
+
+	/*
+	 * Save the geometry so functions can call setupmenupos() without
+	 * having to know the geometry.
+	 */
+	if (g != NULL)
+		geom = g;
 
 	width = menu->w + geom->border * 2;
 	height = menu->h + geom->border * 2;
@@ -521,12 +551,12 @@ setupmenupos(struct Geometry *geom, struct Menu *menu)
 
 /* recursivelly setup menu configuration and its pixmap */
 static void
-setupmenu(struct Geometry *geom, struct Menu *menu)
+setupmenu(struct Geometry *geom, struct Menu *menu, XClassHint *classh)
 {
 	struct Item *item;
-	static XClassHint classh = {PROGNAME, PROGNAME};
 	XWindowChanges changes;
 	XSizeHints sizeh;
+	XTextProperty wintitle;
 
 	/* setup size and position of menus */
 	setupmenusize(geom, menu);
@@ -540,12 +570,18 @@ setupmenu(struct Geometry *geom, struct Menu *menu)
 	changes.y = menu->y;
 	XConfigureWindow(dpy, menu->win, CWBorderWidth | CWWidth | CWHeight | CWX | CWY, &changes);
 
+	/* set window title (used if wflag is on) */
+	if (menu->parent == NULL) {
+		XStringListToTextProperty(&classh->res_name, 1, &wintitle);
+	} else {
+		XStringListToTextProperty(&menu->caller->output, 1, &wintitle);
+	}
+
 	/* set window manager hints */
 	sizeh.flags = PMaxSize | PMinSize;
 	sizeh.min_width = sizeh.max_width = menu->w;
 	sizeh.min_height = sizeh.max_height = menu->h;
-	XSetWMProperties(dpy, menu->win, NULL, NULL, NULL, 0, &sizeh,
-	                 NULL, &classh);
+	XSetWMProperties(dpy, menu->win, &wintitle, NULL, NULL, 0, &sizeh, NULL, classh);
 
 	/* create pixmap and XftDraw */
 	menu->pixmap = XCreatePixmap(dpy, menu->win, menu->w, menu->h,
@@ -555,7 +591,7 @@ setupmenu(struct Geometry *geom, struct Menu *menu)
 	/* calculate positions of submenus */
 	for (item = menu->list; item != NULL; item = item->next) {
 		if (item->submenu != NULL)
-			setupmenu(geom, item->submenu);
+			setupmenu(geom, item->submenu, classh);
 	}
 }
 
@@ -668,6 +704,12 @@ mapmenu(struct Menu *currmenu)
 
 	/* map menus from currmenu (inclusive) until lcamenu (exclusive) */
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
+
+		if (wflag) {
+			setupmenupos(NULL, menu);
+			XMoveWindow(dpy, menu->win, menu->x, menu->y);
+		}
+
 		XMapWindow(dpy, menu->win);
 	}
 
@@ -714,12 +756,12 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 		             Convex, CoordModeOrigin);
 	}
 
-	/* draw image */
+	/* draw icon */
 	if (item->file != NULL) {
 		x = IMGPADDING / 2;
 		y = item->y + (item->h - dc.font->height) / 2;
 		imlib_context_set_drawable(menu->pixmap);
-		imlib_context_set_image(item->image);
+		imlib_context_set_image(item->icon);
 		imlib_render_image_on_drawable(x, y);
 	}
 }
@@ -891,6 +933,21 @@ selectitem:
 			currmenu->selected = NULL;
 			drawmenu(currmenu);
 			break;
+		case ConfigureNotify:
+			menu = getmenu(currmenu, ev.xconfigure.window);
+			if (menu == NULL)
+				break;
+			menu->x = ev.xconfigure.x;
+			menu->y = ev.xconfigure.y;
+			break;
+		case ClientMessage:
+			/* user closed window */
+			menu = getmenu(currmenu, ev.xclient.window);
+			if (menu->parent == NULL)
+				return;     /* closing the root menu closes the program */
+			currmenu = menu->parent;
+			mapmenu(currmenu);
+			break;
 		}
 	}
 }
@@ -912,8 +969,8 @@ freemenu(struct Menu *menu)
 		free(tmp->output);
 		if (tmp->file != NULL) {
 			free(tmp->file);
-			if (tmp->image != NULL) {
-				imlib_context_set_image(tmp->image);
+			if (tmp->icon != NULL) {
+				imlib_context_set_image(tmp->icon);
 				imlib_free_image();
 			}
 		}
@@ -949,6 +1006,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu\n");
+	(void)fprintf(stderr, "usage: xmenu [-w] [title]\n");
 	exit(1);
 }
