@@ -109,7 +109,7 @@ The size in pixels of the border around the menu.
 The size in pixels of the item separator.
 
 .SH EXAMPLES
-The following is an script exemplifying the use of
+The following script illustrates the use of
 .BR xmenu .
 The output is redirected to
 .IR sh (1),
@@ -121,7 +121,7 @@ creating a command to be run by the shell.
 cat <<EOF | xmenu | sh &
 Applications
 	IMG:./web.png	Web Browser	firefox
-	Image editor				gimp
+	IMG:./gimp.png	Image editor	gimp
 Terminal (xterm)				xterm
 Terminal (urxvt)				urxvt
 Terminal (st)					st
@@ -132,7 +132,7 @@ EOF
 .EE
 .PP
 For example, by selecting \(lqApplications\(rq, a new menu will appear.
-Selecting \(lqWeb Browser\(rq in the new menu will open firefox.
+Selecting \(lqWeb Browser\(rq in the new menu opens firefox.
 .SH SEE ALSO
 .IR dmenu (1),
 .IR 9menu (1),

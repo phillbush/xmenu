@@ -13,7 +13,7 @@ XMenu comes with the following features:
 • XMenu reads something in and prints something out, the UNIX way.
 • Submenus (some menu entries can spawn another menu).
 • Separators (menu entries can be separated by a line).
-• Icons (menu entries can follow by an icon image).
+• Icons (menu entries can be preceded by an icon image).
 
 
 § Files
