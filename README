@@ -6,10 +6,6 @@ to select one of the options, and outputs the option selected to stdout.
 XMenu can be controlled both via mouse and via keyboard.  The menu is a
 pop-up menu (that is, after selecting an option, the menu disappears).
 
-NOTE:
-The -w (windowed) option was removed from the master branch.  It was too
-buggy in tiled window managers and required more code to be maintained.
-
 
 § Features
 
