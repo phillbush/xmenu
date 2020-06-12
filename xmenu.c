@@ -13,7 +13,6 @@
 #define PROGNAME "xmenu"
 #define ITEMPREV 0
 #define ITEMNEXT 1
-#define IMGPADDING 8
 
 /* macros */
 #define LEN(x) (sizeof (x) / sizeof (x[0]))
@@ -79,6 +78,7 @@ static struct Item *allocitem(const char *label, const char *output, char *file)
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
 static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
 static struct Menu *parsestdin(void);
+static Imlib_Image loadicon(const char *file, int size);
 static void setupmenusize(struct Geometry *geom, struct Menu *menu);
 static void setupmenupos(struct Geometry *geom, struct Menu *menu);
 static void setupmenu(struct Geometry *geom, struct Menu *menu, XClassHint *classh);
@@ -207,9 +207,9 @@ getresources(void)
 	if (XrmGetResource(xdb, "xmenu.separatorWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
 			separator_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.padding", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "xmenu.height", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			padding_pixels = n;
+			height_pixels = n;
 	if (XrmGetResource(xdb, "xmenu.width", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
 			width_pixels = n;
@@ -270,7 +270,7 @@ calcgeom(struct Geometry *geom)
 	XQueryPointer(dpy, rootwin, &w1, &w2, &geom->cursx, &geom->cursy, &a, &b, &mask);
 	geom->screenw = DisplayWidth(dpy, screen);
 	geom->screenh = DisplayHeight(dpy, screen);
-	geom->itemh = dc.font->height + padding_pixels * 2;
+	geom->itemh = height_pixels;
 	geom->itemw = width_pixels;
 	geom->border = border_pixels;
 	geom->separator = separator_pixels;
@@ -370,10 +370,10 @@ buildmenutree(unsigned level, const char *label, const char *output, char *file)
 
 	/* put the item in the menu tree */
 	if (prevmenu == NULL) {                 /* there is no menu yet */
-		 menu = allocmenu(NULL, curritem, level);
-		 rootmenu = menu;
-		 prevmenu = menu;
-		 curritem->prev = NULL;
+		menu = allocmenu(NULL, curritem, level);
+		rootmenu = menu;
+		prevmenu = menu;
+		curritem->prev = NULL;
 	} else if (level < prevmenu->level) {   /* item is continuation of a parent menu */
 		/* go up the menu tree until find the menu this item continues */
 		for (menu = prevmenu, i = level;
@@ -499,12 +499,14 @@ setupmenusize(struct Geometry *geom, struct Menu *menu)
 		/* get length of item->label rendered in the font */
 		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)item->label,
 		                   item->labellen, &ext);
-		labelwidth = ext.xOff + dc.font->height * 2 + IMGPADDING * 2;
+
+		/* set menu width */
+		labelwidth = ext.xOff + item->h * 2;
 		menu->w = MAX(menu->w, labelwidth);
 
 		/* create icon */
 		if (item->file != NULL)
-			item->icon = loadicon(item->file, dc.font->height);
+			item->icon = loadicon(item->file, item->h - iconpadding * 2);
 	}
 }
 
@@ -734,16 +736,16 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 {
 	int x, y;
 
-	x = dc.font->height + IMGPADDING;
-	y = item->y + item->h/2 + dc.font->ascent/2 - 1;
+	x = item->h;
+	y = item->y + (item->h + dc.font->ascent) / 2;
 	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
                       x, y, item->label, item->labellen);
 
 	/* draw triangle, if item contains a submenu */
 	if (item->submenu != NULL) {
-		x = menu->w - dc.font->height/2 - IMGPADDING/2 - triangle_width/2 - 1;
-		y = item->y + item->h/2 - triangle_height/2 - 1;
+		x = menu->w - (item->h + triangle_width + 1) / 2;
+		y = item->y + (item->h - triangle_height + 1) / 2;
 
 		XPoint triangle[] = {
 			{x, y},
@@ -758,8 +760,8 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 
 	/* draw icon */
 	if (item->file != NULL) {
-		x = IMGPADDING / 2;
-		y = item->y + (item->h - dc.font->height) / 2;
+		x = iconpadding;
+		y = item->y + iconpadding;
 		imlib_context_set_drawable(menu->pixmap);
 		imlib_context_set_image(item->icon);
 		imlib_render_image_on_drawable(x, y);
