@@ -21,7 +21,7 @@ install: all
 	install -D -m 644 ${PROG}.1 ${DESTDIR}${MANPREFIX}/man1/${PROG}.1
 
 uninstall:
-	rm -f ${DESTDIR}/${PREFIX}/bin/${PROG}
-	rm -f ${DESTDIR}/${MANPREFIX}/man1/${PROG}.1
+	rm -f ${DESTDIR}${PREFIX}/bin/${PROG}
+	rm -f ${DESTDIR}${MANPREFIX}/man1/${PROG}.1
 
 .PHONY: all clean install uninstall
