@@ -6,6 +6,11 @@ to select one of the options, and outputs the option selected to stdout.
 XMenu can be controlled both via mouse and via keyboard.  The menu is a
 pop-up menu (that is, after selecting an option, the menu disappears).
 
+Check out my other project, xclickroot[0] for an application that can
+spawn xmenu by right clicking on the root window (i.e. on the desktop).
+
+[0]: https://github.com/phillbush/xclickroot
+
 
 § Features
 
