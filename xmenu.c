@@ -9,6 +9,7 @@
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
 #include <Imlib2.h>
+#include <time.h>
 
 #define PROGNAME "xmenu"
 #define ITEMPREV 0
@@ -740,7 +741,7 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 	y = item->y + (item->h + dc.font->ascent) / 2;
 	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
-                      x, y, item->label, item->labellen);
+                      x, y, (XftChar8 *)item->label, item->labellen);
 
 	/* draw triangle, if item contains a submenu */
 	if (item->submenu != NULL) {
