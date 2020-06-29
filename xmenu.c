@@ -539,9 +539,9 @@ setupmenupos(struct Geometry *g, struct Menu *menu)
 			menu->y = geom->screenh - height;
 	} else {                    /* else, calculate in respect to parent menu */
 		if (geom->screenw - (menu->parent->x + menu->parent->w + geom->border) >= width)
-			menu->x = menu->parent->x + menu->parent->w + geom->border + 10;
+			menu->x = menu->parent->x + menu->parent->w + geom->border + gap_width_pixels;
 		else if (menu->parent->x > menu->w + geom->border)
-			menu->x = menu->parent->x - menu->w - geom->border - 10;
+			menu->x = menu->parent->x - menu->w - geom->border - gap_width_pixels;
 
 		if (geom->screenh - (menu->caller->y + menu->parent->y) > height)
 			menu->y = menu->caller->y + menu->parent->y;
