@@ -300,7 +300,7 @@ allocitem(const char *label, const char *output, char *file)
 	return item;
 }
 
-/* allocate a menu */
+/* allocate a menu and create its window */
 static struct Menu *
 allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 {
@@ -332,8 +332,6 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	                          CWOverrideRedirect | CWBackPixel |
 	                          CWBorderPixel | CWEventMask | CWSaveUnder,
 	                          &swa);
-
-	XSetWMProtocols(dpy, menu->win, &wmdelete, 1);
 
 	return menu;
 }
@@ -568,10 +566,10 @@ setupmenu(struct Menu *menu, XClassHint *classh)
 	                             DefaultDepth(dpy, screen));
 	menu->draw = XftDrawCreate(dpy, menu->pixmap, visual, colormap);
 
-	/* set ewmh window properties */
+	/* set WM protocols and ewmh window properties */
+	XSetWMProtocols(dpy, menu->win, &wmdelete, 1);
 	XChangeProperty(dpy, menu->win, netatom[NetWMName], utf8string, 8,
-	                PropModeReplace,
-	                (unsigned char *)title, strlen(title));
+	                PropModeReplace, (unsigned char *)title, strlen(title));
 	XChangeProperty(dpy, menu->win, netatom[NetWMWindowType], XA_ATOM, 32,
 	                PropModeReplace,
 	                (unsigned char *)&netatom[NetWMWindowTypePopupMenu], 1);
