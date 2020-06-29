@@ -2,100 +2,69 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <X11/Xresource.h>
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
 #include <Imlib2.h>
-#include <time.h>
+#include "xmenu.h"
 
-#define PROGNAME "xmenu"
-#define ITEMPREV 0
-#define ITEMNEXT 1
+/*
+ * Function declarations
+ */
 
-/* macros */
-#define LEN(x) (sizeof (x) / sizeof (x[0]))
-#define MAX(x,y) ((x)>(y)?(x):(y))
-#define MIN(x,y) ((x)<(y)?(x):(y))
+/* initializers, and their helper routines */
+static void ealloccolor(const char *s, XftColor *color);
+static void initresources(void);
+static void initdc(void);
+static void initscreengeom(void);
+static void initatoms(void);
 
-/* color enum */
-enum {ColorFG, ColorBG, ColorLast};
-
-/* draw context structure */
-struct DC {
-	XftColor normal[ColorLast];
-	XftColor selected[ColorLast];
-	XftColor border;
-	XftColor separator;
-
-	GC gc;
-	XftFont *font;
-};
-
-/* menu geometry structure */
-struct Geometry {
-	int border;             /* window border width */
-	int separator;          /* menu separator width */
-	int itemw, itemh;       /* item width and height */
-	int cursx, cursy;       /* cursor position */
-	int screenw, screenh;   /* screen width and height */
-};
-
-/* menu item structure */
-struct Item {
-	char *label;            /* string to be drawed on menu */
-	char *output;           /* string to be outputed when item is clicked */
-	char *file;             /* filename of the icon */
-	int y;                  /* item y position relative to menu */
-	int h;                  /* item height */
-	size_t labellen;        /* strlen(label) */
-	struct Item *prev;      /* previous item */
-	struct Item *next;      /* next item */
-	struct Menu *submenu;   /* submenu spawned by clicking on item */
-	Imlib_Image icon;
-};
-
-/* menu structure */
-struct Menu {
-	struct Menu *parent;    /* parent menu */
-	struct Item *caller;    /* item that spawned the menu */
-	struct Item *list;      /* list of items contained by the menu */
-	struct Item *selected;  /* item currently selected in the menu */
-	int x, y, w, h;         /* menu geometry */
-	unsigned level;         /* menu level relative to root */
-	Drawable pixmap;        /* pixmap to draw the menu on */
-	XftDraw *draw;
-	Window win;             /* menu window to map on the screen */
-};
-
-/* functions declarations */
-static void getresources(void);
-static void getcolor(const char *s, XftColor *color);
-static void setupdc(void);
-static void calcgeom(struct Geometry *geom);
+/* structure builders, and their helper routines */
 static struct Item *allocitem(const char *label, const char *output, char *file);
 static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
 static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
 static struct Menu *parsestdin(void);
+
+/* image loader */
 static Imlib_Image loadicon(const char *file, int size);
-static void setupmenusize(struct Geometry *geom, struct Menu *menu);
-static void setupmenupos(struct Geometry *geom, struct Menu *menu);
-static void setupmenu(struct Geometry *geom, struct Menu *menu, XClassHint *classh);
+
+/* structure setters, and their helper routines */
+static void setupmenusize(struct Menu *menu);
+static void setupmenupos(struct Menu *menu);
+static void setupmenu(struct Menu *menu, XClassHint *classh);
+
+/* grabbers */
 static void grabpointer(void);
 static void grabkeyboard(void);
-static struct Menu *getmenu(struct Menu *currmenu, Window win);
-static struct Item *getitem(struct Menu *menu, int y);
+
+/* window drawers and mappers */
 static void mapmenu(struct Menu *currmenu);
 static void drawseparator(struct Menu *menu, struct Item *item);
 static void drawitem(struct Menu *menu, struct Item *item, XftColor *color);
 static void drawmenu(struct Menu *currmenu);
+
+/* main event loop, and its helper routines */
+static struct Menu *getmenu(struct Menu *currmenu, Window win);
+static struct Item *getitem(struct Menu *menu, int y);
 static struct Item *itemcycle(struct Menu *currmenu, int direction);
 static void run(struct Menu *currmenu);
-static void freemenu(struct Menu *menu);
+
+/* cleaners */
+static void cleanmenu(struct Menu *menu);
 static void cleanup(void);
+
+/* show usage */
 static void usage(void);
+
+
+/*
+ * Variable declarations
+ */
 
 /* X stuff */
 static Display *dpy;
@@ -104,19 +73,26 @@ static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
 static struct DC dc;
+static Atom utf8string;
 static Atom wmdelete;
+static Atom netatom[NetLast];
 
 /* flags */
 static int wflag = 0;   /* whether to let the window manager control XMenu */
 
+/* include config variable */
 #include "config.h"
+
+
+/*
+ * Function implementations
+ */
 
 /* xmenu: generate menu from stdin and print selected entry to stdout */
 int
 main(int argc, char *argv[])
 {
 	struct Menu *rootmenu;
-	struct Geometry geom;
 	XClassHint classh;
 	int ch;
 
@@ -143,7 +119,6 @@ main(int argc, char *argv[])
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
-	wmdelete=XInternAtom(dpy, "WM_DELETE_WINDOW", True);
 
 	/* imlib2 stuff */
 	imlib_set_cache_size(2048 * 1024);
@@ -152,10 +127,11 @@ main(int argc, char *argv[])
 	imlib_context_set_visual(visual);
 	imlib_context_set_colormap(colormap);
 
-	/* setup */
-	getresources();
-	setupdc();
-	calcgeom(&geom);
+	/* initializers */
+	initresources();
+	initdc();
+	initscreengeom();
+	initatoms();
 
 	/* set window class */
 	classh.res_class = PROGNAME;
@@ -168,7 +144,7 @@ main(int argc, char *argv[])
 	rootmenu = parsestdin();
 	if (rootmenu == NULL)
 		errx(1, "no menu generated");
-	setupmenu(&geom, rootmenu, &classh);
+	setupmenu(rootmenu, &classh);
 
 	/* grab mouse and keyboard */
 	if (!wflag) {
@@ -180,15 +156,23 @@ main(int argc, char *argv[])
 	run(rootmenu);
 
 	/* freeing stuff */
-	freemenu(rootmenu);
+	cleanmenu(rootmenu);
 	cleanup();
 
 	return 0;
 }
 
+/* get color from color string */
+static void
+ealloccolor(const char *s, XftColor *color)
+{
+	if(!XftColorAllocName(dpy, visual, colormap, s, color))
+		errx(1, "cannot allocate color: %s", s);
+}
+
 /* read xrdb for configuration options */
 static void
-getresources(void)
+initresources(void)
 {
 	char *xrm;
 	long n;
@@ -204,77 +188,76 @@ getresources(void)
 
 	if (XrmGetResource(xdb, "xmenu.borderWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			border_pixels = n;
+			config.border_pixels = n;
 	if (XrmGetResource(xdb, "xmenu.separatorWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			separator_pixels = n;
+			config.separator_pixels = n;
 	if (XrmGetResource(xdb, "xmenu.height", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			height_pixels = n;
+			config.height_pixels = n;
 	if (XrmGetResource(xdb, "xmenu.width", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			width_pixels = n;
+			config.width_pixels = n;
 	if (XrmGetResource(xdb, "xmenu.background", "*", &type, &xval) == True)
-		background_color = strdup(xval.addr);
+		config.background_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "xmenu.foreground", "*", &type, &xval) == True)
-		foreground_color = strdup(xval.addr);
+		config.foreground_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "xmenu.selbackground", "*", &type, &xval) == True)
-		selbackground_color = strdup(xval.addr);
+		config.selbackground_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "xmenu.selforeground", "*", &type, &xval) == True)
-		selforeground_color = strdup(xval.addr);
+		config.selforeground_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "xmenu.separator", "*", &type, &xval) == True)
-		separator_color = strdup(xval.addr);
+		config.separator_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "xmenu.border", "*", &type, &xval) == True)
-		border_color = strdup(xval.addr);
+		config.border_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "xmenu.font", "*", &type, &xval) == True)
-		font = strdup(xval.addr);
+		config.font = strdup(xval.addr);
 
 	XrmDestroyDatabase(xdb);
 }
 
-/* get color from color string */
-static void
-getcolor(const char *s, XftColor *color)
-{
-	if(!XftColorAllocName(dpy, visual, colormap, s, color))
-		errx(1, "cannot allocate color: %s", s);
-}
-
 /* init draw context */
 static void
-setupdc(void)
+initdc(void)
 {
 	/* get color pixels */
-	getcolor(background_color,    &dc.normal[ColorBG]);
-	getcolor(foreground_color,    &dc.normal[ColorFG]);
-	getcolor(selbackground_color, &dc.selected[ColorBG]);
-	getcolor(selforeground_color, &dc.selected[ColorFG]);
-	getcolor(separator_color,     &dc.separator);
-	getcolor(border_color,        &dc.border);
+	ealloccolor(config.background_color,    &dc.normal[ColorBG]);
+	ealloccolor(config.foreground_color,    &dc.normal[ColorFG]);
+	ealloccolor(config.selbackground_color, &dc.selected[ColorBG]);
+	ealloccolor(config.selforeground_color, &dc.selected[ColorFG]);
+	ealloccolor(config.separator_color,     &dc.separator);
+	ealloccolor(config.border_color,        &dc.border);
 
 	/* try to get font */
-	if ((dc.font = XftFontOpenName(dpy, screen, font)) == NULL)
+	if ((dc.font = XftFontOpenName(dpy, screen, config.font)) == NULL)
 		errx(1, "cannot load font");
 
 	/* create common GC */
 	dc.gc = XCreateGC(dpy, rootwin, 0, NULL);
 }
 
-/* calculate menu and screen geometry */
+/* calculate screen geometry */
 static void
-calcgeom(struct Geometry *geom)
+initscreengeom(void)
 {
-	Window w1, w2;  /* unused variables */
-	int a, b;       /* unused variables */
-	unsigned mask;  /* unused variable */
+	Window dw;   /* dummy variable */
+	int di;      /* dummy variable */
+	unsigned du; /* dummy variable */
 
-	XQueryPointer(dpy, rootwin, &w1, &w2, &geom->cursx, &geom->cursy, &a, &b, &mask);
-	geom->screenw = DisplayWidth(dpy, screen);
-	geom->screenh = DisplayHeight(dpy, screen);
-	geom->itemh = height_pixels;
-	geom->itemw = width_pixels;
-	geom->border = border_pixels;
-	geom->separator = separator_pixels;
+	XQueryPointer(dpy, rootwin, &dw, &dw, &config.cursx, &config.cursy, &di, &di, &du);
+	config.screenw = DisplayWidth(dpy, screen);
+	config.screenh = DisplayHeight(dpy, screen);
+}
+
+/* intern atoms */
+static void
+initatoms(void)
+{
+	utf8string = XInternAtom(dpy, "UTF8_STRING", False);
+	wmdelete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
+	netatom[NetWMName] = XInternAtom(dpy, "_NET_WM_NAME", False);
+	netatom[NetWMWindowType] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
+	netatom[NetWMWindowTypePopupMenu] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
 }
 
 /* allocate an item */
@@ -481,20 +464,20 @@ loadicon(const char *file, int size)
 
 /* setup the size of a menu and the position of its items */
 static void
-setupmenusize(struct Geometry *geom, struct Menu *menu)
+setupmenusize(struct Menu *menu)
 {
 	XGlyphInfo ext;
 	struct Item *item;
 	int labelwidth;
 
-	menu->w = geom->itemw;
+	menu->w = config.width_pixels;
 	for (item = menu->list; item != NULL; item = item->next) {
 		item->y = menu->h;
 
 		if (item->label == NULL)   /* height for separator item */
-			item->h = geom->separator;
+			item->h = config.separator_pixels;
 		else
-			item->h = geom->itemh;
+			item->h = config.height_pixels;
 		menu->h += item->h;
 
 		/* get length of item->label rendered in the font */
@@ -507,66 +490,59 @@ setupmenusize(struct Geometry *geom, struct Menu *menu)
 
 		/* create icon */
 		if (item->file != NULL)
-			item->icon = loadicon(item->file, item->h - iconpadding * 2);
+			item->icon = loadicon(item->file, item->h - config.iconpadding * 2);
 	}
 }
 
 /* setup the position of a menu */
 static void
-setupmenupos(struct Geometry *g, struct Menu *menu)
+setupmenupos(struct Menu *menu)
 {
-	static struct Geometry *geom = NULL;
 	int width, height;
 
-	/*
-	 * Save the geometry so functions can call setupmenupos() without
-	 * having to know the geometry.
-	 */
-	if (g != NULL)
-		geom = g;
-
-	width = menu->w + geom->border * 2;
-	height = menu->h + geom->border * 2;
+	width = menu->w + config.border_pixels * 2;
+	height = menu->h + config.border_pixels * 2;
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
-		if (geom->screenw - geom->cursx >= menu->w)
-			menu->x = geom->cursx;
-		else if (geom->cursx > width)
-			menu->x = geom->cursx - width;
+		if (config.screenw - config.cursx >= menu->w)
+			menu->x = config.cursx;
+		else if (config.cursx > width)
+			menu->x = config.cursx - width;
 
-		if (geom->screenh - geom->cursy >= height)
-			menu->y = geom->cursy;
-		else if (geom->screenh > height)
-			menu->y = geom->screenh - height;
+		if (config.screenh - config.cursy >= height)
+			menu->y = config.cursy;
+		else if (config.screenh > height)
+			menu->y = config.screenh - height;
 	} else {                    /* else, calculate in respect to parent menu */
-		if (geom->screenw - (menu->parent->x + menu->parent->w + geom->border) >= width)
-			menu->x = menu->parent->x + menu->parent->w + geom->border;
-		else if (menu->parent->x > menu->w + geom->border)
-			menu->x = menu->parent->x - menu->w - geom->border;
+		if (config.screenw - (menu->parent->x + menu->parent->w + config.border_pixels + config.gap_pixels) >= width)
+			menu->x = menu->parent->x + menu->parent->w + config.border_pixels + config.gap_pixels;
+		else if (menu->parent->x > menu->w + config.border_pixels + config.gap_pixels)
+			menu->x = menu->parent->x - menu->w - config.border_pixels - config.gap_pixels;
 
-		if (geom->screenh - (menu->caller->y + menu->parent->y) > height)
+		if (config.screenh - (menu->caller->y + menu->parent->y) > height)
 			menu->y = menu->caller->y + menu->parent->y;
-		else if (geom->screenh - menu->parent->y > height)
+		else if (config.screenh - menu->parent->y > height)
 			menu->y = menu->parent->y;
-		else if (geom->screenh > height)
-			menu->y = geom->screenh - height;
+		else if (config.screenh > height)
+			menu->y = config.screenh - height;
 	}
 }
 
 /* recursivelly setup menu configuration and its pixmap */
 static void
-setupmenu(struct Geometry *geom, struct Menu *menu, XClassHint *classh)
+setupmenu(struct Menu *menu, XClassHint *classh)
 {
+	char *title;
 	struct Item *item;
 	XWindowChanges changes;
 	XSizeHints sizeh;
 	XTextProperty wintitle;
 
 	/* setup size and position of menus */
-	setupmenusize(geom, menu);
-	setupmenupos(geom, menu);
+	setupmenusize(menu);
+	setupmenupos(menu);
 
 	/* update menu geometry */
-	changes.border_width = geom->border;
+	changes.border_width = config.border_pixels;
 	changes.height = menu->h;
 	changes.width = menu->w;
 	changes.x = menu->x;
@@ -575,10 +551,11 @@ setupmenu(struct Geometry *geom, struct Menu *menu, XClassHint *classh)
 
 	/* set window title (used if wflag is on) */
 	if (menu->parent == NULL) {
-		XStringListToTextProperty(&classh->res_name, 1, &wintitle);
+		title = classh->res_name;
 	} else {
-		XStringListToTextProperty(&menu->caller->output, 1, &wintitle);
+		title = menu->caller->output;
 	}
+	XStringListToTextProperty(&title, 1, &wintitle);
 
 	/* set window manager hints */
 	sizeh.flags = PMaxSize | PMinSize;
@@ -591,10 +568,18 @@ setupmenu(struct Geometry *geom, struct Menu *menu, XClassHint *classh)
 	                             DefaultDepth(dpy, screen));
 	menu->draw = XftDrawCreate(dpy, menu->pixmap, visual, colormap);
 
+	/* set ewmh window properties */
+	XChangeProperty(dpy, menu->win, netatom[NetWMName], utf8string, 8,
+	                PropModeReplace,
+	                (unsigned char *)title, strlen(title));
+	XChangeProperty(dpy, menu->win, netatom[NetWMWindowType], XA_ATOM, 32,
+	                PropModeReplace,
+	                (unsigned char *)&netatom[NetWMWindowTypePopupMenu], 1);
+
 	/* calculate positions of submenus */
 	for (item = menu->list; item != NULL; item = item->next) {
 		if (item->submenu != NULL)
-			setupmenu(geom, item->submenu, classh);
+			setupmenu(item->submenu, classh);
 	}
 }
 
@@ -629,35 +614,6 @@ grabkeyboard(void)
 		nanosleep(&ts, NULL);
 	}
 	errx(1, "cannot grab keyboard");
-}
-
-/* get menu of given window */
-static struct Menu *
-getmenu(struct Menu *currmenu, Window win)
-{
-	struct Menu *menu;
-
-	for (menu = currmenu; menu != NULL; menu = menu->parent)
-		if (menu->win == win)
-			return menu;
-
-	return NULL;
-}
-
-/* get item of given menu and position */
-static struct Item *
-getitem(struct Menu *menu, int y)
-{
-	struct Item *item;
-
-	if (menu == NULL)
-		return NULL;
-
-	for (item = menu->list; item != NULL; item = item->next)
-		if (y >= item->y && y <= item->y + item->h)
-			return item;
-
-	return NULL;
 }
 
 /* umap previous menus and map current menu and its parents */
@@ -709,7 +665,7 @@ mapmenu(struct Menu *currmenu)
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
 
 		if (wflag) {
-			setupmenupos(NULL, menu);
+			setupmenupos(menu);
 			XMoveWindow(dpy, menu->win, menu->x, menu->y);
 		}
 
@@ -745,13 +701,13 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 
 	/* draw triangle, if item contains a submenu */
 	if (item->submenu != NULL) {
-		x = menu->w - (item->h + triangle_width + 1) / 2;
-		y = item->y + (item->h - triangle_height + 1) / 2;
+		x = menu->w - (item->h + config.triangle_width + 1) / 2;
+		y = item->y + (item->h - config.triangle_height + 1) / 2;
 
 		XPoint triangle[] = {
 			{x, y},
-			{x + triangle_width, y + triangle_height/2},
-			{x, y + triangle_height},
+			{x + config.triangle_width, y + config.triangle_height/2},
+			{x, y + config.triangle_height},
 			{x, y}
 		};
 
@@ -761,8 +717,8 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 
 	/* draw icon */
 	if (item->file != NULL) {
-		x = iconpadding;
-		y = item->y + iconpadding;
+		x = config.iconpadding;
+		y = item->y + config.iconpadding;
 		imlib_context_set_drawable(menu->pixmap);
 		imlib_context_set_image(item->icon);
 		imlib_render_image_on_drawable(x, y);
@@ -800,6 +756,35 @@ drawmenu(struct Menu *currmenu)
 		XCopyArea(dpy, menu->pixmap, menu->win, dc.gc, 0, 0,
 			      menu->w, menu->h, 0, 0);
 	}
+}
+
+/* get menu of given window */
+static struct Menu *
+getmenu(struct Menu *currmenu, Window win)
+{
+	struct Menu *menu;
+
+	for (menu = currmenu; menu != NULL; menu = menu->parent)
+		if (menu->win == win)
+			return menu;
+
+	return NULL;
+}
+
+/* get item of given menu and position */
+static struct Item *
+getitem(struct Menu *menu, int y)
+{
+	struct Item *item;
+
+	if (menu == NULL)
+		return NULL;
+
+	for (item = menu->list; item != NULL; item = item->next)
+		if (y >= item->y && y <= item->y + item->h)
+			return item;
+
+	return NULL;
 }
 
 /* cycle through the items; non-zero direction is next, zero is prev */
@@ -944,6 +929,8 @@ selectitem:
 			menu->y = ev.xconfigure.y;
 			break;
 		case ClientMessage:
+			if ((unsigned long) ev.xclient.data.l[0] != wmdelete)
+				break;
 			/* user closed window */
 			menu = getmenu(currmenu, ev.xclient.window);
 			if (menu->parent == NULL)
@@ -957,7 +944,7 @@ selectitem:
 
 /* recursivelly free pixmaps and destroy windows */
 static void
-freemenu(struct Menu *menu)
+cleanmenu(struct Menu *menu)
 {
 	struct Item *item;
 	struct Item *tmp;
@@ -965,7 +952,7 @@ freemenu(struct Menu *menu)
 	item = menu->list;
 	while (item != NULL) {
 		if (item->submenu != NULL)
-			freemenu(item->submenu);
+			cleanmenu(item->submenu);
 		tmp = item;
 		if (tmp->label != tmp->output)
 			free(tmp->label);
@@ -987,7 +974,7 @@ freemenu(struct Menu *menu)
 	free(menu);
 }
 
-/* cleanup and exit */
+/* cleanup X and exit */
 static void
 cleanup(void)
 {
