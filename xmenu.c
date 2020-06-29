@@ -9,6 +9,7 @@
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
 #include <Imlib2.h>
+#include <time.h>
 
 #define PROGNAME "xmenu"
 #define ITEMPREV 0
@@ -248,7 +249,7 @@ setupdc(void)
 	getcolor(foreground_color,    &dc.normal[ColorFG]);
 	getcolor(selbackground_color, &dc.selected[ColorBG]);
 	getcolor(selforeground_color, &dc.selected[ColorFG]);
-	getcolor(separator_color,     &dc.separator);
+	getcolor(background_color,     &dc.separator);
 	getcolor(border_color,        &dc.border);
 
 	/* try to get font */
@@ -538,9 +539,9 @@ setupmenupos(struct Geometry *g, struct Menu *menu)
 			menu->y = geom->screenh - height;
 	} else {                    /* else, calculate in respect to parent menu */
 		if (geom->screenw - (menu->parent->x + menu->parent->w + geom->border) >= width)
-			menu->x = menu->parent->x + menu->parent->w + geom->border;
+			menu->x = menu->parent->x + menu->parent->w + geom->border + 10;
 		else if (menu->parent->x > menu->w + geom->border)
-			menu->x = menu->parent->x - menu->w - geom->border;
+			menu->x = menu->parent->x - menu->w - geom->border - 10;
 
 		if (geom->screenh - (menu->caller->y + menu->parent->y) > height)
 			menu->y = menu->caller->y + menu->parent->y;
@@ -740,7 +741,7 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 	y = item->y + (item->h + dc.font->ascent) / 2;
 	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
-                      x, y, item->label, item->labellen);
+                      x, y, (XftChar8 *)item->label, item->labellen);
 
 	/* draw triangle, if item contains a submenu */
 	if (item->submenu != NULL) {
