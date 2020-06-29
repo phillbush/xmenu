@@ -198,6 +198,9 @@ initresources(void)
 	if (XrmGetResource(xdb, "xmenu.width", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
 			config.width_pixels = n;
+	if (XrmGetResource(xdb, "xmenu.gap", "*", &type, &xval) == True)
+		if ((n = strtol(xval.addr, NULL, 10)) > 0)
+			config.gap_pixels = n;
 	if (XrmGetResource(xdb, "xmenu.background", "*", &type, &xval) == True)
 		config.background_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "xmenu.foreground", "*", &type, &xval) == True)
