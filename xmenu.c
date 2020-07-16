@@ -21,7 +21,7 @@
 static void ealloccolor(const char *s, XftColor *color);
 static void initresources(void);
 static void initdc(void);
-static void initscreengeom(void);
+static void initconfig(void);
 static void initatoms(void);
 
 /* structure builders, and their helper routines */
@@ -31,10 +31,10 @@ static struct Menu *buildmenutree(unsigned level, const char *label, const char 
 static struct Menu *parsestdin(void);
 
 /* image loader */
-static Imlib_Image loadicon(const char *file, int size);
+static Imlib_Image loadicon(const char *file);
 
 /* structure setters, and their helper routines */
-static void setupmenusize(struct Menu *menu);
+static void setupitems(struct Menu *menu);
 static void setupmenupos(struct Menu *menu);
 static void setupmenu(struct Menu *menu, XClassHint *classh);
 
@@ -79,6 +79,7 @@ static Atom netatom[NetLast];
 
 /* flags */
 static int wflag = 0;   /* whether to let the window manager control XMenu */
+static int iflag = 0;   /* whether to disable icons */
 
 /* include config variable */
 #include "config.h"
@@ -96,8 +97,11 @@ main(int argc, char *argv[])
 	XClassHint classh;
 	int ch;
 
-	while ((ch = getopt(argc, argv, "w")) != -1) {
+	while ((ch = getopt(argc, argv, "iw")) != -1) {
 		switch (ch) {
+		case 'i':
+			iflag = 1;
+			break;
 		case 'w':
 			wflag = 1;
 			break;
@@ -121,16 +125,18 @@ main(int argc, char *argv[])
 	colormap = DefaultColormap(dpy, screen);
 
 	/* imlib2 stuff */
-	imlib_set_cache_size(2048 * 1024);
-	imlib_context_set_dither(1);
-	imlib_context_set_display(dpy);
-	imlib_context_set_visual(visual);
-	imlib_context_set_colormap(colormap);
+	if (!iflag) {
+		imlib_set_cache_size(2048 * 1024);
+		imlib_context_set_dither(1);
+		imlib_context_set_display(dpy);
+		imlib_context_set_visual(visual);
+		imlib_context_set_colormap(colormap);
+	}
 
 	/* initializers */
 	initresources();
 	initdc();
-	initscreengeom();
+	initconfig();
 	initatoms();
 
 	/* set window class */
@@ -239,9 +245,9 @@ initdc(void)
 	dc.gc = XCreateGC(dpy, rootwin, 0, NULL);
 }
 
-/* calculate screen geometry */
+/* calculate configuration values that are not set manually */
 static void
-initscreengeom(void)
+initconfig(void)
 {
 	Window dw;   /* dummy variable */
 	int di;      /* dummy variable */
@@ -250,6 +256,7 @@ initscreengeom(void)
 	XQueryPointer(dpy, rootwin, &dw, &dw, &config.cursx, &config.cursy, &di, &di, &du);
 	config.screenw = DisplayWidth(dpy, screen);
 	config.screenh = DisplayHeight(dpy, screen);
+	config.iconsize = config.height_pixels - config.iconpadding * 2;
 }
 
 /* intern atoms */
@@ -441,7 +448,7 @@ parsestdin(void)
 
 /* load and scale icon */
 static Imlib_Image
-loadicon(const char *file, int size)
+loadicon(const char *file)
 {
 	Imlib_Image icon;
 	int width;
@@ -458,18 +465,20 @@ loadicon(const char *file, int size)
 	height = imlib_image_get_height();
 	imgsize = MIN(width, height);
 
-	icon = imlib_create_cropped_scaled_image(0, 0, imgsize, imgsize, size, size);
+	icon = imlib_create_cropped_scaled_image(0, 0, imgsize, imgsize,
+	                                         config.iconsize,
+	                                         config.iconsize);
 
 	return icon;
 }
 
-/* setup the size of a menu and the position of its items */
+/* setup the height, width and icon of the items of a menu */
 static void
-setupmenusize(struct Menu *menu)
+setupitems(struct Menu *menu)
 {
 	XGlyphInfo ext;
 	struct Item *item;
-	int labelwidth;
+	int itemwidth;
 
 	menu->w = config.width_pixels;
 	for (item = menu->list; item != NULL; item = item->next) {
@@ -485,13 +494,25 @@ setupmenusize(struct Menu *menu)
 		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)item->label,
 		                   item->labellen, &ext);
 
-		/* set menu width */
-		labelwidth = ext.xOff + item->h * 2;
-		menu->w = MAX(menu->w, labelwidth);
+		/*
+		 * set menu width
+		 *
+		 * the item width depends on the size of its label (ext.xOff),
+		 * and it is only used to calculate the width of the menu (which
+		 * is equal to the width of the largest item).
+		 *
+		 * the horizontal padding appears 4 times through the width of a
+		 * item: before and after its icon, and before and after its triangle
+		 * if the iflag is set (icons are disabled) then the horizontal
+		 * padding appears before the label and around the triangle.
+		 */
+		itemwidth = ext.xOff + config.triangle_width + config.horzpadding * 3;
+		itemwidth += (iflag) ? 0 : config.iconsize + config.horzpadding;
+		menu->w = MAX(menu->w, itemwidth);
 
 		/* create icon */
-		if (item->file != NULL)
-			item->icon = loadicon(item->file, item->h - config.iconpadding * 2);
+		if (item->file != NULL && !iflag)
+			item->icon = loadicon(item->file);
 	}
 }
 
@@ -539,7 +560,7 @@ setupmenu(struct Menu *menu, XClassHint *classh)
 	XTextProperty wintitle;
 
 	/* setup size and position of menus */
-	setupmenusize(menu);
+	setupitems(menu);
 	setupmenupos(menu);
 
 	/* update menu geometry */
@@ -685,7 +706,8 @@ drawseparator(struct Menu *menu, struct Item *item)
 	y = item->y + item->h/2;
 
 	XSetForeground(dpy, dc.gc, dc.separator.pixel);
-	XDrawLine(dpy, menu->pixmap, dc.gc, 0, y, menu->w, y);
+	XDrawLine(dpy, menu->pixmap, dc.gc, config.horzpadding, y,
+	          menu->w - config.horzpadding, y);
 }
 
 /* draw regular item */
@@ -694,7 +716,8 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 {
 	int x, y;
 
-	x = item->h;
+	x = config.horzpadding;
+	x += (iflag) ? 0 : config.horzpadding + config.iconsize;
 	y = item->y + (item->h + dc.font->ascent) / 2;
 	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
@@ -702,7 +725,7 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 
 	/* draw triangle, if item contains a submenu */
 	if (item->submenu != NULL) {
-		x = menu->w - (item->h + config.triangle_width + 1) / 2;
+		x = menu->w - config.triangle_width - config.horzpadding;
 		y = item->y + (item->h - config.triangle_height + 1) / 2;
 
 		XPoint triangle[] = {
@@ -717,8 +740,8 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 	}
 
 	/* draw icon */
-	if (item->file != NULL) {
-		x = config.iconpadding;
+	if (item->icon != NULL) {
+		x = config.horzpadding;
 		y = item->y + config.iconpadding;
 		imlib_context_set_drawable(menu->pixmap);
 		imlib_context_set_image(item->icon);
@@ -997,6 +1020,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-w] [title]\n");
+	(void)fprintf(stderr, "usage: xmenu [-iw] [title]\n");
 	exit(1);
 }

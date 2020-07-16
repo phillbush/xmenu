@@ -36,6 +36,9 @@ struct Config {
 	int triangle_height;
 
 	int iconpadding;
+	int horzpadding;
+
+	int iconsize;
 
 	int cursx, cursy;           /* cursor position */
 	int screenw, screenh;       /* screen width and height */

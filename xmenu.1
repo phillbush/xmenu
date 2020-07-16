@@ -3,7 +3,7 @@
 xmenu \- menu utility for X
 .SH SYNOPSIS
 .B xmenu
-.RB [ \-w ]
+.RB [ \-iw ]
 .RI [ title ]
 .SH DESCRIPTION
 .B xmenu
@@ -14,9 +14,19 @@ and outputs the item selected to stdout.
 .PP
 The options are as follows:
 .TP
+.B -i
+Disable icons.
+.B xmenu
+allocates a space at the left side of the menu for the icons;
+if there is no icon, then this space will be blank.
+Setting the
+.B -i
+option removes this space, making the menu narrower.
+.TP
 .B -w
 Asks the window manager to draw a border around the menus.
-This option may be buggy in some window managers, specially tiled ones.
+This option may be buggy in some window managers,
+specially tiled ones that do not respect window hints.
 .PP
 Each item read from stdin has the following format:
 .IP

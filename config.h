@@ -17,12 +17,18 @@ static struct Config config = {
 	.separator_pixels = 3,      /* space around separator */
 	.gap_pixels = 0,            /* gap between menus */
 
-	/* the variables below cannot be set by X resources */
+	/*
+	 * The variables below cannot be set by X resources.
+	 * Their values must be less than .height_pixels.
+	 */
 
 	/* geometry of the right-pointing isoceles triangle for submenus */
 	.triangle_width = 3,
 	.triangle_height = 7,
 
-	/* padding of the area around the icon */
-	.iconpadding = 4,
+	/* the icon size is equal to .height_pixels - .iconpadding * 2 */
+	.iconpadding = 2,
+
+	/* area around the icon, the triangle and the separator */
+	.horzpadding = 8,
 };
