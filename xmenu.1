@@ -4,6 +4,8 @@ xmenu \- menu utility for X
 .SH SYNOPSIS
 .B xmenu
 .RB [ \-iw ]
+.RB [ -p
+.IR position ]
 .RI [ title ]
 .SH DESCRIPTION
 .B xmenu
@@ -22,6 +24,14 @@ if there is no icon, then this space will be blank.
 Setting the
 .B -i
 option removes this space, making the menu narrower.
+.TP
+.BI -p " position"
+Set the position to spawn xmenu.
+Without this option, xmenu spawns next to the cursor.
+.I position
+is a string of the form
+.BR INTxINT ,
+where the first INT is the x position and the second INT is the y position.
 .TP
 .B -w
 Asks the window manager to draw a border around the menus.

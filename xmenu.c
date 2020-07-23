@@ -1,7 +1,9 @@
 #include <err.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <time.h>
 #include <unistd.h>
 #include <X11/Xlib.h>
@@ -16,6 +18,9 @@
 /*
  * Function declarations
  */
+
+/* argument parser */
+static void parseposition(const char *optarg);
 
 /* initializers, and their helper routines */
 static void ealloccolor(const char *s, XftColor *color);
@@ -78,8 +83,9 @@ static Atom wmdelete;
 static Atom netatom[NetLast];
 
 /* flags */
-static int wflag = 0;   /* whether to let the window manager control XMenu */
 static int iflag = 0;   /* whether to disable icons */
+static int pflag = 0;   /* whether the user specified a position */
+static int wflag = 0;   /* whether to let the window manager control XMenu */
 
 /* include config variable */
 #include "config.h"
@@ -97,10 +103,15 @@ main(int argc, char *argv[])
 	XClassHint classh;
 	int ch;
 
-	while ((ch = getopt(argc, argv, "iw")) != -1) {
+	while ((ch = getopt(argc, argv, "ip:w")) != -1) {
 		switch (ch) {
 		case 'i':
 			iflag = 1;
+			break;
+		case 'p':
+			pflag = 1;
+			parseposition(optarg);
+			printf("%dx%d\n", config.posx, config.posy);
 			break;
 		case 'w':
 			wflag = 1;
@@ -166,6 +177,30 @@ main(int argc, char *argv[])
 	cleanup();
 
 	return 0;
+}
+
+/* parse position string from -p, put results on config.x and config.y */
+static void
+parseposition(const char *optarg)
+{
+	long n;
+	const char *s = optarg;
+	char *endp;
+
+	n = strtol(s, &endp, 10);
+	if (errno == ERANGE || n > INT_MAX || n < 0 || endp == s || *endp != 'x')
+		goto error;
+	config.posx = n;
+	s = endp+1;
+	n = strtol(s, &endp, 10);
+	if (errno == ERANGE || n > INT_MAX || n < 0 || endp == s || *endp != '\0')
+		goto error;
+	config.posy = n;
+
+	return;
+
+error:
+	errx(1, "improper position: %s", optarg);
 }
 
 /* get color from color string */
@@ -253,7 +288,8 @@ initconfig(void)
 	int di;      /* dummy variable */
 	unsigned du; /* dummy variable */
 
-	XQueryPointer(dpy, rootwin, &dw, &dw, &config.cursx, &config.cursy, &di, &di, &du);
+	if (!pflag)  /* if the user haven't specified a position, use cursor position*/
+		XQueryPointer(dpy, rootwin, &dw, &dw, &config.posx, &config.posy, &di, &di, &du);
 	config.screenw = DisplayWidth(dpy, screen);
 	config.screenh = DisplayHeight(dpy, screen);
 	config.iconsize = config.height_pixels - config.iconpadding * 2;
@@ -525,13 +561,13 @@ setupmenupos(struct Menu *menu)
 	width = menu->w + config.border_pixels * 2;
 	height = menu->h + config.border_pixels * 2;
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
-		if (config.screenw - config.cursx >= menu->w)
-			menu->x = config.cursx;
-		else if (config.cursx > width)
-			menu->x = config.cursx - width;
+		if (pflag || config.screenw - config.posx >= menu->w)
+			menu->x = config.posx;
+		else if (config.posx > width)
+			menu->x = config.posx - width;
 
-		if (config.screenh - config.cursy >= height)
-			menu->y = config.cursy;
+		if (pflag || config.screenh - config.posy >= height)
+			menu->y = config.posy;
 		else if (config.screenh > height)
 			menu->y = config.screenh - height;
 	} else {                    /* else, calculate in respect to parent menu */
@@ -1020,6 +1056,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-iw] [title]\n");
+	(void)fprintf(stderr, "usage: xmenu [-iw] [-p position] [title]\n");
 	exit(1);
 }

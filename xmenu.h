@@ -17,30 +17,27 @@ enum {NetWMName, NetWMWindowType, NetWMWindowTypePopupMenu, NetLast};
 
 /* configuration structure */
 struct Config {
+	/* the values below are set by config.h */
 	const char *font;
-
 	const char *background_color;
 	const char *foreground_color;
 	const char *selbackground_color;
 	const char *selforeground_color;
 	const char *separator_color;
 	const char *border_color;
-
 	int width_pixels;
 	int height_pixels;
 	int border_pixels;
 	int separator_pixels;
 	int gap_pixels;
-
 	int triangle_width;
 	int triangle_height;
-
 	int iconpadding;
 	int horzpadding;
 
+	/* the values below are computed by xmenu */
 	int iconsize;
-
-	int cursx, cursy;           /* cursor position */
+	int posx, posy;           /* cursor position */
 	int screenw, screenh;       /* screen width and height */
 };
 
