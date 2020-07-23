@@ -111,7 +111,6 @@ main(int argc, char *argv[])
 		case 'p':
 			pflag = 1;
 			parseposition(optarg);
-			printf("%dx%d\n", config.posx, config.posy);
 			break;
 		case 'w':
 			wflag = 1;
