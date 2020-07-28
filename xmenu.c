@@ -546,8 +546,29 @@ setupitems(struct Menu *menu)
 		menu->w = MAX(menu->w, itemwidth);
 
 		/* create icon */
-		if (item->file != NULL && !iflag)
+		if (item->file != NULL && !iflag) {
 			item->icon = loadicon(item->file);
+
+			item->sel = XCreatePixmap(dpy, menu->win,
+			                          config.iconsize, config.iconsize,
+			                          DefaultDepth(dpy, screen));
+			XSetForeground(dpy, dc.gc, dc.selected[ColorBG].pixel);
+			XFillRectangle(dpy, item->sel, dc.gc, 0, 0,
+			               config.iconsize, config.iconsize);
+			imlib_context_set_drawable(item->sel);
+			imlib_context_set_image(item->icon);
+			imlib_render_image_on_drawable(0, 0);
+
+			item->unsel = XCreatePixmap(dpy, menu->win,
+			                            config.iconsize, config.iconsize,
+			                            DefaultDepth(dpy, screen));
+			XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
+			XFillRectangle(dpy, item->unsel, dc.gc, 0, 0,
+			               config.iconsize, config.iconsize);
+			imlib_context_set_drawable(item->unsel);
+			imlib_context_set_image(item->icon);
+			imlib_render_image_on_drawable(0, 0);
+		}
 	}
 }
 
@@ -756,7 +777,7 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 	y = item->y + (item->h + dc.font->ascent) / 2;
 	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
-                      x, y, (XftChar8 *)item->label, item->labellen);
+	                  x, y, (XftChar8 *)item->label, item->labellen);
 
 	/* draw triangle, if item contains a submenu */
 	if (item->submenu != NULL) {
@@ -778,9 +799,12 @@ drawitem(struct Menu *menu, struct Item *item, XftColor *color)
 	if (item->icon != NULL) {
 		x = config.horzpadding;
 		y = item->y + config.iconpadding;
-		imlib_context_set_drawable(menu->pixmap);
-		imlib_context_set_image(item->icon);
-		imlib_render_image_on_drawable(x, y);
+		if (color == dc.selected)
+			XCopyArea(dpy, item->sel, menu->pixmap, dc.gc, 0, 0,
+			          menu->w, menu->h, x, y);
+		else
+			XCopyArea(dpy, item->unsel, menu->pixmap, dc.gc, 0, 0,
+			          menu->w, menu->h, x, y);
 	}
 }
 

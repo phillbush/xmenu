@@ -63,6 +63,7 @@ struct Item {
 	struct Item *prev;      /* previous item */
 	struct Item *next;      /* next item */
 	struct Menu *submenu;   /* submenu spawned by clicking on item */
+	Drawable sel, unsel;    /* pixmap for selected and unselected icons */
 	Imlib_Image icon;
 };
 
