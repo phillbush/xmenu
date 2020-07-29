@@ -77,6 +77,7 @@ struct Menu {
 	struct Item *list;      /* list of items contained by the menu */
 	struct Item *selected;  /* item currently selected in the menu */
 	int x, y, w, h;         /* menu geometry */
+	int drawn;              /* whether the menu was already drawn */
 	unsigned level;         /* menu level relative to root */
 	Window win;             /* menu window to map on the screen */
 };

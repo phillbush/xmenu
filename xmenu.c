@@ -37,15 +37,9 @@ static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned l
 static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
 static struct Menu *parsestdin(void);
 
-/* image loader */
-static Imlib_Image loadicon(const char *file);
-
-/* utf8 utils */
+/* text drawer, and its helper routine */
 static FcChar32 getnextutf8char(const char *s, const char **end_ret);
-
-/* pixmap drawers */
 static int drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *text);
-static void drawitems(struct Menu *menu);
 
 /* structure setters, and their helper routines */
 static void setupitems(struct Menu *menu);
@@ -56,9 +50,13 @@ static void setupmenu(struct Menu *menu, XClassHint *classh);
 static void grabpointer(void);
 static void grabkeyboard(void);
 
-/* window drawers and mappers */
+/* item drawer, and its helper routine */
+static Imlib_Image loadicon(const char *file);
+static void drawitems(struct Menu *menu);
+
+/* menu drawers and mappers */
+static void drawmenus(struct Menu *currmenu);
 static void mapmenu(struct Menu *currmenu);
-static void copypixmaps(struct Menu *currmenu);
 
 /* getters */
 static struct Menu *getmenu(struct Menu *currmenu, Window win);
@@ -407,6 +405,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->x = 0;    /* calculated by setupmenu() */
 	menu->y = 0;    /* calculated by setupmenu() */
 	menu->level = level;
+	menu->drawn = 0;
 
 	swa.override_redirect = (wflag) ? False : True;
 	swa.background_pixel = dc.normal[ColorBG].pixel;
@@ -525,43 +524,15 @@ parsestdin(void)
 	return rootmenu;
 }
 
-/* load and scale icon */
-static Imlib_Image
-loadicon(const char *file)
-{
-	Imlib_Image icon;
-	int width;
-	int height;
-	int imgsize;
-
-	icon = imlib_load_image(file);
-	if (icon == NULL)
-		errx(1, "cannot load icon %s", file);
-
-	imlib_context_set_image(icon);
-
-	width = imlib_image_get_width();
-	height = imlib_image_get_height();
-	imgsize = MIN(width, height);
-
-	icon = imlib_create_cropped_scaled_image(0, 0, imgsize, imgsize,
-	                                         config.iconsize,
-	                                         config.iconsize);
-
-	return icon;
-}
-
-/* get next utf8 char from s return its codepoint and set next_ret to pointer to next character */
+/* get next utf8 char from s return its codepoint and set next_ret to pointer to end of character */
 static FcChar32
 getnextutf8char(const char *s, const char **next_ret)
 {
-	/* */
 	static const unsigned char utfbyte[] = {0x80, 0x00, 0xC0, 0xE0, 0xF0};
-	/* */
 	static const unsigned char utfmask[] = {0xC0, 0x80, 0xE0, 0xF0, 0xF8};
-	/* 0xFFFD is the replacement character, used to represent unknown characters */
 	static const FcChar32 utfmin[] = {0, 0x00,  0x80,  0x800,  0x10000};
 	static const FcChar32 utfmax[] = {0, 0x7F, 0x7FF, 0xFFFF, 0x10FFFF};
+	/* 0xFFFD is the replacement character, used to represent unknown characters */
 	static const FcChar32 unknown = 0xFFFD;
 	FcChar32 ucode;         /* FcChar32 type holds 32 bits */
 	size_t usize = 0;       /* n' of bytes of the utf8 character */
@@ -647,84 +618,6 @@ drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *t
 	}
 
 	return textlen;
-}
-
-/* draw pixmap for the selected and unselected version of each item on menu */
-static void
-drawitems(struct Menu *menu)
-{
-	struct Item *item;
-
-	for (item = menu->list; item != NULL; item = item->next) {
-		XftDraw *dsel, *dunsel;
-		int x, y;
-
-		item->unsel = XCreatePixmap(dpy, menu->win, menu->w, item->h,
-		                          DefaultDepth(dpy, screen));
-
-		XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
-		XFillRectangle(dpy, item->unsel, dc.gc, 0, 0, menu->w, item->h);
-
-		if (item->label == NULL) { /* item is separator */
-			y = item->h/2;
-			XSetForeground(dpy, dc.gc, dc.separator.pixel);
-			XDrawLine(dpy, item->unsel, dc.gc, config.horzpadding, y,
-			          menu->w - config.horzpadding, y);
-
-			item->sel = item->unsel;
-		} else {
-
-			item->sel = XCreatePixmap(dpy, menu->win, menu->w, item->h,
-			                          DefaultDepth(dpy, screen));
-			XSetForeground(dpy, dc.gc, dc.selected[ColorBG].pixel);
-			XFillRectangle(dpy, item->sel, dc.gc, 0, 0, menu->w, item->h);
-
-			/* draw text */
-			x = config.horzpadding;
-			x += (iflag) ? 0 : config.horzpadding + config.iconsize;
-			dsel = XftDrawCreate(dpy, item->sel, visual, colormap);
-			dunsel = XftDrawCreate(dpy, item->unsel, visual, colormap);
-			XSetForeground(dpy, dc.gc, dc.selected[ColorFG].pixel);
-			drawtext(dsel, &dc.selected[ColorFG], x, 0, item->h, item->label);
-			XSetForeground(dpy, dc.gc, dc.normal[ColorFG].pixel);
-			drawtext(dunsel, &dc.normal[ColorFG], x, 0, item->h, item->label);
-			XftDrawDestroy(dsel);
-			XftDrawDestroy(dunsel);
-
-			/* draw triangle */
-			if (item->submenu != NULL) {
-				x = menu->w - config.triangle_width - config.horzpadding;
-				y = (item->h - config.triangle_height + 1) / 2;
-
-				XPoint triangle[] = {
-					{x, y},
-					{x + config.triangle_width, y + config.triangle_height/2},
-					{x, y + config.triangle_height},
-					{x, y}
-				};
-
-				XSetForeground(dpy, dc.gc, dc.selected[ColorFG].pixel);
-				XFillPolygon(dpy, item->sel, dc.gc, triangle, LEN(triangle),
-				             Convex, CoordModeOrigin);
-				XSetForeground(dpy, dc.gc, dc.normal[ColorFG].pixel);
-				XFillPolygon(dpy, item->unsel, dc.gc, triangle, LEN(triangle),
-				             Convex, CoordModeOrigin);
-			}
-
-			/* draw icon */
-			if (item->file != NULL && !iflag) {
-				item->icon = loadicon(item->file);
-
-				imlib_context_set_drawable(item->sel);
-				imlib_context_set_image(item->icon);
-				imlib_render_image_on_drawable(config.horzpadding, config.iconpadding);
-
-				imlib_context_set_drawable(item->unsel);
-				imlib_context_set_image(item->icon);
-				imlib_render_image_on_drawable(config.horzpadding, config.iconpadding);
-			}
-		}
-	}
 }
 
 /* setup the height, width and icon of the items of a menu */
@@ -814,7 +707,6 @@ setupmenu(struct Menu *menu, XClassHint *classh)
 
 	/* setup size and position of menus */
 	setupitems(menu);
-	drawitems(menu);
 	setupmenupos(menu);
 
 	/* update menu geometry */
@@ -887,6 +779,131 @@ grabkeyboard(void)
 	errx(1, "cannot grab keyboard");
 }
 
+/* load and scale icon */
+static Imlib_Image
+loadicon(const char *file)
+{
+	Imlib_Image icon;
+	int width;
+	int height;
+	int imgsize;
+
+	icon = imlib_load_image(file);
+	if (icon == NULL)
+		errx(1, "cannot load icon %s", file);
+
+	imlib_context_set_image(icon);
+
+	width = imlib_image_get_width();
+	height = imlib_image_get_height();
+	imgsize = MIN(width, height);
+
+	icon = imlib_create_cropped_scaled_image(0, 0, imgsize, imgsize,
+	                                         config.iconsize,
+	                                         config.iconsize);
+
+	return icon;
+}
+
+/* draw pixmap for the selected and unselected version of each item on menu */
+static void
+drawitems(struct Menu *menu)
+{
+	struct Item *item;
+
+	for (item = menu->list; item != NULL; item = item->next) {
+		XftDraw *dsel, *dunsel;
+		int x, y;
+
+		item->unsel = XCreatePixmap(dpy, menu->win, menu->w, item->h,
+		                          DefaultDepth(dpy, screen));
+
+		XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
+		XFillRectangle(dpy, item->unsel, dc.gc, 0, 0, menu->w, item->h);
+
+		if (item->label == NULL) { /* item is separator */
+			y = item->h/2;
+			XSetForeground(dpy, dc.gc, dc.separator.pixel);
+			XDrawLine(dpy, item->unsel, dc.gc, config.horzpadding, y,
+			          menu->w - config.horzpadding, y);
+
+			item->sel = item->unsel;
+		} else {
+
+			item->sel = XCreatePixmap(dpy, menu->win, menu->w, item->h,
+			                          DefaultDepth(dpy, screen));
+			XSetForeground(dpy, dc.gc, dc.selected[ColorBG].pixel);
+			XFillRectangle(dpy, item->sel, dc.gc, 0, 0, menu->w, item->h);
+
+			/* draw text */
+			x = config.horzpadding;
+			x += (iflag) ? 0 : config.horzpadding + config.iconsize;
+			dsel = XftDrawCreate(dpy, item->sel, visual, colormap);
+			dunsel = XftDrawCreate(dpy, item->unsel, visual, colormap);
+			XSetForeground(dpy, dc.gc, dc.selected[ColorFG].pixel);
+			drawtext(dsel, &dc.selected[ColorFG], x, 0, item->h, item->label);
+			XSetForeground(dpy, dc.gc, dc.normal[ColorFG].pixel);
+			drawtext(dunsel, &dc.normal[ColorFG], x, 0, item->h, item->label);
+			XftDrawDestroy(dsel);
+			XftDrawDestroy(dunsel);
+
+			/* draw triangle */
+			if (item->submenu != NULL) {
+				x = menu->w - config.triangle_width - config.horzpadding;
+				y = (item->h - config.triangle_height + 1) / 2;
+
+				XPoint triangle[] = {
+					{x, y},
+					{x + config.triangle_width, y + config.triangle_height/2},
+					{x, y + config.triangle_height},
+					{x, y}
+				};
+
+				XSetForeground(dpy, dc.gc, dc.selected[ColorFG].pixel);
+				XFillPolygon(dpy, item->sel, dc.gc, triangle, LEN(triangle),
+				             Convex, CoordModeOrigin);
+				XSetForeground(dpy, dc.gc, dc.normal[ColorFG].pixel);
+				XFillPolygon(dpy, item->unsel, dc.gc, triangle, LEN(triangle),
+				             Convex, CoordModeOrigin);
+			}
+
+			/* draw icon */
+			if (item->file != NULL && !iflag) {
+				item->icon = loadicon(item->file);
+
+				imlib_context_set_drawable(item->sel);
+				imlib_context_set_image(item->icon);
+				imlib_render_image_on_drawable(config.horzpadding, config.iconpadding);
+				imlib_context_set_drawable(item->unsel);
+				imlib_render_image_on_drawable(config.horzpadding, config.iconpadding);
+			}
+		}
+	}
+}
+
+/* copy pixmaps of items of the current menu and of its ancestors into menu window */
+static void
+drawmenus(struct Menu *currmenu)
+{
+	struct Menu *menu;
+	struct Item *item;
+
+	for (menu = currmenu; menu != NULL; menu = menu->parent) {
+		if (!menu->drawn) {
+			drawitems(menu);
+			menu->drawn = 1;
+		}
+		for (item = menu->list; item != NULL; item = item->next) {
+			if (item == menu->selected)
+				XCopyArea(dpy, item->sel, menu->win, dc.gc, 0, 0,
+				          menu->w, item->h, 0, item->y);
+			else
+				XCopyArea(dpy, item->unsel, menu->win, dc.gc, 0, 0,
+				          menu->w, item->h, 0, item->y);
+		}
+	}
+}
+
 /* umap previous menus and map current menu and its parents */
 static void
 mapmenu(struct Menu *currmenu)
@@ -944,25 +961,6 @@ mapmenu(struct Menu *currmenu)
 	}
 
 	prevmenu = currmenu;
-}
-
-/* copy pixmaps of items of the current menu and of its ancestors into menu window */
-static void
-copypixmaps(struct Menu *currmenu)
-{
-	struct Menu *menu;
-	struct Item *item;
-
-	for (menu = currmenu; menu != NULL; menu = menu->parent) {
-		for (item = menu->list; item != NULL; item = item->next) {
-			if (item == menu->selected)
-				XCopyArea(dpy, item->sel, menu->win, dc.gc, 0, 0,
-				          menu->w, item->h, 0, item->y);
-			else
-				XCopyArea(dpy, item->unsel, menu->win, dc.gc, 0, 0,
-				          menu->w, item->h, 0, item->y);
-		}
-	}
 }
 
 /* get menu of given window */
@@ -1051,7 +1049,7 @@ run(struct Menu *currmenu)
 		switch(ev.type) {
 		case Expose:
 			if (ev.xexpose.count == 0)
-				copypixmaps(currmenu);
+				drawmenus(currmenu);
 			break;
 		case MotionNotify:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -1067,7 +1065,7 @@ run(struct Menu *currmenu)
 				currmenu = menu;
 			}
 			mapmenu(currmenu);
-			copypixmaps(currmenu);
+			drawmenus(currmenu);
 			break;
 		case ButtonRelease:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -1085,7 +1083,7 @@ selectitem:
 			}
 			mapmenu(currmenu);
 			currmenu->selected = currmenu->list;
-			copypixmaps(currmenu);
+			drawmenus(currmenu);
 			break;
 		case ButtonPress:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -1121,12 +1119,12 @@ selectitem:
 			} else
 				break;
 			currmenu->selected = item;
-			copypixmaps(currmenu);
+			drawmenus(currmenu);
 			break;
 		case LeaveNotify:
 			previtem = NULL;
 			currmenu->selected = NULL;
-			copypixmaps(currmenu);
+			drawmenus(currmenu);
 			break;
 		case ConfigureNotify:
 			menu = getmenu(currmenu, ev.xconfigure.window);
@@ -1161,9 +1159,11 @@ cleanmenu(struct Menu *menu)
 		if (item->submenu != NULL)
 			cleanmenu(item->submenu);
 		tmp = item;
-		XFreePixmap(dpy, item->unsel);
-		if (tmp->label != NULL)
-			XFreePixmap(dpy, item->sel);
+		if (menu->drawn) {
+			XFreePixmap(dpy, item->unsel);
+			if (tmp->label != NULL)
+				XFreePixmap(dpy, item->sel);
+		}
 		if (tmp->label != tmp->output)
 			free(tmp->label);
 		free(tmp->output);
