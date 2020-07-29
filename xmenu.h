@@ -5,9 +5,10 @@
 #define ITEMNEXT 1
 
 /* macros */
-#define LEN(x) (sizeof (x) / sizeof (x[0]))
-#define MAX(x,y) ((x)>(y)?(x):(y))
-#define MIN(x,y) ((x)<(y)?(x):(y))
+#define LEN(x)              (sizeof (x) / sizeof (x[0]))
+#define MAX(x,y)            ((x)>(y)?(x):(y))
+#define MIN(x,y)            ((x)<(y)?(x):(y))
+#define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
 
 /* color enum */
 enum {ColorFG, ColorBG, ColorLast};
@@ -49,7 +50,9 @@ struct DC {
 	XftColor separator;
 
 	GC gc;
-	XftFont *font;
+
+	XftFont **fonts;
+	size_t nfonts;
 };
 
 /* menu item structure */
@@ -63,7 +66,7 @@ struct Item {
 	struct Item *prev;      /* previous item */
 	struct Item *next;      /* next item */
 	struct Menu *submenu;   /* submenu spawned by clicking on item */
-	Drawable sel, unsel;    /* pixmap for selected and unselected icons */
+	Drawable sel, unsel;    /* pixmap for selected and unselected item */
 	Imlib_Image icon;
 };
 
@@ -75,7 +78,5 @@ struct Menu {
 	struct Item *selected;  /* item currently selected in the menu */
 	int x, y, w, h;         /* menu geometry */
 	unsigned level;         /* menu level relative to root */
-	Drawable pixmap;        /* pixmap to draw the menu on */
-	XftDraw *draw;
 	Window win;             /* menu window to map on the screen */
 };
