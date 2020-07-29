@@ -731,12 +731,13 @@ drawitems(struct Menu *menu)
 static void
 setupitems(struct Menu *menu)
 {
-	XGlyphInfo ext;
 	struct Item *item;
-	int itemwidth;
 
 	menu->w = config.width_pixels;
 	for (item = menu->list; item != NULL; item = item->next) {
+		int itemwidth;
+		int textwidth;
+
 		item->y = menu->h;
 
 		if (item->label == NULL)   /* height for separator item */
@@ -745,23 +746,24 @@ setupitems(struct Menu *menu)
 			item->h = config.height_pixels;
 		menu->h += item->h;
 
-		/* get length of item->label rendered in the font */
-		XftTextExtentsUtf8(dpy, dc.fonts[0], (XftChar8 *)item->label,
-		                   item->labellen, &ext);
+		if (item->label)
+			textwidth = drawtext(NULL, NULL, 0, 0, item->h, item->label);
+		else
+			textwidth = 0;
 
 		/*
 		 * set menu width
 		 *
-		 * the item width depends on the size of its label (ext.xOff),
+		 * the item width depends on the size of its label (textwidth),
 		 * and it is only used to calculate the width of the menu (which
 		 * is equal to the width of the largest item).
 		 *
 		 * the horizontal padding appears 4 times through the width of a
-		 * item: before and after its icon, and before and after its triangle
+		 * item: before and after its icon, and before and after its triangle.
 		 * if the iflag is set (icons are disabled) then the horizontal
-		 * padding appears before the label and around the triangle.
+		 * padding appears 3 times: before the label and around the triangle.
 		 */
-		itemwidth = ext.xOff + config.triangle_width + config.horzpadding * 3;
+		itemwidth = textwidth + config.triangle_width + config.horzpadding * 3;
 		itemwidth += (iflag) ? 0 : config.iconsize + config.horzpadding;
 		menu->w = MAX(menu->w, itemwidth);
 	}
