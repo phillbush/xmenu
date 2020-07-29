@@ -36,10 +36,13 @@ struct Config {
 	int iconpadding;
 	int horzpadding;
 
-	/* the values below are computed by xmenu */
+	/* the values below are set by options */
+	int monitor;
+	int posx, posy;         /* rootmenu position */
+
+	/* the value below is computed by xmenu */
 	int iconsize;
-	int posx, posy;           /* cursor position */
-	int screenw, screenh;       /* screen width and height */
+	int screenw, screenh;   /* screen width and height */
 };
 
 /* draw context structure */
@@ -68,6 +71,11 @@ struct Item {
 	struct Menu *submenu;   /* submenu spawned by clicking on item */
 	Drawable sel, unsel;    /* pixmap for selected and unselected item */
 	Imlib_Image icon;
+};
+
+/* monitor and cursor geometry structure */
+struct Monitor {
+	int x, y, w, h;         /* monitor geometry */
 };
 
 /* menu structure */

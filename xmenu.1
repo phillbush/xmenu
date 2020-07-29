@@ -30,8 +30,34 @@ Set the position to spawn xmenu.
 Without this option, xmenu spawns next to the cursor.
 .I position
 is a string of the form
-.BR INTxINT ,
+.BR INTxINT[:MONITOR] ,
 where the first INT is the x position and the second INT is the y position.
+The monitor part between brackets is optional.
+.B MONITOR
+can be a number from 0 to the number of monitors minus 1;
+or it can be a string like
+.B current
+or
+.BR cursor .
+If present, the monitor specifies that the position is relative to the upper left corner
+of that monitor.
+If
+.B monitor
+is
+.B current
+or
+.BR cursor ,
+the monitor to be used is that where the cursor is in.
+For example,
+.B -p 0x0:cursor
+specifies that
+.B xmenu
+must spawn at the position 0x0 of the monitor where the cursor is in.
+And
+.B -p 100x500:0
+specifies that
+.B xmenu
+must spawn at the position 100x500 of the monitor 0.
 .TP
 .B -w
 Asks the window manager to draw a border around the menus.

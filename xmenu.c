@@ -13,6 +13,7 @@
 #include <X11/Xresource.h>
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
+#include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
 #include "xmenu.h"
 
@@ -21,11 +22,12 @@
  */
 
 /* argument parser */
-static void parseposition(const char *optarg);
+static void parseposition(char *optarg);
 
 /* initializers, and their helper routines */
 static void parsefonts(const char *s);
 static void ealloccolor(const char *s, XftColor *color);
+static void initmonitor(void);
 static void initresources(void);
 static void initdc(void);
 static void initconfig(void);
@@ -87,13 +89,15 @@ static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
 static struct DC dc;
+static struct Monitor mon;
 static Atom utf8string;
 static Atom wmdelete;
 static Atom netatom[NetLast];
 
 /* flags */
 static int iflag = 0;   /* whether to disable icons */
-static int pflag = 0;   /* whether the user specified a position */
+static int mflag = 0;   /* whether the user specified a monitor with -p */
+static int pflag = 0;   /* whether the user specified a position with -p */
 static int wflag = 0;   /* whether to let the window manager control XMenu */
 
 /* include config variable */
@@ -153,6 +157,7 @@ main(int argc, char *argv[])
 	}
 
 	/* initializers */
+	initmonitor();
 	initresources();
 	initdc();
 	initconfig();
@@ -187,12 +192,13 @@ main(int argc, char *argv[])
 	return 0;
 }
 
-/* parse position string from -p, put results on config.x and config.y */
+/* parse position string from -p,
+ * put results on config.posx, config.posy, and config.monitor */
 static void
-parseposition(const char *optarg)
+parseposition(char *optarg)
 {
 	long n;
-	const char *s = optarg;
+	char *s = optarg;
 	char *endp;
 
 	n = strtol(s, &endp, 10);
@@ -201,9 +207,24 @@ parseposition(const char *optarg)
 	config.posx = n;
 	s = endp+1;
 	n = strtol(s, &endp, 10);
-	if (errno == ERANGE || n > INT_MAX || n < 0 || endp == s || *endp != '\0')
+	if (errno == ERANGE || n > INT_MAX || n < 0 || endp == s)
 		goto error;
 	config.posy = n;
+	if (*endp == ':') {
+		s = endp+1;
+		mflag = 1;
+		if (strncasecmp(s, "CUR", 3) == 0) {
+			config.monitor = -1;
+			endp = s+3;
+		} else {
+			n = strtol(s, &endp, 10);
+			if (errno == ERANGE || n > INT_MAX || n < 0 || endp == s || *endp != '\0')
+				goto error;
+			config.monitor = n;
+		}
+	} else if (*endp != '\0') {
+		goto error;
+	}
 
 	return;
 
@@ -251,6 +272,54 @@ ealloccolor(const char *s, XftColor *color)
 {
 	if(!XftColorAllocName(dpy, visual, colormap, s, color))
 		errx(1, "cannot allocate color: %s", s);
+}
+
+/* query monitor information and cursor position */
+static void
+initmonitor(void)
+{
+	XineramaScreenInfo *info = NULL;
+	Window dw;          /* dummy variable */
+	int di;             /* dummy variable */
+	unsigned du;        /* dummy variable */
+	int cursx, cursy;   /* cursor position */
+	int nmons;
+	int i;
+
+	XQueryPointer(dpy, rootwin, &dw, &dw, &cursx, &cursy, &di, &di, &du);
+
+	mon.x = mon.y = 0;
+	mon.w = DisplayWidth(dpy, screen);
+	mon.h = DisplayHeight(dpy, screen);
+
+	if ((info = XineramaQueryScreens(dpy, &nmons)) != NULL) {
+		int selmon = 0;
+
+		if (!mflag || (mflag && (config.monitor < 0 || config.monitor >= nmons))) {
+			for (i = 0; i < nmons; i++) {
+				if (cursx >= info[i].x_org && cursx <= info[i].x_org + info[i].width &&
+				    cursy >= info[i].y_org && cursy <= info[i].y_org + info[i].height) {
+					selmon = i;
+					break;
+				}
+			}
+		} else {
+			selmon = config.monitor;
+		}
+
+		mon.x = info[selmon].x_org;
+		mon.y = info[selmon].y_org;
+		mon.w = info[selmon].width;
+		mon.h = info[selmon].height;
+	}
+
+	if (!pflag) {
+		config.posx = cursx;
+		config.posy = cursy;
+	} else if (mflag) {
+		config.posx += mon.x;
+		config.posy += mon.y;
+	}
 }
 
 /* read xrdb for configuration options */
@@ -325,12 +394,6 @@ initdc(void)
 static void
 initconfig(void)
 {
-	Window dw;   /* dummy variable */
-	int di;      /* dummy variable */
-	unsigned du; /* dummy variable */
-
-	if (!pflag)  /* if the user haven't specified a position, use cursor position*/
-		XQueryPointer(dpy, rootwin, &dw, &dw, &config.posx, &config.posy, &di, &di, &du);
 	config.screenw = DisplayWidth(dpy, screen);
 	config.screenh = DisplayHeight(dpy, screen);
 	config.iconsize = config.height_pixels - config.iconpadding * 2;
@@ -557,7 +620,7 @@ getnextutf8char(const char *s, const char **next_ret)
 	s++;
 	for (i = 1; i < usize; i++) {
 		*next_ret = s+1;
-		/* if byte is EOS or is not a continuation byte, return unknown */
+		/* if byte is nul or is not a continuation byte, return unknown */
 		if (*s == '\0' || ((unsigned char)*s & utfmask[0]) != utfbyte[0])
 			return unknown;
 		/* 6 is the number of relevant bits in the continuation byte */
@@ -671,27 +734,31 @@ setupmenupos(struct Menu *menu)
 	width = menu->w + config.border_pixels * 2;
 	height = menu->h + config.border_pixels * 2;
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
-		if (pflag || config.screenw - config.posx >= menu->w)
+		if (pflag || (config.posx > mon.x && mon.x + mon.w - config.posx >= width))
 			menu->x = config.posx;
 		else if (config.posx > width)
 			menu->x = config.posx - width;
 
-		if (pflag || config.screenh - config.posy >= height)
+		if (pflag || (config.posy > mon.y && mon.y + mon.h - config.posy >= height))
 			menu->y = config.posy;
 		else if (config.screenh > height)
-			menu->y = config.screenh - height;
+			menu->y = mon.y + mon.h - height;
 	} else {                    /* else, calculate in respect to parent menu */
-		if (config.screenw - (menu->parent->x + menu->parent->w + config.border_pixels + config.gap_pixels) >= width)
-			menu->x = menu->parent->x + menu->parent->w + config.border_pixels + config.gap_pixels;
+		int parentwidth;
+
+		parentwidth = menu->parent->x + menu->parent->w + config.border_pixels + config.gap_pixels;
+
+		if (mon.x + mon.w - parentwidth >= width)
+			menu->x = parentwidth;
 		else if (menu->parent->x > menu->w + config.border_pixels + config.gap_pixels)
 			menu->x = menu->parent->x - menu->w - config.border_pixels - config.gap_pixels;
 
-		if (config.screenh - (menu->caller->y + menu->parent->y) > height)
+		if (mon.y + mon.h - (menu->caller->y + menu->parent->y) > height)
 			menu->y = menu->caller->y + menu->parent->y;
-		else if (config.screenh - menu->parent->y > height)
+		else if (mon.y + mon.h - menu->parent->y > height)
 			menu->y = menu->parent->y;
-		else if (config.screenh > height)
-			menu->y = config.screenh - height;
+		else if (mon.y + mon.h > height)
+			menu->y = mon.y + mon.h - height;
 	}
 }
 
@@ -871,8 +938,8 @@ drawitems(struct Menu *menu)
 			if (item->file != NULL && !iflag) {
 				item->icon = loadicon(item->file);
 
-				imlib_context_set_drawable(item->sel);
 				imlib_context_set_image(item->icon);
+				imlib_context_set_drawable(item->sel);
 				imlib_render_image_on_drawable(config.horzpadding, config.iconpadding);
 				imlib_context_set_drawable(item->unsel);
 				imlib_render_image_on_drawable(config.horzpadding, config.iconpadding);
