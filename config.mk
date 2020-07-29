@@ -17,7 +17,7 @@ FREETYPEINC = /usr/include/freetype2
 
 # includes and libs
 INCS = -I${LOCALINC} -I${X11INC} -I${FREETYPEINC}
-LIBS = -L${LOCALLIB} -L${X11LIB} -lfontconfig -lXft -lX11 -lImlib2
+LIBS = -L${LOCALLIB} -L${X11LIB} -lfontconfig -lXft -lX11 -lXinerama -lImlib2
 
 # flags
 CPPFLAGS =
