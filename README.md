@@ -1,9 +1,9 @@
 <p align="center">
   <img src="/demo.gif", title="demo"/>
 </p>		 
-                                 
+
 # XMenu
-				 
+
 XMenu is a menu utility for X.
 XMenu receives a menu specification in stdin, shows a menu for the user
 to select one of the options, and outputs the option selected to stdout.
@@ -22,6 +22,7 @@ XMenu comes with the following features:
 * Submenus (some menu entries can spawn another menu).
 * Separators (menu entries can be separated by a line).
 * Icons (menu entries can be preceded by an icon image).
+* X resources support (you don't need to recompile xmenu for configuring it).
 
 
 ## Files

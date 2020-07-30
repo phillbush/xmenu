@@ -791,7 +791,7 @@ setupmenu(struct Menu *menu, XClassHint *classh)
 	XStringListToTextProperty(&title, 1, &wintitle);
 
 	/* set window manager hints */
-	sizeh.flags = PMaxSize | PMinSize;
+	sizeh.flags = USPosition | PMaxSize | PMinSize;
 	sizeh.min_width = sizeh.max_width = menu->w;
 	sizeh.min_height = sizeh.max_height = menu->h;
 	XSetWMProperties(dpy, menu->win, &wintitle, NULL, NULL, 0, &sizeh, NULL, classh);
