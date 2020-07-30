@@ -30,7 +30,7 @@ static void ealloccolor(const char *s, XftColor *color);
 static void initmonitor(void);
 static void initresources(void);
 static void initdc(void);
-static void initconfig(void);
+static void initiconsize(void);
 static void initatoms(void);
 
 /* structure builders, and their helper routines */
@@ -160,7 +160,7 @@ main(int argc, char *argv[])
 	initmonitor();
 	initresources();
 	initdc();
-	initconfig();
+	initiconsize();
 	initatoms();
 
 	/* set window class */
@@ -390,12 +390,10 @@ initdc(void)
 	dc.gc = XCreateGC(dpy, rootwin, 0, NULL);
 }
 
-/* calculate configuration values that are not set manually */
+/* calculate icon size */
 static void
-initconfig(void)
+initiconsize(void)
 {
-	config.screenw = DisplayWidth(dpy, screen);
-	config.screenh = DisplayHeight(dpy, screen);
 	config.iconsize = config.height_pixels - config.iconpadding * 2;
 }
 
@@ -741,7 +739,7 @@ setupmenupos(struct Menu *menu)
 
 		if (pflag || (config.posy > mon.y && mon.y + mon.h - config.posy >= height))
 			menu->y = config.posy;
-		else if (config.screenh > height)
+		else if (mon.y + mon.h > height)
 			menu->y = mon.y + mon.h - height;
 	} else {                    /* else, calculate in respect to parent menu */
 		int parentwidth;

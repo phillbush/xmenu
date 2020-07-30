@@ -42,7 +42,6 @@ struct Config {
 
 	/* the value below is computed by xmenu */
 	int iconsize;
-	int screenw, screenh;   /* screen width and height */
 };
 
 /* draw context structure */
