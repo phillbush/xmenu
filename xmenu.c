@@ -755,10 +755,8 @@ setupmenupos(struct Menu *menu)
 		else if (menu->parent->x > menu->w + config.border_pixels + config.gap_pixels)
 			menu->x = menu->parent->x - menu->w - config.border_pixels - config.gap_pixels;
 
-		if (mon.y + mon.h - (menu->caller->y + menu->parent->y) > height)
+		if (mon.y + mon.h - (menu->caller->y + menu->parent->y) >= height)
 			menu->y = menu->caller->y + menu->parent->y;
-		else if (mon.y + mon.h - menu->parent->y > height)
-			menu->y = menu->parent->y;
 		else if (mon.y + mon.h > height)
 			menu->y = mon.y + mon.h - height;
 	}
