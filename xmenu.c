@@ -671,7 +671,7 @@ drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *t
 		if (draw) {
 			int texty;
 
-			texty = y + (h + currfont->ascent) / 2;
+			texty = y + (h - (currfont->ascent + currfont->descent))/2 + currfont->ascent;
 			XftDrawStringUtf8(draw, color, currfont, x, texty,
 			                  (XftChar8 *)s, len);
 			x += ext.xOff;
