@@ -467,6 +467,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->y = 0;    /* calculated by setupmenu() */
 	menu->level = level;
 	menu->drawn = 0;
+	menu->hasicon = 0;
 
 	swa.override_redirect = (wflag) ? False : True;
 	swa.background_pixel = dc.normal[ColorBG].pixel;
@@ -540,6 +541,9 @@ buildmenutree(unsigned level, const char *label, const char *output, char *file)
 		item->submenu = menu;
 		curritem->prev = NULL;
 	}
+
+	if (curritem->file)
+		prevmenu->hasicon = 1;
 
 	return rootmenu;
 }
@@ -718,7 +722,7 @@ setupitems(struct Menu *menu)
 		 * padding appears 3 times: before the label and around the triangle.
 		 */
 		itemwidth = textwidth + config.triangle_width + config.horzpadding * 3;
-		itemwidth += (iflag) ? 0 : config.iconsize + config.horzpadding;
+		itemwidth += (iflag || !menu->hasicon) ? 0 : config.iconsize + config.horzpadding;
 		menu->w = MAX(menu->w, itemwidth);
 	}
 }
@@ -902,7 +906,7 @@ drawitems(struct Menu *menu)
 
 			/* draw text */
 			x = config.horzpadding;
-			x += (iflag) ? 0 : config.horzpadding + config.iconsize;
+			x += (iflag || !menu->hasicon) ? 0 : config.horzpadding + config.iconsize;
 			dsel = XftDrawCreate(dpy, item->sel, visual, colormap);
 			dunsel = XftDrawCreate(dpy, item->unsel, visual, colormap);
 			XSetForeground(dpy, dc.gc, dc.selected[ColorFG].pixel);
