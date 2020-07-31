@@ -1249,6 +1249,8 @@ cleanmenu(struct Menu *menu)
 static void
 cleanup(void)
 {
+	size_t i;
+
 	XUngrabPointer(dpy, CurrentTime);
 	XUngrabKeyboard(dpy, CurrentTime);
 
@@ -1258,6 +1260,9 @@ cleanup(void)
 	XftColorFree(dpy, visual, colormap, &dc.selected[ColorFG]);
 	XftColorFree(dpy, visual, colormap, &dc.separator);
 	XftColorFree(dpy, visual, colormap, &dc.border);
+
+	for (i = 0; i < dc.nfonts; i++)
+		XftFontClose(dpy, dc.fonts[i]);
 
 	XFreeGC(dpy, dc.gc);
 	XCloseDisplay(dpy);
