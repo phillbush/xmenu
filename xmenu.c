@@ -41,6 +41,7 @@ static struct Menu *parsestdin(void);
 
 /* text drawer, and its helper routine */
 static FcChar32 getnextutf8char(const char *s, const char **end_ret);
+static XftFont *getfontucode(FcChar32 ucode);
 static int drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *text);
 
 /* structure setters, and their helper routines */
@@ -638,53 +639,54 @@ getnextutf8char(const char *s, const char **next_ret)
 	return ucode;
 }
 
-/* draw text into XftDraw */
+/* get which font contains a given code point */
+static XftFont *
+getfontucode(FcChar32 ucode)
+{
+	size_t i;
+
+	for (i = 0; i < dc.nfonts; i++)
+		if (XftCharExists(dpy, dc.fonts[i], ucode) == FcTrue)
+			return dc.fonts[i];
+	return NULL;
+}
+
+/* draw text into XftDraw, return width of text glyphs */
 static int
 drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *text)
 {
-	const char *s, *nexts;
-	FcChar32 ucode;
-	XftFont *currfont;
-	int textlen = 0;
+	int textwidth = 0;
 	int texty;
 
 	texty = y + (h - (dc.fonts[0]->ascent + dc.fonts[0]->descent))/2 + dc.fonts[0]->ascent;
 
-	s = text;
-	while (*s) {
+	while (*text) {
+		XftFont *currfont;
 		XGlyphInfo ext;
-		int charexists;
+		FcChar32 ucode;
+		const char *next;
 		size_t len;
-		size_t i;
 
-		charexists = 0;
-		ucode = getnextutf8char(s, &nexts);
-		for (i = 0; i < dc.nfonts; i++) {
-			charexists = XftCharExists(dpy, dc.fonts[i], ucode);
-			if (charexists)
-				break;
-		}
-		if (charexists)
-			currfont = dc.fonts[i];
+		ucode = getnextutf8char(text, &next);
+		if ((currfont = getfontucode(ucode)) == NULL)
+			currfont = dc.fonts[0];
 
-		len = nexts - s;
+		len = next - text;
 
-		XftTextExtentsUtf8(dpy, currfont, (XftChar8 *)s,
-		                   len, &ext);
-		textlen += ext.xOff;
+		XftTextExtentsUtf8(dpy, currfont, (XftChar8 *)text, len, &ext);
+		textwidth += ext.xOff;
 
 		if (draw) {
 			if (!fflag)
 				texty = y + (h - (currfont->ascent + currfont->descent))/2 + currfont->ascent;
-			XftDrawStringUtf8(draw, color, currfont, x, texty,
-			                  (XftChar8 *)s, len);
+			XftDrawStringUtf8(draw, color, currfont, x, texty, (XftChar8 *)text, len);
 			x += ext.xOff;
 		}
 
-		s = nexts;
+		text = next;
 	}
 
-	return textlen;
+	return textwidth;
 }
 
 /* setup the height, width and icon of the items of a menu */
