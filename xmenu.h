@@ -64,7 +64,6 @@ struct Item {
 	char *file;             /* filename of the icon */
 	int y;                  /* item y position relative to menu */
 	int h;                  /* item height */
-	size_t labellen;        /* strlen(label) */
 	struct Item *prev;      /* previous item */
 	struct Item *next;      /* next item */
 	struct Menu *submenu;   /* submenu spawned by clicking on item */
