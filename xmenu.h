@@ -71,7 +71,7 @@ struct Item {
 	Imlib_Image icon;
 };
 
-/* monitor and cursor geometry structure */
+/* monitor geometry structure */
 struct Monitor {
 	int x, y, w, h;         /* monitor geometry */
 };
