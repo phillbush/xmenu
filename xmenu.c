@@ -297,8 +297,8 @@ initmonitor(void)
 
 		if (!mflag || (mflag && (config.monitor < 0 || config.monitor >= nmons))) {
 			for (i = 0; i < nmons; i++) {
-				if (cursx >= info[i].x_org && cursx <= info[i].x_org + info[i].width &&
-				    cursy >= info[i].y_org && cursy <= info[i].y_org + info[i].height) {
+				if (BETWEEN(cursx, info[i].x_org, info[i].x_org + info[i].width) &&
+				    BETWEEN(cursy, info[i].y_org, info[i].y_org + info[i].height)) {
 					selmon = i;
 					break;
 				}
@@ -437,10 +437,6 @@ allocitem(const char *label, const char *output, char *file)
 	}
 	item->y = 0;
 	item->h = 0;
-	if (item->label == NULL)
-		item->labellen = 0;
-	else
-		item->labellen = strlen(item->label);
 	item->next = NULL;
 	item->submenu = NULL;
 	item->icon = NULL;
@@ -461,10 +457,10 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->list = list;
 	menu->caller = NULL;
 	menu->selected = NULL;
-	menu->w = 0;    /* calculated by setupmenu() */
-	menu->h = 0;    /* calculated by setupmenu() */
-	menu->x = 0;    /* calculated by setupmenu() */
-	menu->y = 0;    /* calculated by setupmenu() */
+	menu->w = 0;        /* recalculated by setupmenu() */
+	menu->h = 0;        /* recalculated by setupmenu() */
+	menu->x = mon.x;    /* recalculated by setupmenu() */
+	menu->y = mon.y;    /* recalculated by setupmenu() */
 	menu->level = level;
 	menu->drawn = 0;
 	menu->hasicon = 0;
@@ -705,7 +701,7 @@ setupitems(struct Menu *menu)
 		menu->h += item->h;
 
 		if (item->label)
-			textwidth = drawtext(NULL, NULL, 0, 0, item->h, item->label);
+			textwidth = drawtext(NULL, NULL, 0, 0, 0, item->label);
 		else
 			textwidth = 0;
 
