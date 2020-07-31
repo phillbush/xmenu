@@ -95,6 +95,7 @@ static Atom wmdelete;
 static Atom netatom[NetLast];
 
 /* flags */
+static int fflag = 0;   /* whether glyphs should align based on the first font */
 static int iflag = 0;   /* whether to disable icons */
 static int mflag = 0;   /* whether the user specified a monitor with -p */
 static int pflag = 0;   /* whether the user specified a position with -p */
@@ -116,8 +117,11 @@ main(int argc, char *argv[])
 	XClassHint classh;
 	int ch;
 
-	while ((ch = getopt(argc, argv, "ip:w")) != -1) {
+	while ((ch = getopt(argc, argv, "fip:w")) != -1) {
 		switch (ch) {
+		case 'f':
+			fflag = 1;
+			break;
 		case 'i':
 			iflag = 1;
 			break;
@@ -642,6 +646,9 @@ drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *t
 	FcChar32 ucode;
 	XftFont *currfont;
 	int textlen = 0;
+	int texty;
+
+	texty = y + (h - (dc.fonts[0]->ascent + dc.fonts[0]->descent))/2 + dc.fonts[0]->ascent;
 
 	s = text;
 	while (*s) {
@@ -667,9 +674,8 @@ drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *t
 		textlen += ext.xOff;
 
 		if (draw) {
-			int texty;
-
-			texty = y + (h - (currfont->ascent + currfont->descent))/2 + currfont->ascent;
+			if (!fflag)
+				texty = y + (h - (currfont->ascent + currfont->descent))/2 + currfont->ascent;
 			XftDrawStringUtf8(draw, color, currfont, x, texty,
 			                  (XftChar8 *)s, len);
 			x += ext.xOff;
@@ -1272,6 +1278,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-iw] [-p position] [title]\n");
+	(void)fprintf(stderr, "usage: xmenu [-fiw] [-p position] [title]\n");
 	exit(1);
 }

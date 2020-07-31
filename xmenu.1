@@ -3,7 +3,7 @@
 xmenu \- menu utility for X
 .SH SYNOPSIS
 .B xmenu
-.RB [ \-iw ]
+.RB [ \-fiw ]
 .RB [ -p
 .IR position ]
 .RI [ title ]
@@ -15,6 +15,13 @@ shows a menu for the user to select one of the items,
 and outputs the item selected to stdout.
 .PP
 The options are as follows:
+.TP
+.B -f
+Make glyphs align based solely on the first font specified.
+Without this option, glyphs are aligned based on the font in which they are found.
+This option may correct alignment of CJK glyphs
+if a CJK font is specified after a Latin font,
+but may break the alignment of other glyphs in some cases.
 .TP
 .B -i
 Disable icons.
