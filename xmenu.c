@@ -260,12 +260,17 @@ parsefonts(const char *s)
 		i = 0;
 		while (isspace(*p))
 			p++;
-		while (*p != '\0' && *p != ',') {
+		while (i < sizeof buf && *p != '\0' && *p != ',') {
 			buf[i++] = *p++;
 		}
+		if (i >= sizeof buf)
+			errx(1, "font name too long");
 		if (*p == ',')
 			p++;
 		buf[i] = '\0';
+		if (nfont == 0)
+			if ((dc.pattern = FcNameParse((FcChar8 *)buf)) == NULL)
+				errx(1, "the first font in the cache must be loaded from a font string");
 		if ((dc.fonts[nfont++] = XftFontOpenName(dpy, screen, buf)) == NULL)
 			errx(1, "cannot load font");
 	}
@@ -643,12 +648,45 @@ getnextutf8char(const char *s, const char **next_ret)
 static XftFont *
 getfontucode(FcChar32 ucode)
 {
+	FcCharSet *fccharset;
+	FcPattern *fcpattern;
+	FcPattern *match;
+	XftResult result;
+	XftFont *retfont;
 	size_t i;
 
 	for (i = 0; i < dc.nfonts; i++)
 		if (XftCharExists(dpy, dc.fonts[i], ucode) == FcTrue)
 			return dc.fonts[i];
-	return NULL;
+
+	/* create a charset containing our code point */
+	fccharset = FcCharSetCreate();
+	FcCharSetAddChar(fccharset, ucode);
+
+	/* create a pattern akin to the dc.pattern but containing our code point */
+	fcpattern = FcPatternDuplicate(dc.pattern);
+	FcPatternAddCharSet(fcpattern, FC_CHARSET, fccharset);
+
+	/* find pattern matching fcpattern */
+	FcConfigSubstitute(NULL, fcpattern, FcMatchPattern);
+	FcDefaultSubstitute(fcpattern);
+	match = XftFontMatch(dpy, screen, fcpattern, &result);
+
+	/* if found a pattern, open its font */
+	if (match) {
+		retfont = XftFontOpenPattern(dpy, match);
+		if (retfont && XftCharExists(dpy, retfont, ucode) == FcTrue) {
+			if ((dc.fonts = realloc(dc.fonts, dc.nfonts+1)) == NULL)
+				err(1, "realloc");
+			dc.fonts[dc.nfonts++] = retfont;
+			return retfont;
+		} else {
+			XftFontClose(dpy, retfont);
+		}
+	}
+
+	/* in case no fount was found, return the first one */
+	return dc.fonts[0];
 }
 
 /* draw text into XftDraw, return width of text glyphs */
@@ -668,11 +706,9 @@ drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *t
 		size_t len;
 
 		ucode = getnextutf8char(text, &next);
-		if ((currfont = getfontucode(ucode)) == NULL)
-			currfont = dc.fonts[0];
+		currfont = getfontucode(ucode);
 
 		len = next - text;
-
 		XftTextExtentsUtf8(dpy, currfont, (XftChar8 *)text, len, &ext);
 		textwidth += ext.xOff;
 
