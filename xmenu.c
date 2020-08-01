@@ -96,7 +96,6 @@ static Atom wmdelete;
 static Atom netatom[NetLast];
 
 /* flags */
-static int fflag = 0;   /* whether glyphs should align based on the first font */
 static int iflag = 0;   /* whether to disable icons */
 static int mflag = 0;   /* whether the user specified a monitor with -p */
 static int pflag = 0;   /* whether the user specified a position with -p */
@@ -118,11 +117,8 @@ main(int argc, char *argv[])
 	XClassHint classh;
 	int ch;
 
-	while ((ch = getopt(argc, argv, "fip:w")) != -1) {
+	while ((ch = getopt(argc, argv, "ip:w")) != -1) {
 		switch (ch) {
-		case 'f':
-			fflag = 1;
-			break;
 		case 'i':
 			iflag = 1;
 			break;
@@ -648,11 +644,11 @@ getnextutf8char(const char *s, const char **next_ret)
 static XftFont *
 getfontucode(FcChar32 ucode)
 {
-	FcCharSet *fccharset;
-	FcPattern *fcpattern;
-	FcPattern *match;
+	FcCharSet *fccharset = NULL;
+	FcPattern *fcpattern = NULL;
+	FcPattern *match = NULL;
+	XftFont *retfont = NULL;
 	XftResult result;
-	XftFont *retfont;
 	size_t i;
 
 	for (i = 0; i < dc.nfonts; i++)
@@ -663,14 +659,18 @@ getfontucode(FcChar32 ucode)
 	fccharset = FcCharSetCreate();
 	FcCharSetAddChar(fccharset, ucode);
 
-	/* create a pattern akin to the dc.pattern but containing our code point */
-	fcpattern = FcPatternDuplicate(dc.pattern);
-	FcPatternAddCharSet(fcpattern, FC_CHARSET, fccharset);
+	/* create a pattern akin to the dc.pattern but containing our charset */
+	if (fccharset) {
+		fcpattern = FcPatternDuplicate(dc.pattern);
+		FcPatternAddCharSet(fcpattern, FC_CHARSET, fccharset);
+	}
 
 	/* find pattern matching fcpattern */
-	FcConfigSubstitute(NULL, fcpattern, FcMatchPattern);
-	FcDefaultSubstitute(fcpattern);
-	match = XftFontMatch(dpy, screen, fcpattern, &result);
+	if (fcpattern) {
+		FcConfigSubstitute(NULL, fcpattern, FcMatchPattern);
+		FcDefaultSubstitute(fcpattern);
+		match = XftFontMatch(dpy, screen, fcpattern, &result);
+	}
 
 	/* if found a pattern, open its font */
 	if (match) {
@@ -678,8 +678,8 @@ getfontucode(FcChar32 ucode)
 		if (retfont && XftCharExists(dpy, retfont, ucode) == FcTrue) {
 			if ((dc.fonts = realloc(dc.fonts, dc.nfonts+1)) == NULL)
 				err(1, "realloc");
-			dc.fonts[dc.nfonts++] = retfont;
-			return retfont;
+			dc.fonts[dc.nfonts] = retfont;
+			return dc.fonts[dc.nfonts++];
 		} else {
 			XftFontClose(dpy, retfont);
 		}
@@ -694,9 +694,6 @@ static int
 drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *text)
 {
 	int textwidth = 0;
-	int texty;
-
-	texty = y + (h - (dc.fonts[0]->ascent + dc.fonts[0]->descent))/2 + dc.fonts[0]->ascent;
 
 	while (*text) {
 		XftFont *currfont;
@@ -713,8 +710,9 @@ drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *t
 		textwidth += ext.xOff;
 
 		if (draw) {
-			if (!fflag)
-				texty = y + (h - (currfont->ascent + currfont->descent))/2 + currfont->ascent;
+			int texty;
+
+			texty = y + (h - (currfont->ascent + currfont->descent))/2 + currfont->ascent;
 			XftDrawStringUtf8(draw, color, currfont, x, texty, (XftChar8 *)text, len);
 			x += ext.xOff;
 		}
@@ -1316,6 +1314,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-fiw] [-p position] [title]\n");
+	(void)fprintf(stderr, "usage: xmenu [-iw] [-p position] [title]\n");
 	exit(1);
 }
