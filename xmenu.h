@@ -53,6 +53,7 @@ struct DC {
 
 	GC gc;
 
+	FcPattern *pattern;
 	XftFont **fonts;
 	size_t nfonts;
 };
