@@ -109,35 +109,52 @@ static int wflag = 0;   /* whether to let the window manager control XMenu */
  * Function implementations
  */
 
+/* arrgument parser implementation to have dmenu style arguments */
+int
+arg_parse(int argc, char *argv[])
+{
+	int i = 1;
+
+	for (i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "-fn")) {
+			config.font = argv[++i];
+		} else if (!strcmp(argv[i], "-nb")) {
+			config.background_color = argv[++i];
+		} else if (!strcmp(argv[i], "-nf")) {
+			config.foreground_color = argv[++i];
+		} else if (!strcmp(argv[i], "-sb")) {
+			config.selbackground_color = argv[++i];
+		} else if (!strcmp(argv[i], "-sf")) {
+			config.selforeground_color = argv[++i];
+		} else if (!strcmp(argv[i], "-bc")) {
+			config.border_color = argv[++i];
+		} else if (!strcmp(argv[i], "-sp")) {
+			config.separator_color = argv[++i];
+		} else if (!strcmp(argv[i], "-p")) {
+			pflag = 1;
+			parseposition(argv[++i]);
+		} else if (!strcmp(argv[i], "-i")) {
+			iflag = 1;
+		} else if (!strcmp(argv[i], "-w")) {
+			wflag = 1;
+		} else {
+			return (-1);
+		}
+	}
+	return (i);
+}
+
 /* xmenu: generate menu from stdin and print selected entry to stdout */
 int
 main(int argc, char *argv[])
 {
 	struct Menu *rootmenu;
 	XClassHint classh;
-	int ch;
+	int ch = arg_parse(argc, argv);
 
-	while ((ch = getopt(argc, argv, "ip:w")) != -1) {
-		switch (ch) {
-		case 'i':
-			iflag = 1;
-			break;
-		case 'p':
-			pflag = 1;
-			parseposition(optarg);
-			break;
-		case 'w':
-			wflag = 1;
-			break;
-		default:
-			usage();
-			break;
-		}
-	}
-	argc -= optind;
-	argv += optind;
-
-	if (argc > 1)
+	argc -= ch;
+	argv += ch;
+	if (argc > 1 || ch < 0)
 		usage();
 
 	/* open connection to server and set X variables */
