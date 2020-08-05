@@ -6,6 +6,20 @@ xmenu \- menu utility for X
 .RB [ \-iw ]
 .RB [ -p
 .IR position ]
+.RB [ \-fn
+.IR font ]
+.RB [ \-nb
+.IR color ]
+.RB [ \-nf
+.IR color ]
+.RB [ \-sb
+.IR color ]
+.RB [ \-sf
+.IR color ]
+.RB [ \-bc
+.IR color ]
+.RB [ \-sp
+.IR color ]
 .RI [ title ]
 .SH DESCRIPTION
 .B xmenu
@@ -19,6 +33,30 @@ The options are as follows:
 .B -i
 Disable icons.
 This makes xmenu loading faster when not using icons.
+.TP
+.BI \-fn " font"
+defines the font or font set used.
+.TP
+.BI \-nb " color"
+defines the normal background color.
+.IR #RGB ,
+.IR #RRGGBB ,
+and X color names are supported.
+.TP
+.BI \-nf " color"
+defines the normal foreground color.
+.TP
+.BI \-sb " color"
+defines the selected background color.
+.TP
+.BI \-sf " color"
+defines the selected foreground color.
+.TP
+.BI \-bc " color"
+defines the border color.
+.TP
+.BI \-sp " color"
+defines the separator color.
 .TP
 .BI -p " position"
 Set the position to spawn xmenu.

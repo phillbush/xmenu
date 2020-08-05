@@ -137,8 +137,9 @@ arg_parse(int argc, char *argv[])
 			iflag = 1;
 		} else if (!strcmp(argv[i], "-w")) {
 			wflag = 1;
-		} else {
-			return (-1);
+		} else if (argv[i][0] == '-' && strlen(argv[i]) > 1) {
+			fprintf(stderr, "%s: invalid option -- '%c'\n", argv[0], argv[i][1]);
+			usage();
 		}
 	}
 	return (i);
@@ -1331,6 +1332,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-iw] [-p position] [title]\n");
+	(void)fprintf(stderr, "usage: xmenu [-iw] [-p position] [-fn font] [-nb color] [-nf color] [-sb color] [-sf color] [-bc color] [-sp color] [title]\n");
 	exit(1);
 }
