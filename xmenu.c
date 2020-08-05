@@ -256,9 +256,8 @@ parsefonts(const char *s)
 		i = 0;
 		while (isspace(*p))
 			p++;
-		while (i < sizeof buf && *p != '\0' && *p != ',') {
+		while (i < sizeof buf && *p != '\0' && *p != ',')
 			buf[i++] = *p++;
-		}
 		if (i >= sizeof buf)
 			errx(1, "font name too long");
 		if (*p == ',')
@@ -301,7 +300,7 @@ initmonitor(void)
 	if ((info = XineramaQueryScreens(dpy, &nmons)) != NULL) {
 		int selmon = 0;
 
-		if (!mflag || (mflag && (config.monitor < 0 || config.monitor >= nmons))) {
+		if (!mflag || config.monitor < 0 || config.monitor >= nmons) {
 			for (i = 0; i < nmons; i++) {
 				if (BETWEEN(cursx, info[i].x_org, info[i].x_org + info[i].width) &&
 				    BETWEEN(cursy, info[i].y_org, info[i].y_org + info[i].height)) {

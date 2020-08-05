@@ -1,6 +1,6 @@
 <p align="center">
   <img src="/demo.gif", title="demo"/>
-</p>		 
+</p>
 
 # XMenu
 
@@ -9,6 +9,10 @@ XMenu receives a menu specification in stdin, shows a menu for the user
 to select one of the options, and outputs the option selected to stdout.
 XMenu can be controlled both via mouse and via keyboard.  The menu is a
 pop-up menu (that is, after selecting an option, the menu disappears).
+
+In order to generate a menu of applications based on .desktop entries,
+as specified by XDG, checkout [xdg-xmenu](https://github.com/OliverLew/xdg-xmenu)
+by [OliverLew](https://github.com/OliverLew).
 
 Check out my other project, [xclickroot](https://github.com/phillbush/xclickroot) for an application that can
 spawn xmenu by right clicking on the root window (i.e. on the desktop).
@@ -29,7 +33,7 @@ XMenu comes with the following features:
 
 The files are:
 
-*  `./README`:     This file.
+* `./README`:     This file.
 * `./Makefile`:   The makefile.
 * `./config.h`:   The hardcoded default configuration for XMenu.
 * `./config.mk`:  The setup for the makefile.
