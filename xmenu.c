@@ -574,6 +574,8 @@ parsestdin(void)
 			file = label + 4;
 			label = strtok(NULL, "\t\n");
 		}
+		if (file && *file == '\0')
+			errx(1, "blank icon filename");
 
 		/* get the output */
 		output = strtok(NULL, "\n");
@@ -888,13 +890,51 @@ static Imlib_Image
 loadicon(const char *file)
 {
 	Imlib_Image icon;
+	Imlib_Load_Error errcode;
+	const char *errstr;
 	int width;
 	int height;
 	int imgsize;
 
-	icon = imlib_load_image(file);
-	if (icon == NULL)
-		errx(1, "could not load icon %s", file);
+	icon = imlib_load_image_with_error_return(file, &errcode);
+	if (icon == NULL) {
+		switch (errcode) {
+		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
+			errstr = "file does not exist";
+			break;
+		case IMLIB_LOAD_ERROR_FILE_IS_DIRECTORY:
+			errstr = "file is directory";
+			break;
+		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_READ:
+		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_WRITE:
+			errstr = "permission denied";
+			break;
+		case IMLIB_LOAD_ERROR_NO_LOADER_FOR_FILE_FORMAT:
+			errstr = "unknown file format";
+			break;
+		case IMLIB_LOAD_ERROR_PATH_TOO_LONG:
+			errstr = "path too long";
+			break;
+		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NON_EXISTANT:
+		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NOT_DIRECTORY:
+		case IMLIB_LOAD_ERROR_PATH_POINTS_OUTSIDE_ADDRESS_SPACE:
+			errstr = "improper path";
+			break;
+		case IMLIB_LOAD_ERROR_TOO_MANY_SYMBOLIC_LINKS:
+			errstr = "too many symbolic links";
+			break;
+		case IMLIB_LOAD_ERROR_OUT_OF_MEMORY:
+			errstr = "out of memory";
+			break;
+		case IMLIB_LOAD_ERROR_OUT_OF_FILE_DESCRIPTORS:
+			errstr = "out of file descriptors";
+			break;
+		default:
+			errstr = "unknown error";
+			break;
+		}
+		errx(1, "could not load icon (%s): %s", errstr, file);
+	}
 
 	imlib_context_set_image(icon);
 
