@@ -514,7 +514,7 @@ buildmenutree(unsigned level, const char *label, const char *output, char *file)
 			  menu = menu->parent, i++)
 			;
 		if (menu == NULL)
-			errx(1, "reached NULL menu");
+			errx(1, "improper indentation detected");
 
 		/* find last item in the new menu */
 		for (item = menu->list; item->next != NULL; item = item->next)
@@ -864,7 +864,7 @@ grabpointer(void)
 			return;
 		nanosleep(&ts, NULL);
 	}
-	errx(1, "could not grab keyboard");
+	errx(1, "could not grab pointer");
 }
 
 /* try to grab keyboard, we may have to wait for another process to ungrab */
