@@ -574,8 +574,6 @@ parsestdin(void)
 			file = label + 4;
 			label = strtok(NULL, "\t\n");
 		}
-		if (file && *file == '\0')
-			errx(1, "blank icon filename");
 
 		/* get the output */
 		output = strtok(NULL, "\n");
@@ -897,7 +895,10 @@ loadicon(const char *file)
 	int imgsize;
 
 	icon = imlib_load_image_with_error_return(file, &errcode);
-	if (icon == NULL) {
+	if (*file == '\0') {
+		warnx("could not load icon (file name is blank)");
+		return NULL;
+	} else if (icon == NULL) {
 		switch (errcode) {
 		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
 			errstr = "file does not exist";
@@ -933,7 +934,8 @@ loadicon(const char *file)
 			errstr = "unknown error";
 			break;
 		}
-		errx(1, "could not load icon (%s): %s", errstr, file);
+		warnx("could not load icon (%s): %s", errstr, file);
+		return NULL;
 	}
 
 	imlib_context_set_image(icon);
@@ -1012,9 +1014,10 @@ drawitems(struct Menu *menu)
 			}
 
 			/* draw icon */
-			if (item->file != NULL && !iflag) {
+			if (item->file && !iflag)
 				item->icon = loadicon(item->file);
 
+			if (item->icon) {
 				imlib_context_set_image(item->icon);
 				imlib_context_set_drawable(item->sel);
 				imlib_render_image_on_drawable(config.horzpadding, config.iconpadding);
