@@ -142,7 +142,7 @@ main(int argc, char *argv[])
 
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
-		errx(1, "cannot open display");
+		errx(1, "could not open display");
 	screen = DefaultScreen(dpy);
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
@@ -267,7 +267,7 @@ parsefonts(const char *s)
 			if ((dc.pattern = FcNameParse((FcChar8 *)buf)) == NULL)
 				errx(1, "the first font in the cache must be loaded from a font string");
 		if ((dc.fonts[nfont++] = XftFontOpenName(dpy, screen, buf)) == NULL)
-			errx(1, "cannot load font");
+			errx(1, "could not load font");
 	}
 }
 
@@ -276,7 +276,7 @@ static void
 ealloccolor(const char *s, XftColor *color)
 {
 	if(!XftColorAllocName(dpy, visual, colormap, s, color))
-		errx(1, "cannot allocate color: %s", s);
+		errx(1, "could not allocate color: %s", s);
 }
 
 /* query monitor information and cursor position */
@@ -864,7 +864,7 @@ grabpointer(void)
 			return;
 		nanosleep(&ts, NULL);
 	}
-	errx(1, "cannot grab keyboard");
+	errx(1, "could not grab keyboard");
 }
 
 /* try to grab keyboard, we may have to wait for another process to ungrab */
@@ -880,7 +880,7 @@ grabkeyboard(void)
 			return;
 		nanosleep(&ts, NULL);
 	}
-	errx(1, "cannot grab keyboard");
+	errx(1, "could not grab keyboard");
 }
 
 /* load and scale icon */
@@ -894,7 +894,7 @@ loadicon(const char *file)
 
 	icon = imlib_load_image(file);
 	if (icon == NULL)
-		errx(1, "cannot load icon %s", file);
+		errx(1, "could not load icon %s", file);
 
 	imlib_context_set_image(icon);
 
