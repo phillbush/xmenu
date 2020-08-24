@@ -316,6 +316,8 @@ initmonitor(void)
 		mon.y = info[selmon].y_org;
 		mon.w = info[selmon].width;
 		mon.h = info[selmon].height;
+
+		XFree(info);
 	}
 
 	if (!pflag) {
