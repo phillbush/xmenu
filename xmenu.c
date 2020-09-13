@@ -333,9 +333,9 @@ initmonitor(void)
 static void
 initresources(void)
 {
-	char *xrm;
 	long n;
 	char *type;
+	char *xrm;
 	XrmDatabase xdb;
 	XrmValue xval;
 
