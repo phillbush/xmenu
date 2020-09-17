@@ -1272,19 +1272,19 @@ selectitem:
 
 			/* cycle through menu */
 			item = NULL;
-			if (ksym == XK_Home) {
+			if (ksym == XK_Home || ksym == KSYMFIRST) {
 				item = itemcycle(currmenu, ITEMFIRST);
-			} else if (ksym == XK_End) {
+			} else if (ksym == XK_End || ksym == KSYMLAST) {
 				item = itemcycle(currmenu, ITEMLAST);
-			} else if (ksym == XK_ISO_Left_Tab || ksym == XK_Up) {
+			} else if (ksym == XK_ISO_Left_Tab || ksym == XK_Up || ksym == KSYMUP) {
 				item = itemcycle(currmenu, ITEMPREV);
-			} else if (ksym == XK_Tab || ksym == XK_Down) {
+			} else if (ksym == XK_Tab || ksym == XK_Down || ksym == KSYMDOWN) {
 				item = itemcycle(currmenu, ITEMNEXT);
-			} else if ((ksym == XK_Return || ksym == XK_Right) &&
+			} else if ((ksym == XK_Return || ksym == XK_Right || ksym == KSYMRIGHT) &&
 			           currmenu->selected != NULL) {
 				item = currmenu->selected;
 				goto selectitem;
-			} else if ((ksym == XK_Escape || ksym == XK_Left) &&
+			} else if ((ksym == XK_Escape || ksym == XK_Left || ksym == KSYMLEFT) &&
 			           currmenu->parent != NULL) {
 				item = currmenu->parent->selected;
 				currmenu = currmenu->parent;
