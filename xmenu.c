@@ -1015,16 +1015,21 @@ drawitems(struct Menu *menu)
 				             Convex, CoordModeOrigin);
 			}
 
-			/* draw icon */
-			if (item->file && !iflag)
+			/* try to load icon */
+			if (item->file && !iflag) {
 				item->icon = loadicon(item->file);
+				free(item->file);
+			}
 
+			/* draw icon if properly loaded */
 			if (item->icon) {
 				imlib_context_set_image(item->icon);
 				imlib_context_set_drawable(item->sel);
 				imlib_render_image_on_drawable(config.horzpadding, config.iconpadding);
 				imlib_context_set_drawable(item->unsel);
 				imlib_render_image_on_drawable(config.horzpadding, config.iconpadding);
+				imlib_context_set_image(item->icon);
+				imlib_free_image();
 			}
 		}
 	}
@@ -1316,13 +1321,6 @@ cleanmenu(struct Menu *menu)
 		if (tmp->label != tmp->output)
 			free(tmp->label);
 		free(tmp->output);
-		if (tmp->file != NULL) {
-			free(tmp->file);
-			if (tmp->icon != NULL) {
-				imlib_context_set_image(tmp->icon);
-				imlib_free_image();
-			}
-		}
 		item = item->next;
 		free(tmp);
 	}
