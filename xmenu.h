@@ -1,8 +1,7 @@
 #define PROGNAME "xmenu"
 
-/* macros for keyboard menu navigation */
-#define ITEMPREV 0
-#define ITEMNEXT 1
+/* enum for keyboard menu navigation */
+enum { ITEMPREV, ITEMNEXT, ITEMFIRST, ITEMLAST };
 
 /* macros */
 #define LEN(x)              (sizeof (x) / sizeof (x[0]))

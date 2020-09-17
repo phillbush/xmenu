@@ -1150,38 +1150,53 @@ getitem(struct Menu *menu, int y)
 static struct Item *
 itemcycle(struct Menu *currmenu, int direction)
 {
-	struct Item *item;
+	struct Item *item = NULL;
 	struct Item *lastitem;
 
-	item = NULL;
+	for (lastitem = currmenu->list; lastitem && lastitem->next; lastitem = lastitem->next)
+		;
 
-	if (direction == ITEMNEXT) {
+	/* select item (either separator or labeled item) in given direction */
+	switch (direction) {
+	case ITEMNEXT:
 		if (currmenu->selected == NULL)
 			item = currmenu->list;
 		else if (currmenu->selected->next != NULL)
 			item = currmenu->selected->next;
-
-		while (item != NULL && item->label == NULL)
-			item = item->next;
-
-		if (item == NULL)
-			item = currmenu->list;
-	} else {
-		for (lastitem = currmenu->list;
-		     lastitem != NULL && lastitem->next != NULL;
-		     lastitem = lastitem->next)
-			;
-
+		break;
+	case ITEMPREV:
 		if (currmenu->selected == NULL)
 			item = lastitem;
 		else if (currmenu->selected->prev != NULL)
 			item = currmenu->selected->prev;
+		break;
+	case ITEMFIRST:
+		item = currmenu->list;
+		break;
+	case ITEMLAST:
+		item = lastitem;
+		break;
+	}
 
+	/*
+	 * the selected item can be a separator
+	 * let's select the closest labeled item (ie., one that isn't a separator)
+	 */
+	switch (direction) {
+	case ITEMNEXT:
+	case ITEMFIRST:
+		while (item != NULL && item->label == NULL)
+			item = item->next;
+		if (item == NULL)
+			item = currmenu->list;
+		break;
+	case ITEMPREV:
+	case ITEMLAST:
 		while (item != NULL && item->label == NULL)
 			item = item->prev;
-
 		if (item == NULL)
 			item = lastitem;
+		break;
 	}
 
 	return item;
@@ -1257,7 +1272,11 @@ selectitem:
 
 			/* cycle through menu */
 			item = NULL;
-			if (ksym == XK_ISO_Left_Tab || ksym == XK_Up) {
+			if (ksym == XK_Home) {
+				item = itemcycle(currmenu, ITEMFIRST);
+			} else if (ksym == XK_End) {
+				item = itemcycle(currmenu, ITEMLAST);
+			} else if (ksym == XK_ISO_Left_Tab || ksym == XK_Up) {
 				item = itemcycle(currmenu, ITEMPREV);
 			} else if (ksym == XK_Tab || ksym == XK_Down) {
 				item = itemcycle(currmenu, ITEMNEXT);
