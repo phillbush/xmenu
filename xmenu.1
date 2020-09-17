@@ -95,7 +95,14 @@ is controlled by the mouse,
 but can also be controlled by the keyboard.
 Items can be selected using the arrow keys,
 Tab (with and without Shift),
+Home, End,
 Enter and Esc.
+.TP
+.BR Home
+Select the first item in the menu.
+.TP
+.BR End
+Select the last item in the menu.
 .TP
 .BR Down ", " Tab
 Cycle through the items in the regular direction.
@@ -111,6 +118,10 @@ Go to the menu above.
 .TP
 .B Esc
 Go to the menu above or exit xmenu.
+.PP
+Additional key bindings can be set at compile time by changing the
+.B config.h
+file.
 .SH RESOURCES
 .B
 xmenu
