@@ -233,7 +233,7 @@ error:
 	errx(1, "improper position: %s", optarg);
 }
 
-/* parse color string */
+/* parse font string */
 static void
 parsefonts(const char *s)
 {
