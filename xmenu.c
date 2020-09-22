@@ -1280,7 +1280,14 @@ selectitem:
 				item = itemcycle(currmenu, ITEMPREV);
 			} else if (ksym == XK_Tab || ksym == XK_Down || ksym == KSYMDOWN) {
 				item = itemcycle(currmenu, ITEMNEXT);
-			} else if ((ksym == XK_Return || ksym == XK_Right || ksym == KSYMRIGHT) &&
+			} else if (ksym >= XK_1 && ksym <= XK_9){
+                                item = itemcycle(currmenu, ITEMFIRST);
+                                currmenu->selected = item;
+                                for(int i = ksym-XK_1; i > 0; i-=1){
+                                    item = itemcycle(currmenu, ITEMNEXT);
+                                    currmenu->selected = item;
+                                }
+                        } else if ((ksym == XK_Return || ksym == XK_Right || ksym == KSYMRIGHT) &&
 			           currmenu->selected != NULL) {
 				item = currmenu->selected;
 				goto selectitem;
