@@ -1209,6 +1209,7 @@ run(struct Menu *currmenu)
 	struct Menu *menu;
 	struct Item *item;
 	struct Item *previtem = NULL;
+	struct Item *lastitem;
 	KeySym ksym;
 	XEvent ev;
 
@@ -1282,11 +1283,10 @@ selectitem:
 				item = itemcycle(currmenu, ITEMNEXT);
 			} else if (ksym >= XK_1 && ksym <= XK_9){
 				item = itemcycle(currmenu, ITEMFIRST);
-				for(int i = ksym-XK_1; i > 0; i-=1){
+				lastitem = itemcycle(currmenu, ITEMLAST);
+				for (int i = ksym - XK_1; i > 0 && item != lastitem; i--) {
 					currmenu->selected = item;
 					item = itemcycle(currmenu, ITEMNEXT);
-					if (item == itemcycle(currmenu, ITEMLAST))
-						break;
 				}
 			} else if ((ksym == XK_Return || ksym == XK_Right || ksym == KSYMRIGHT) &&
 			            currmenu->selected != NULL) {
