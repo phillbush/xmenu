@@ -17,72 +17,6 @@
 #include <Imlib2.h>
 #include "xmenu.h"
 
-/*
- * Function declarations
- */
-
-/* argument parser */
-static void parseposition(char *optarg);
-
-/* initializers, and their helper routines */
-static void parsefonts(const char *s);
-static void ealloccolor(const char *s, XftColor *color);
-static void initmonitor(void);
-static void initresources(void);
-static void initdc(void);
-static void initiconsize(void);
-static void initatoms(void);
-
-/* structure builders, and their helper routines */
-static struct Item *allocitem(const char *label, const char *output, char *file);
-static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
-static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
-static struct Menu *parsestdin(void);
-
-/* text drawer, and its helper routine */
-static FcChar32 getnextutf8char(const char *s, const char **end_ret);
-static XftFont *getfontucode(FcChar32 ucode);
-static int drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *text);
-
-/* structure setters, and their helper routines */
-static void setupitems(struct Menu *menu);
-static void setupmenupos(struct Menu *menu);
-static void setupmenu(struct Menu *menu, XClassHint *classh);
-
-/* grabbers */
-static void grabpointer(void);
-static void grabkeyboard(void);
-
-/* item drawer, and its helper routine */
-static Imlib_Image loadicon(const char *file);
-static void drawitems(struct Menu *menu);
-
-/* menu drawers and mappers */
-static void drawmenus(struct Menu *currmenu);
-static void mapmenu(struct Menu *currmenu);
-
-/* getters */
-static struct Menu *getmenu(struct Menu *currmenu, Window win);
-static struct Item *getitem(struct Menu *menu, int y);
-
-/* cycle through items */
-static struct Item *itemcycle(struct Menu *currmenu, int direction);
-
-/* main event loop */
-static void run(struct Menu *currmenu);
-
-/* cleaners */
-static void cleanmenu(struct Menu *menu);
-static void cleanup(void);
-
-/* show usage */
-static void usage(void);
-
-
-/*
- * Variable declarations
- */
-
 /* X stuff */
 static Display *dpy;
 static int screen;
@@ -104,93 +38,12 @@ static int wflag = 0;   /* whether to let the window manager control XMenu */
 /* include config variable */
 #include "config.h"
 
-
-/*
- * Function implementations
- */
-
-/* xmenu: generate menu from stdin and print selected entry to stdout */
-int
-main(int argc, char *argv[])
+/* show usage */
+static void
+usage(void)
 {
-	struct Menu *rootmenu;
-	XClassHint classh;
-	int ch;
-
-	while ((ch = getopt(argc, argv, "ip:w")) != -1) {
-		switch (ch) {
-		case 'i':
-			iflag = 1;
-			break;
-		case 'p':
-			pflag = 1;
-			parseposition(optarg);
-			break;
-		case 'w':
-			wflag = 1;
-			break;
-		default:
-			usage();
-			break;
-		}
-	}
-	argc -= optind;
-	argv += optind;
-
-	if (argc > 1)
-		usage();
-
-	/* open connection to server and set X variables */
-	if ((dpy = XOpenDisplay(NULL)) == NULL)
-		errx(1, "could not open display");
-	screen = DefaultScreen(dpy);
-	visual = DefaultVisual(dpy, screen);
-	rootwin = RootWindow(dpy, screen);
-	colormap = DefaultColormap(dpy, screen);
-
-	/* imlib2 stuff */
-	if (!iflag) {
-		imlib_set_cache_size(2048 * 1024);
-		imlib_context_set_dither(1);
-		imlib_context_set_display(dpy);
-		imlib_context_set_visual(visual);
-		imlib_context_set_colormap(colormap);
-	}
-
-	/* initializers */
-	initmonitor();
-	initresources();
-	initdc();
-	initiconsize();
-	initatoms();
-
-	/* set window class */
-	classh.res_class = PROGNAME;
-	if (argc == 1)
-		classh.res_name = *argv;
-	else
-		classh.res_name = PROGNAME;
-
-	/* generate menus and set them up */
-	rootmenu = parsestdin();
-	if (rootmenu == NULL)
-		errx(1, "no menu generated");
-	setupmenu(rootmenu, &classh);
-
-	/* grab mouse and keyboard */
-	if (!wflag) {
-		grabpointer();
-		grabkeyboard();
-	}
-
-	/* run event loop */
-	run(rootmenu);
-
-	/* freeing stuff */
-	cleanmenu(rootmenu);
-	cleanup();
-
-	return 0;
+	(void)fprintf(stderr, "usage: xmenu [-iw] [-p position] [title]\n");
+	exit(1);
 }
 
 /* parse position string from -p,
@@ -1379,10 +1232,86 @@ cleanup(void)
 	XCloseDisplay(dpy);
 }
 
-/* show usage */
-static void
-usage(void)
+/* xmenu: generate menu from stdin and print selected entry to stdout */
+int
+main(int argc, char *argv[])
 {
-	(void)fprintf(stderr, "usage: xmenu [-iw] [-p position] [title]\n");
-	exit(1);
+	struct Menu *rootmenu;
+	XClassHint classh;
+	int ch;
+
+	while ((ch = getopt(argc, argv, "ip:w")) != -1) {
+		switch (ch) {
+		case 'i':
+			iflag = 1;
+			break;
+		case 'p':
+			pflag = 1;
+			parseposition(optarg);
+			break;
+		case 'w':
+			wflag = 1;
+			break;
+		default:
+			usage();
+			break;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (argc > 1)
+		usage();
+
+	/* open connection to server and set X variables */
+	if ((dpy = XOpenDisplay(NULL)) == NULL)
+		errx(1, "could not open display");
+	screen = DefaultScreen(dpy);
+	visual = DefaultVisual(dpy, screen);
+	rootwin = RootWindow(dpy, screen);
+	colormap = DefaultColormap(dpy, screen);
+
+	/* imlib2 stuff */
+	if (!iflag) {
+		imlib_set_cache_size(2048 * 1024);
+		imlib_context_set_dither(1);
+		imlib_context_set_display(dpy);
+		imlib_context_set_visual(visual);
+		imlib_context_set_colormap(colormap);
+	}
+
+	/* initializers */
+	initmonitor();
+	initresources();
+	initdc();
+	initiconsize();
+	initatoms();
+
+	/* set window class */
+	classh.res_class = PROGNAME;
+	if (argc == 1)
+		classh.res_name = *argv;
+	else
+		classh.res_name = PROGNAME;
+
+	/* generate menus and set them up */
+	rootmenu = parsestdin();
+	if (rootmenu == NULL)
+		errx(1, "no menu generated");
+	setupmenu(rootmenu, &classh);
+
+	/* grab mouse and keyboard */
+	if (!wflag) {
+		grabpointer();
+		grabkeyboard();
+	}
+
+	/* run event loop */
+	run(rootmenu);
+
+	/* freeing stuff */
+	cleanmenu(rootmenu);
+	cleanup();
+
+	return 0;
 }
