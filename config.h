@@ -38,9 +38,8 @@ static struct Config config = {
  *
  * Look at your /usr/include/X11/keysymdef.h  (or the equivalent file
  * in your system) for a list of key symbol constants, and change the
- * macros below accordingly.  Note there IS NO equal sign (=) between
- * the macros and their values.   All key symbol constants begin with
- * the prefix XK_
+ * macros below accordingly.  All key symbol constants begin with the
+ * prefix XK_.
  *
  * For example, to use vim-like key bindings, set KEYSYMLEFT to XK_h,
  * KEYSYMDOWN to XK_j, KEYSYMUP to XK_k, etc.
