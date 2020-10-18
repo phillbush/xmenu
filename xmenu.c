@@ -628,12 +628,12 @@ setupmenupos(struct Menu *menu)
 	width = menu->w + config.border_pixels * 2;
 	height = menu->h + config.border_pixels * 2;
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
-		if (pflag || (config.posx > mon.x && mon.x + mon.w - config.posx >= width))
+		if (pflag || (config.posx >= mon.x && mon.x + mon.w - config.posx >= width))
 			menu->x = config.posx;
 		else if (config.posx > width)
 			menu->x = config.posx - width;
 
-		if (pflag || (config.posy > mon.y && mon.y + mon.h - config.posy >= height))
+		if (pflag || (config.posy >= mon.y && mon.y + mon.h - config.posy >= height))
 			menu->y = config.posy;
 		else if (mon.y + mon.h > height)
 			menu->y = mon.y + mon.h - height;
