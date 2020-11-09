@@ -31,6 +31,7 @@ static Atom netatom[NetLast];
 
 /* flags */
 static int iflag = 0;   /* whether to disable icons */
+static int rflag = 0;   /* whether to disable right-click */
 static int mflag = 0;   /* whether the user specified a monitor with -p */
 static int pflag = 0;   /* whether the user specified a position with -p */
 static int wflag = 0;   /* whether to let the window manager control XMenu */
@@ -42,7 +43,7 @@ static int wflag = 0;   /* whether to let the window manager control XMenu */
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-iw] [-p position] [title]\n");
+	(void)fprintf(stderr, "usage: xmenu [-irw] [-p position] [title]\n");
 	exit(1);
 }
 
@@ -1055,6 +1056,17 @@ itemcycle(struct Menu *currmenu, int direction)
 	return item;
 }
 
+/* check if button is used to open a item on click */
+static int
+isclickbutton(unsigned int button)
+{
+	if (button == Button1)
+		return 1;
+	if (!rflag && button == Button3)
+		return 1;
+	return 0;
+}
+
 /* run event loop */
 static void
 run(struct Menu *currmenu)
@@ -1091,6 +1103,8 @@ run(struct Menu *currmenu)
 			drawmenus(currmenu);
 			break;
 		case ButtonRelease:
+			if (!isclickbutton(ev.xbutton.button))
+				break;
 			menu = getmenu(currmenu, ev.xbutton.window);
 			item = getitem(menu, ev.xbutton.y);
 			if (menu == NULL || item == NULL)
@@ -1240,7 +1254,7 @@ main(int argc, char *argv[])
 	XClassHint classh;
 	int ch;
 
-	while ((ch = getopt(argc, argv, "ip:w")) != -1) {
+	while ((ch = getopt(argc, argv, "ip:rw")) != -1) {
 		switch (ch) {
 		case 'i':
 			iflag = 1;
@@ -1248,6 +1262,9 @@ main(int argc, char *argv[])
 		case 'p':
 			pflag = 1;
 			parseposition(optarg);
+			break;
+		case 'r':
+			rflag = 1;
 			break;
 		case 'w':
 			wflag = 1;

@@ -3,7 +3,7 @@
 xmenu \- menu utility for X
 .SH SYNOPSIS
 .B xmenu
-.RB [ \-iw ]
+.RB [ \-irw ]
 .RB [ -p
 .IR position ]
 .RI [ title ]
@@ -53,6 +53,10 @@ And
 specifies that
 .B xmenu
 must spawn at the position 100x500 of the monitor 0.
+.TP
+.B -r
+If this option is set, the right mouse button is disabled;
+so pressing it will not trigger any menu item.
 .TP
 .B -w
 Asks the window manager to draw a border around the menus.
