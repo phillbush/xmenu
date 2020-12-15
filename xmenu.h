@@ -3,6 +3,9 @@
 /* enum for keyboard menu navigation */
 enum { ITEMPREV, ITEMNEXT, ITEMFIRST, ITEMLAST };
 
+/* enum for text alignment */
+enum {LeftAlignment, CenterAlignment, RightAlignment};
+
 /* macros */
 #define LEN(x)              (sizeof (x) / sizeof (x[0]))
 #define MAX(x,y)            ((x)>(y)?(x):(y))
@@ -34,6 +37,7 @@ struct Config {
 	int triangle_height;
 	int iconpadding;
 	int horzpadding;
+	int alignment;
 
 	/* the values below are set by options */
 	int monitor;
@@ -64,6 +68,7 @@ struct Item {
 	char *file;             /* filename of the icon */
 	int y;                  /* item y position relative to menu */
 	int h;                  /* item height */
+	int textw;              /* text width */
 	struct Item *prev;      /* previous item */
 	struct Item *next;      /* next item */
 	struct Menu *submenu;   /* submenu spawned by clicking on item */
@@ -85,6 +90,7 @@ struct Menu {
 	int x, y, w, h;         /* menu geometry */
 	int hasicon;            /* whether the menu has item with icons */
 	int drawn;              /* whether the menu was already drawn */
+	int maxtextw;           /* maximum text width */
 	unsigned level;         /* menu level relative to root */
 	Window win;             /* menu window to map on the screen */
 };

@@ -228,6 +228,14 @@ initresources(void)
 		config.border_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "xmenu.font", "*", &type, &xval) == True)
 		config.font = strdup(xval.addr);
+	if (XrmGetResource(xdb, "xmenu.alignment", "*", &type, &xval) == True) {
+		if (strcasecmp(xval.addr, "center") == 0)
+			config.alignment = CenterAlignment;
+		else if (strcasecmp(xval.addr, "left") == 0)
+			config.alignment = LeftAlignment;
+		else if (strcasecmp(xval.addr, "right") == 0)
+			config.alignment = RightAlignment;
+	}
 
 	XrmDestroyDatabase(xdb);
 }
@@ -583,29 +591,26 @@ static void
 setupitems(struct Menu *menu)
 {
 	struct Item *item;
+	int itemwidth;
 
 	menu->w = config.width_pixels;
+	menu->maxtextw = 0;
 	for (item = menu->list; item != NULL; item = item->next) {
-		int itemwidth;
-		int textwidth;
-
 		item->y = menu->h;
-
 		if (item->label == NULL)   /* height for separator item */
 			item->h = config.separator_pixels;
 		else
 			item->h = config.height_pixels;
 		menu->h += item->h;
-
 		if (item->label)
-			textwidth = drawtext(NULL, NULL, 0, 0, 0, item->label);
+			item->textw = drawtext(NULL, NULL, 0, 0, 0, item->label);
 		else
-			textwidth = 0;
+			item->textw = 0;
 
 		/*
 		 * set menu width
 		 *
-		 * the item width depends on the size of its label (textwidth),
+		 * the item width depends on the size of its label (item->textw),
 		 * and it is only used to calculate the width of the menu (which
 		 * is equal to the width of the largest item).
 		 *
@@ -614,9 +619,10 @@ setupitems(struct Menu *menu)
 		 * if the iflag is set (icons are disabled) then the horizontal
 		 * padding appears 3 times: before the label and around the triangle.
 		 */
-		itemwidth = textwidth + config.triangle_width + config.horzpadding * 3;
+		itemwidth = item->textw + config.triangle_width + config.horzpadding * 3;
 		itemwidth += (iflag || !menu->hasicon) ? 0 : config.iconsize + config.horzpadding;
 		menu->w = MAX(menu->w, itemwidth);
+		menu->maxtextw = MAX(menu->maxtextw, item->textw);
 	}
 }
 
@@ -811,12 +817,12 @@ loadicon(const char *file)
 static void
 drawitems(struct Menu *menu)
 {
+	XftDraw *dsel, *dunsel;
 	struct Item *item;
+	int textx;
+	int x, y;
 
 	for (item = menu->list; item != NULL; item = item->next) {
-		XftDraw *dsel, *dunsel;
-		int x, y;
-
 		item->unsel = XCreatePixmap(dpy, menu->win, menu->w, item->h,
 		                          DefaultDepth(dpy, screen));
 
@@ -831,21 +837,30 @@ drawitems(struct Menu *menu)
 
 			item->sel = item->unsel;
 		} else {
-
 			item->sel = XCreatePixmap(dpy, menu->win, menu->w, item->h,
 			                          DefaultDepth(dpy, screen));
 			XSetForeground(dpy, dc.gc, dc.selected[ColorBG].pixel);
 			XFillRectangle(dpy, item->sel, dc.gc, 0, 0, menu->w, item->h);
 
 			/* draw text */
-			x = config.horzpadding;
-			x += (iflag || !menu->hasicon) ? 0 : config.horzpadding + config.iconsize;
+			textx = config.horzpadding;
+			textx += (iflag || !menu->hasicon) ? 0 : config.horzpadding + config.iconsize;
+			switch (config.alignment) {
+			case CenterAlignment:
+				textx += (menu->maxtextw - item->textw) / 2;
+				break;
+			case RightAlignment:
+				textx += menu->maxtextw - item->textw;
+				break;
+			default:
+				break;
+			}
 			dsel = XftDrawCreate(dpy, item->sel, visual, colormap);
 			dunsel = XftDrawCreate(dpy, item->unsel, visual, colormap);
 			XSetForeground(dpy, dc.gc, dc.selected[ColorFG].pixel);
-			drawtext(dsel, &dc.selected[ColorFG], x, 0, item->h, item->label);
+			drawtext(dsel, &dc.selected[ColorFG], textx, 0, item->h, item->label);
 			XSetForeground(dpy, dc.gc, dc.normal[ColorFG].pixel);
-			drawtext(dunsel, &dc.normal[ColorFG], x, 0, item->h, item->label);
+			drawtext(dunsel, &dc.normal[ColorFG], textx, 0, item->h, item->label);
 			XftDrawDestroy(dsel);
 			XftDrawDestroy(dunsel);
 

@@ -17,6 +17,9 @@ static struct Config config = {
 	.separator_pixels = 3,      /* space around separator */
 	.gap_pixels = 0,            /* gap between menus */
 
+	/* text alignment, set to LeftAlignment, CenterAlignment or RightAlignment */
+	.alignment = LeftAlignment,
+
 	/*
 	 * The variables below cannot be set by X resources.
 	 * Their values must be less than .height_pixels.
