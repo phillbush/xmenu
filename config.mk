@@ -2,16 +2,16 @@
 PROG = xmenu
 
 # paths
-PREFIX    ?= /usr/local
+PREFIX    ?= ${DESTDIR}/usr/local
 MANPREFIX ?= ${PREFIX}/share/man
 
-LOCALINC ?= /usr/local/include
-LOCALLIB ?= /usr/local/lib
+LOCALINC ?= ${DESTDIR}/usr/local/include
+LOCALLIB ?= ${DESTDIR}/usr/local/lib
 
-X11INC ?= /usr/X11R6/include
-X11LIB ?= /usr/X11R6/lib
+X11INC ?= ${DESTDIR}/usr/X11R6/include
+X11LIB ?= ${DESTDIR}/usr/X11R6/lib
 
-FREETYPEINC ?= /usr/include/freetype2
+FREETYPEINC ?= ${DESTDIR}/usr/include/freetype2
 # OpenBSD (uncomment)
 #FREETYPEINC = ${X11INC}/freetype2
 
