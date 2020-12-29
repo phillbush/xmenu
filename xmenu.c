@@ -23,6 +23,8 @@ static int screen;
 static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
+static XrmDatabase xdb;
+static char *xrm;
 static struct DC dc;
 static struct Monitor mon;
 static Atom utf8string;
@@ -85,6 +87,85 @@ parseposition(char *optarg)
 
 error:
 	errx(1, "improper position: %s", optarg);
+}
+
+/* get configuration from X resources */
+static void
+getresources(void)
+{
+	char *type;
+	XrmValue xval;
+
+	if (xrm == NULL || xdb == NULL)
+		return;
+
+	if (XrmGetResource(xdb, "xmenu.borderWidth", "*", &type, &xval) == True)
+		GETNUM(config.border_pixels, xval.addr)
+	if (XrmGetResource(xdb, "xmenu.separatorWidth", "*", &type, &xval) == True)
+		GETNUM(config.separator_pixels, xval.addr)
+	if (XrmGetResource(xdb, "xmenu.height", "*", &type, &xval) == True)
+		GETNUM(config.height_pixels, xval.addr)
+	if (XrmGetResource(xdb, "xmenu.width", "*", &type, &xval) == True)
+		GETNUM(config.width_pixels, xval.addr)
+	if (XrmGetResource(xdb, "xmenu.gap", "*", &type, &xval) == True)
+		GETNUM(config.gap_pixels, xval.addr)
+	if (XrmGetResource(xdb, "xmenu.background", "*", &type, &xval) == True)
+		config.background_color = xval.addr;
+	if (XrmGetResource(xdb, "xmenu.foreground", "*", &type, &xval) == True)
+		config.foreground_color = xval.addr;
+	if (XrmGetResource(xdb, "xmenu.selbackground", "*", &type, &xval) == True)
+		config.selbackground_color = xval.addr;
+	if (XrmGetResource(xdb, "xmenu.selforeground", "*", &type, &xval) == True)
+		config.selforeground_color = xval.addr;
+	if (XrmGetResource(xdb, "xmenu.separator", "*", &type, &xval) == True)
+		config.separator_color = xval.addr;
+	if (XrmGetResource(xdb, "xmenu.border", "*", &type, &xval) == True)
+		config.border_color = xval.addr;
+	if (XrmGetResource(xdb, "xmenu.font", "*", &type, &xval) == True)
+		config.font = xval.addr;
+	if (XrmGetResource(xdb, "xmenu.alignment", "*", &type, &xval) == True) {
+		if (strcasecmp(xval.addr, "center") == 0)
+			config.alignment = CenterAlignment;
+		else if (strcasecmp(xval.addr, "left") == 0)
+			config.alignment = LeftAlignment;
+		else if (strcasecmp(xval.addr, "right") == 0)
+			config.alignment = RightAlignment;
+	}
+}
+
+/* get configuration from command-line options */
+static char *
+getoptions(int argc, char *argv[])
+{
+	int ch;
+
+	while ((ch = getopt(argc, argv, "ip:rw")) != -1) {
+		switch (ch) {
+		case 'i':
+			iflag = 1;
+			break;
+		case 'p':
+			pflag = 1;
+			parseposition(optarg);
+			break;
+		case 'r':
+			rflag = 1;
+			break;
+		case 'w':
+			wflag = 1;
+			break;
+		default:
+			usage();
+			break;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+	if (argc > 1)
+		usage();
+	else if (argc == 1)
+		return *argv;
+	return PROGNAME;
 }
 
 /* parse font string */
@@ -181,63 +262,6 @@ initmonitor(void)
 		config.posx += mon.x;
 		config.posy += mon.y;
 	}
-}
-
-/* read xrdb for configuration options */
-static void
-initresources(void)
-{
-	long n;
-	char *type;
-	char *xrm;
-	XrmDatabase xdb;
-	XrmValue xval;
-
-	XrmInitialize();
-	if ((xrm = XResourceManagerString(dpy)) == NULL)
-		return;
-
-	xdb = XrmGetStringDatabase(xrm);
-
-	if (XrmGetResource(xdb, "xmenu.borderWidth", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			config.border_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.separatorWidth", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			config.separator_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.height", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			config.height_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.width", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			config.width_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.gap", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			config.gap_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.background", "*", &type, &xval) == True)
-		config.background_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.foreground", "*", &type, &xval) == True)
-		config.foreground_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.selbackground", "*", &type, &xval) == True)
-		config.selbackground_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.selforeground", "*", &type, &xval) == True)
-		config.selforeground_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.separator", "*", &type, &xval) == True)
-		config.separator_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.border", "*", &type, &xval) == True)
-		config.border_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.font", "*", &type, &xval) == True)
-		config.font = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.alignment", "*", &type, &xval) == True) {
-		if (strcasecmp(xval.addr, "center") == 0)
-			config.alignment = CenterAlignment;
-		else if (strcasecmp(xval.addr, "left") == 0)
-			config.alignment = LeftAlignment;
-		else if (strcasecmp(xval.addr, "right") == 0)
-			config.alignment = RightAlignment;
-	}
-
-	XrmDestroyDatabase(xdb);
 }
 
 /* init draw context */
@@ -745,6 +769,14 @@ grabkeyboard(void)
 	errx(1, "could not grab keyboard");
 }
 
+/* ungrab pointer and keyboard */
+static void
+ungrab(void)
+{
+	XUngrabPointer(dpy, CurrentTime);
+	XUngrabKeyboard(dpy, CurrentTime);
+}
+
 /* load and scale icon */
 static Imlib_Image
 loadicon(const char *file)
@@ -1238,14 +1270,11 @@ cleanmenu(struct Menu *menu)
 	free(menu);
 }
 
-/* cleanup X and exit */
+/* cleanup draw context */
 static void
-cleanup(void)
+cleandc(void)
 {
 	size_t i;
-
-	XUngrabPointer(dpy, CurrentTime);
-	XUngrabKeyboard(dpy, CurrentTime);
 
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorBG]);
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorFG]);
@@ -1253,12 +1282,9 @@ cleanup(void)
 	XftColorFree(dpy, visual, colormap, &dc.selected[ColorFG]);
 	XftColorFree(dpy, visual, colormap, &dc.separator);
 	XftColorFree(dpy, visual, colormap, &dc.border);
-
 	for (i = 0; i < dc.nfonts; i++)
 		XftFontClose(dpy, dc.fonts[i]);
-
 	XFreeGC(dpy, dc.gc);
-	XCloseDisplay(dpy);
 }
 
 /* xmenu: generate menu from stdin and print selected entry to stdout */
@@ -1267,33 +1293,6 @@ main(int argc, char *argv[])
 {
 	struct Menu *rootmenu;
 	XClassHint classh;
-	int ch;
-
-	while ((ch = getopt(argc, argv, "ip:rw")) != -1) {
-		switch (ch) {
-		case 'i':
-			iflag = 1;
-			break;
-		case 'p':
-			pflag = 1;
-			parseposition(optarg);
-			break;
-		case 'r':
-			rflag = 1;
-			break;
-		case 'w':
-			wflag = 1;
-			break;
-		default:
-			usage();
-			break;
-		}
-	}
-	argc -= optind;
-	argv += optind;
-
-	if (argc > 1)
-		usage();
 
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
@@ -1302,6 +1301,14 @@ main(int argc, char *argv[])
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
+	XrmInitialize();
+	if ((xrm = XResourceManagerString(dpy)) != NULL)
+		xdb = XrmGetStringDatabase(xrm);
+
+	/* get configuration */
+	getresources();
+	classh.res_class = PROGNAME;
+	classh.res_name = getoptions(argc, argv);
 
 	/* imlib2 stuff */
 	if (!iflag) {
@@ -1314,17 +1321,9 @@ main(int argc, char *argv[])
 
 	/* initializers */
 	initmonitor();
-	initresources();
 	initdc();
 	initiconsize();
 	initatoms();
-
-	/* set window class */
-	classh.res_class = PROGNAME;
-	if (argc == 1)
-		classh.res_name = *argv;
-	else
-		classh.res_name = PROGNAME;
 
 	/* generate menus and set them up */
 	rootmenu = parsestdin();
@@ -1341,9 +1340,12 @@ main(int argc, char *argv[])
 	/* run event loop */
 	run(rootmenu);
 
-	/* freeing stuff */
+	/* clean stuff */
+	ungrab();
 	cleanmenu(rootmenu);
-	cleanup();
+	cleandc();
+	XrmDestroyDatabase(xdb);
+	XCloseDisplay(dpy);
 
 	return 0;
 }

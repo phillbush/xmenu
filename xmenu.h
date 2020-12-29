@@ -11,6 +11,11 @@ enum {LeftAlignment, CenterAlignment, RightAlignment};
 #define MAX(x,y)            ((x)>(y)?(x):(y))
 #define MIN(x,y)            ((x)<(y)?(x):(y))
 #define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
+#define GETNUM(n, s) { \
+	unsigned long __TMP__; \
+	if ((__TMP__ = strtoul((s), NULL, 10)) < INT_MAX) \
+		(n) = __TMP__; \
+	}
 
 /* color enum */
 enum {ColorFG, ColorBG, ColorLast};
