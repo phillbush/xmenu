@@ -98,4 +98,5 @@ struct Menu {
 	int maxtextw;           /* maximum text width */
 	unsigned level;         /* menu level relative to root */
 	Window win;             /* menu window to map on the screen */
+	XIC xic;                /* input context */
 };

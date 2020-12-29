@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <locale.h>
 #include <time.h>
 #include <unistd.h>
 #include <X11/Xlib.h>
@@ -30,6 +31,7 @@ static struct Monitor mon;
 static Atom utf8string;
 static Atom wmdelete;
 static Atom netatom[NetLast];
+static XIM xim;
 
 /* flags */
 static int iflag = 0;   /* whether to disable icons */
@@ -371,6 +373,11 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	                          CWOverrideRedirect | CWBackPixel |
 	                          CWBorderPixel | CWEventMask | CWSaveUnder,
 	                          &swa);
+
+	menu->xic = XCreateIC(xim, XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+	                      XNClientWindow, menu->win, XNFocusWindow, menu->win, NULL);
+	if (menu->xic == NULL)
+		errx(1, "XCreateIC: could not obtain input method");
 
 	return menu;
 }
@@ -769,6 +776,24 @@ grabkeyboard(void)
 	errx(1, "could not grab keyboard");
 }
 
+/* try to grab focus, we may have to wait for another process to ungrab */
+static void
+grabfocus(Window win)
+{
+	struct timespec ts = { .tv_sec = 0, .tv_nsec = 10000000  };
+	Window focuswin;
+	int i, revertwin;
+
+	for (i = 0; i < 100; ++i) {
+		XGetInputFocus(dpy, &focuswin, &revertwin);
+		if (focuswin == win)
+			return;
+		XSetInputFocus(dpy, win, RevertToParent, CurrentTime);
+		nanosleep(&ts, NULL);
+	}
+	errx(1, "cannot grab focus");
+}
+
 /* ungrab pointer and keyboard */
 static void
 ungrab(void)
@@ -1016,6 +1041,7 @@ mapmenu(struct Menu *currmenu)
 	}
 
 	prevmenu = currmenu;
+	grabfocus(currmenu->win);
 }
 
 /* get menu of given window */
@@ -1126,7 +1152,6 @@ run(struct Menu *currmenu)
 	XEvent ev;
 
 	mapmenu(currmenu);
-
 	while (!XNextEvent(dpy, &ev)) {
 		switch(ev.type) {
 		case Expose:
@@ -1295,6 +1320,8 @@ main(int argc, char *argv[])
 	XClassHint classh;
 
 	/* open connection to server and set X variables */
+	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
+		warnx("warning: no locale support");
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
 		errx(1, "could not open display");
 	screen = DefaultScreen(dpy);
@@ -1304,6 +1331,8 @@ main(int argc, char *argv[])
 	XrmInitialize();
 	if ((xrm = XResourceManagerString(dpy)) != NULL)
 		xdb = XrmGetStringDatabase(xrm);
+	if ((xim = XOpenIM(dpy, NULL, NULL, NULL)) == NULL)
+		errx(1, "XOpenIM: could not open input device");
 
 	/* get configuration */
 	getresources();
