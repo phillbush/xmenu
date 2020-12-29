@@ -1,5 +1,10 @@
 #define PROGNAME "xmenu"
 
+/* Actions for the main loop */
+#define ACTION_NOP  0
+#define ACTION_MAP  1<<0
+#define ACTION_DRAW 1<<1
+
 /* enum for keyboard menu navigation */
 enum { ITEMPREV, ITEMNEXT, ITEMFIRST, ITEMLAST };
 

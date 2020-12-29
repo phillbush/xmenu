@@ -1150,13 +1150,15 @@ run(struct Menu *currmenu)
 	struct Item *lastitem;
 	KeySym ksym;
 	XEvent ev;
+	int action;
 
 	mapmenu(currmenu);
 	while (!XNextEvent(dpy, &ev)) {
+		action = ACTION_NOP;
 		switch(ev.type) {
 		case Expose:
 			if (ev.xexpose.count == 0)
-				drawmenus(currmenu);
+				action = ACTION_DRAW;
 			break;
 		case MotionNotify:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -1171,8 +1173,7 @@ run(struct Menu *currmenu)
 			} else {
 				currmenu = menu;
 			}
-			mapmenu(currmenu);
-			drawmenus(currmenu);
+			action = ACTION_MAP | ACTION_DRAW;
 			break;
 		case ButtonRelease:
 			if (!isclickbutton(ev.xbutton.button))
@@ -1190,9 +1191,8 @@ selectitem:
 				printf("%s\n", item->output);
 				return;
 			}
-			mapmenu(currmenu);
 			currmenu->selected = currmenu->list;
-			drawmenus(currmenu);
+			action = ACTION_MAP | ACTION_DRAW;
 			break;
 		case ButtonPress:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -1235,16 +1235,16 @@ selectitem:
 			           currmenu->parent != NULL) {
 				item = currmenu->parent->selected;
 				currmenu = currmenu->parent;
-				mapmenu(currmenu);
+				action = ACTION_MAP;
 			} else
 				break;
 			currmenu->selected = item;
-			drawmenus(currmenu);
+			action |= ACTION_DRAW;
 			break;
 		case LeaveNotify:
 			previtem = NULL;
 			currmenu->selected = NULL;
-			drawmenus(currmenu);
+			action = ACTION_DRAW;
 			break;
 		case ConfigureNotify:
 			menu = getmenu(currmenu, ev.xconfigure.window);
@@ -1261,9 +1261,13 @@ selectitem:
 			if (menu->parent == NULL)
 				return;     /* closing the root menu closes the program */
 			currmenu = menu->parent;
-			mapmenu(currmenu);
+			action = ACTION_MAP;
 			break;
 		}
+		if (action & ACTION_MAP)
+			mapmenu(currmenu);
+		if (action & ACTION_DRAW)
+			drawmenus(currmenu);
 	}
 }
 
