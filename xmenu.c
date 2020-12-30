@@ -1140,20 +1140,61 @@ isclickbutton(unsigned int button)
 	return 0;
 }
 
+/* append buf into text */
+static int
+append(char *text, char *buf, size_t textsize, size_t buflen)
+{
+	size_t textlen;
+
+	textlen = strlen(text);
+	if (iscntrl(*buf))
+		return 0;
+	if (textlen + buflen > textsize - 1)
+		return 0;
+	if (buflen < 1)
+		return 0;
+	memcpy(text + textlen, buf, buflen);
+	text[textlen + buflen] = '\0';
+	return 1;
+}
+
+/* get item in menu matching text */
+static struct Item *
+matchitem(struct Menu *menu, char *text)
+{
+	struct Item *item;
+	char *s;
+	size_t textlen;
+
+	textlen = strlen(text);
+	for (item = menu->list; item; item = item->next)
+		for (s = item->label; s && *s; s++)
+			if (strncasecmp(s, text, textlen) == 0)
+				return item;
+	return NULL;
+}
+
 /* run event loop */
 static void
 run(struct Menu *currmenu)
 {
+	char text[BUFSIZ];
+	char buf[32];
 	struct Menu *menu;
 	struct Item *item;
 	struct Item *previtem = NULL;
-	struct Item *lastitem;
+	struct Item *lastitem, *select;
 	KeySym ksym;
+	Status status;
 	XEvent ev;
 	int action;
+	int len;
 
+	text[0] = '\0';
 	mapmenu(currmenu);
 	while (!XNextEvent(dpy, &ev)) {
+		if (XFilterEvent(&ev, None))
+			continue;
 		action = ACTION_NOP;
 		switch(ev.type) {
 		case Expose:
@@ -1166,14 +1207,14 @@ run(struct Menu *currmenu)
 			if (menu == NULL || item == NULL || previtem == item)
 				break;
 			previtem = item;
-			menu->selected = item;
+			select = menu->selected = item;
 			if (item->submenu != NULL) {
 				currmenu = item->submenu;
-				currmenu->selected = NULL;
+				select = NULL;
 			} else {
 				currmenu = menu;
 			}
-			action = ACTION_MAP | ACTION_DRAW;
+			action = ACTION_SELECT | ACTION_MAP | ACTION_DRAW;
 			break;
 		case ButtonRelease:
 			if (!isclickbutton(ev.xbutton.button))
@@ -1182,7 +1223,7 @@ run(struct Menu *currmenu)
 			item = getitem(menu, ev.xbutton.y);
 			if (menu == NULL || item == NULL)
 				break;
-selectitem:
+enteritem:
 			if (item->label == NULL)
 				break;  /* ignore separators */
 			if (item->submenu != NULL) {
@@ -1191,8 +1232,8 @@ selectitem:
 				printf("%s\n", item->output);
 				return;
 			}
-			currmenu->selected = currmenu->list;
-			action = ACTION_MAP | ACTION_DRAW;
+			select = currmenu->list;
+			action = ACTION_SELECT | ACTION_MAP | ACTION_DRAW;
 			break;
 		case ButtonPress:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -1200,7 +1241,16 @@ selectitem:
 				return;
 			break;
 		case KeyPress:
-			ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
+			len = XmbLookupString(currmenu->xic, &ev.xkey, buf, sizeof buf, &ksym, &status);
+			switch(status) {
+			default:                /* XLookupNone, XBufferOverflow */
+				continue;
+			case XLookupChars:
+				goto append;
+			case XLookupKeySym:     /* FALLTHROUGH */
+			case XLookupBoth:
+				break;
+			}
 
 			/* esc closes xmenu when current menu is the root menu */
 			if (ksym == XK_Escape && currmenu->parent == NULL)
@@ -1230,21 +1280,30 @@ selectitem:
 			} else if ((ksym == XK_Return || ksym == XK_Right || ksym == KSYMRIGHT) &&
 			            currmenu->selected != NULL) {
 				item = currmenu->selected;
-				goto selectitem;
+				goto enteritem;
 			} else if ((ksym == XK_Escape || ksym == XK_Left || ksym == KSYMLEFT) &&
 			           currmenu->parent != NULL) {
 				item = currmenu->parent->selected;
 				currmenu = currmenu->parent;
 				action = ACTION_MAP;
-			} else
+			} else {
+append:
+				if (append(text, buf, sizeof text, len)) {
+					currmenu->selected = matchitem(currmenu, text);
+					action = ACTION_DRAW;
+				} else {
+					select = NULL;
+					action = ACTION_SELECT | ACTION_DRAW;
+				}
 				break;
-			currmenu->selected = item;
-			action |= ACTION_DRAW;
+			}
+			select = item;
+			action |= ACTION_SELECT | ACTION_DRAW;
 			break;
 		case LeaveNotify:
 			previtem = NULL;
-			currmenu->selected = NULL;
-			action = ACTION_DRAW;
+			select = NULL;
+			action = ACTION_SELECT | ACTION_DRAW;
 			break;
 		case ConfigureNotify:
 			menu = getmenu(currmenu, ev.xconfigure.window);
@@ -1263,6 +1322,10 @@ selectitem:
 			currmenu = menu->parent;
 			action = ACTION_MAP;
 			break;
+		}
+		if (action & ACTION_SELECT) {
+			currmenu->selected = select;
+			text[0] = '\0';
 		}
 		if (action & ACTION_MAP)
 			mapmenu(currmenu);

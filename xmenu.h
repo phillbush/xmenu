@@ -1,9 +1,10 @@
 #define PROGNAME "xmenu"
 
 /* Actions for the main loop */
-#define ACTION_NOP  0
-#define ACTION_MAP  1<<0
-#define ACTION_DRAW 1<<1
+#define ACTION_NOP    0
+#define ACTION_SELECT 1<<0      /* select item and clear text */
+#define ACTION_MAP    1<<1      /* remap menu windows */
+#define ACTION_DRAW   1<<2      /* redraw menu windows */
 
 /* enum for keyboard menu navigation */
 enum { ITEMPREV, ITEMNEXT, ITEMFIRST, ITEMLAST };
