@@ -1289,12 +1289,13 @@ enteritem:
 			} else {
 append:
 				if (append(text, buf, sizeof text, len)) {
-					currmenu->selected = matchitem(currmenu, text);
-					action = ACTION_DRAW;
-				} else {
-					select = NULL;
-					action = ACTION_SELECT | ACTION_DRAW;
+					if ((currmenu->selected = matchitem(currmenu, text))) {
+						action = ACTION_DRAW;
+						break;
+					}
 				}
+				select = NULL;
+				action = ACTION_SELECT | ACTION_DRAW;
 				break;
 			}
 			select = item;
