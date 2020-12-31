@@ -50,6 +50,7 @@ struct Config {
 	int iconpadding;
 	int horzpadding;
 	int alignment;
+	int typetoselect;
 
 	/* the values below are set by options */
 	int monitor;

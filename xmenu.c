@@ -141,7 +141,7 @@ getoptions(int argc, char *argv[])
 {
 	int ch;
 
-	while ((ch = getopt(argc, argv, "ip:rw")) != -1) {
+	while ((ch = getopt(argc, argv, "ip:rtw")) != -1) {
 		switch (ch) {
 		case 'i':
 			iflag = 1;
@@ -152,6 +152,9 @@ getoptions(int argc, char *argv[])
 			break;
 		case 'r':
 			rflag = 1;
+			break;
+		case 't':
+			config.typetoselect = !config.typetoselect;
 			break;
 		case 'w':
 			wflag = 1;
@@ -1373,6 +1376,8 @@ enteritem:
 				break;
 			default:
 append:
+				if (!config.typetoselect)
+					break;
 				for (i = 0; i < 2; i++) {
 					append(text, buf, sizeof text, len);
 					if ((item = matchitem(currmenu, text, 0)))

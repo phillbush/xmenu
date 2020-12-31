@@ -3,7 +3,7 @@
 xmenu \- menu utility for X
 .SH SYNOPSIS
 .B xmenu
-.RB [ \-irw ]
+.RB [ \-irtw ]
 .RB [ -p
 .IR position ]
 .RI [ title ]
@@ -58,6 +58,10 @@ must spawn at the position 100x500 of the monitor 0.
 If this option is set, the right mouse button is disabled;
 so pressing it will not trigger any menu item.
 .TP
+.B -t
+If this option is set, the type-to-select feature is enabled,
+so typing a string will select the first item matching it.
+.TP
 .B -w
 Asks the window manager to draw a border around the menus.
 This option may be buggy in some window managers,
@@ -108,11 +112,21 @@ Select the first item in the menu.
 .BR End
 Select the last item in the menu.
 .TP
-.BR Down ", " Tab
+.BR Down
 Cycle through the items in the regular direction.
 .TP
-.BR Up ", " Shift-Tab
+.BR Tab
+Cycle through the items in the regular direction.
+If the type-to-select feature is enabled, and there is a typed string in memory,
+cycle through matching items instead.
+.TP
+.BR Up
 Cycle through the items in the reverse direction.
+.TP
+.BR Shift-Tab
+Cycle through the items in the reverse direction.
+If the type-to-select feature is enabled, and there is a typed string in memory,
+cycle through matching items instead.
 .TP
 .BR Right ", " Enter
 Select the highlighted item.
