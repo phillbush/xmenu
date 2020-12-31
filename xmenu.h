@@ -2,9 +2,10 @@
 
 /* Actions for the main loop */
 #define ACTION_NOP    0
-#define ACTION_SELECT 1<<0      /* select item and clear text */
-#define ACTION_MAP    1<<1      /* remap menu windows */
-#define ACTION_DRAW   1<<2      /* redraw menu windows */
+#define ACTION_CLEAR  1<<0      /* clear text */
+#define ACTION_SELECT 1<<1      /* select item */
+#define ACTION_MAP    1<<2      /* remap menu windows */
+#define ACTION_DRAW   1<<3      /* redraw menu windows */
 
 /* enum for keyboard menu navigation */
 enum { ITEMPREV, ITEMNEXT, ITEMFIRST, ITEMLAST };

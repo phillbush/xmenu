@@ -1158,19 +1158,53 @@ append(char *text, char *buf, size_t textsize, size_t buflen)
 	return 1;
 }
 
-/* get item in menu matching text */
+/* get item in menu matching text from given direction (or from beginning, if dir = 0) */
 static struct Item *
-matchitem(struct Menu *menu, char *text)
+matchitem(struct Menu *menu, char *text, int dir)
 {
-	struct Item *item;
+	struct Item *item, *lastitem;
 	char *s;
 	size_t textlen;
 
+	for (lastitem = menu->list; lastitem && lastitem->next; lastitem = lastitem->next)
+		;
 	textlen = strlen(text);
-	for (item = menu->list; item; item = item->next)
+	if (dir < 0) {
+		if (menu->selected && menu->selected->prev)
+			item = menu->selected->prev;
+		else
+			item = lastitem;
+	} else if (dir > 0) {
+		if (menu->selected && menu->selected->next)
+			item = menu->selected->next;
+		else
+			item = menu->list;
+	} else {
+		item = menu->list;
+	}
+	/* find next item from selected item */
+	for ( ; item; item = (dir < 0) ? item->prev : item->next)
 		for (s = item->label; s && *s; s++)
 			if (strncasecmp(s, text, textlen) == 0)
 				return item;
+	/* if not found, try to find from the beginning/end of list */
+	if (dir > 0) {
+		for (item = menu->list ; item; item = item->next) {
+			for (s = item->label; s && *s; s++) {
+				if (strncasecmp(s, text, textlen) == 0) {
+					return item;
+				}
+			}
+		}
+	} else {
+		for (item = lastitem ; item; item = item->prev) {
+			for (s = item->label; s && *s; s++) {
+				if (strncasecmp(s, text, textlen) == 0) {
+					return item;
+				}
+			}
+		}
+	}
 	return NULL;
 }
 
@@ -1214,7 +1248,7 @@ run(struct Menu *currmenu)
 			} else {
 				currmenu = menu;
 			}
-			action = ACTION_SELECT | ACTION_MAP | ACTION_DRAW;
+			action = ACTION_CLEAR | ACTION_SELECT | ACTION_MAP | ACTION_DRAW;
 			break;
 		case ButtonRelease:
 			if (!isclickbutton(ev.xbutton.button))
@@ -1233,7 +1267,7 @@ enteritem:
 				return;
 			}
 			select = currmenu->list;
-			action = ACTION_SELECT | ACTION_MAP | ACTION_DRAW;
+			action = ACTION_CLEAR | ACTION_SELECT | ACTION_MAP | ACTION_DRAW;
 			break;
 		case ButtonPress:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -1264,12 +1298,24 @@ enteritem:
 			item = NULL;
 			if (ksym == XK_Home || ksym == KSYMFIRST) {
 				item = itemcycle(currmenu, ITEMFIRST);
+				action = ACTION_CLEAR;
 			} else if (ksym == XK_End || ksym == KSYMLAST) {
 				item = itemcycle(currmenu, ITEMLAST);
+				action = ACTION_CLEAR;
 			} else if (ksym == XK_ISO_Left_Tab || ksym == XK_Up || ksym == KSYMUP) {
-				item = itemcycle(currmenu, ITEMPREV);
+				if (*text) {
+					item = matchitem(currmenu, text, -1);
+				} else {
+					item = itemcycle(currmenu, ITEMPREV);
+					action = ACTION_CLEAR;
+				}
 			} else if (ksym == XK_Tab || ksym == XK_Down || ksym == KSYMDOWN) {
-				item = itemcycle(currmenu, ITEMNEXT);
+				if (*text) {
+					item = matchitem(currmenu, text, 1);
+				} else {
+					item = itemcycle(currmenu, ITEMNEXT);
+					action = ACTION_CLEAR;
+				}
 			} else if (ksym >= XK_1 && ksym <= XK_9){
 				item = itemcycle(currmenu, ITEMFIRST);
 				lastitem = itemcycle(currmenu, ITEMLAST);
@@ -1277,6 +1323,7 @@ enteritem:
 					currmenu->selected = item;
 					item = itemcycle(currmenu, ITEMNEXT);
 				}
+				action = ACTION_CLEAR;
 			} else if ((ksym == XK_Return || ksym == XK_Right || ksym == KSYMRIGHT) &&
 			            currmenu->selected != NULL) {
 				item = currmenu->selected;
@@ -1285,18 +1332,19 @@ enteritem:
 			           currmenu->parent != NULL) {
 				item = currmenu->parent->selected;
 				currmenu = currmenu->parent;
-				action = ACTION_MAP;
+				action = ACTION_CLEAR | ACTION_MAP;
+			} else if (ksym == XK_BackSpace || ksym == XK_Clear || ksym == XK_Delete) {
+				action = ACTION_CLEAR;
+				break;
 			} else {
 append:
 				if (append(text, buf, sizeof text, len)) {
-					if ((currmenu->selected = matchitem(currmenu, text))) {
-						action = ACTION_DRAW;
-						break;
+					if (!(item = matchitem(currmenu, text, 0))) {
+						item = NULL;
 					}
+				} else if (len == 0) {
+					break; /* we may have pressed a dead key */
 				}
-				select = NULL;
-				action = ACTION_SELECT | ACTION_DRAW;
-				break;
 			}
 			select = item;
 			action |= ACTION_SELECT | ACTION_DRAW;
@@ -1304,7 +1352,7 @@ append:
 		case LeaveNotify:
 			previtem = NULL;
 			select = NULL;
-			action = ACTION_SELECT | ACTION_DRAW;
+			action = ACTION_CLEAR | ACTION_SELECT | ACTION_DRAW;
 			break;
 		case ConfigureNotify:
 			menu = getmenu(currmenu, ev.xconfigure.window);
@@ -1324,10 +1372,10 @@ append:
 			action = ACTION_MAP;
 			break;
 		}
-		if (action & ACTION_SELECT) {
-			currmenu->selected = select;
+		if (action & ACTION_CLEAR)
 			text[0] = '\0';
-		}
+		if (action & ACTION_SELECT)
+			currmenu->selected = select;
 		if (action & ACTION_MAP)
 			mapmenu(currmenu);
 		if (action & ACTION_DRAW)
