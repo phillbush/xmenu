@@ -1208,6 +1208,25 @@ matchitem(struct Menu *menu, char *text, int dir)
 	return NULL;
 }
 
+/* check keysyms defined on config.h */
+static KeySym
+normalizeksym(KeySym ksym)
+{
+	if (ksym == KSYMFIRST)
+		return XK_Home;
+	if (ksym == KSYMLAST)
+		return XK_End;
+	if (ksym == KSYMUP)
+		return XK_Up;
+	if (ksym == KSYMDOWN)
+		return XK_Down;
+	if (ksym == KSYMLEFT)
+		return XK_Left;
+	if (ksym == KSYMRIGHT)
+		return XK_Right;
+	return ksym;
+}
+
 /* run event loop */
 static void
 run(struct Menu *currmenu)
@@ -1223,6 +1242,7 @@ run(struct Menu *currmenu)
 	XEvent ev;
 	int action;
 	int len;
+	int i;
 
 	text[0] = '\0';
 	mapmenu(currmenu);
@@ -1296,27 +1316,37 @@ enteritem:
 
 			/* cycle through menu */
 			item = NULL;
-			if (ksym == XK_Home || ksym == KSYMFIRST) {
+			ksym = normalizeksym(ksym);
+			switch (ksym) {
+			case XK_Home:
 				item = itemcycle(currmenu, ITEMFIRST);
 				action = ACTION_CLEAR;
-			} else if (ksym == XK_End || ksym == KSYMLAST) {
+				break;
+			case XK_End:
 				item = itemcycle(currmenu, ITEMLAST);
 				action = ACTION_CLEAR;
-			} else if (ksym == XK_ISO_Left_Tab || ksym == XK_Up || ksym == KSYMUP) {
+				break;
+			case XK_ISO_Left_Tab:
 				if (*text) {
 					item = matchitem(currmenu, text, -1);
-				} else {
-					item = itemcycle(currmenu, ITEMPREV);
-					action = ACTION_CLEAR;
+					break;
 				}
-			} else if (ksym == XK_Tab || ksym == XK_Down || ksym == KSYMDOWN) {
+				/* FALLTHROUGH */
+			case XK_Up:
+				item = itemcycle(currmenu, ITEMPREV);
+				action = ACTION_CLEAR;
+				break;
+			case XK_Tab:
 				if (*text) {
 					item = matchitem(currmenu, text, 1);
-				} else {
-					item = itemcycle(currmenu, ITEMNEXT);
-					action = ACTION_CLEAR;
+					break;
 				}
-			} else if (ksym >= XK_1 && ksym <= XK_9){
+				/* FALLTHROUGH */
+			case XK_Down:
+				item = itemcycle(currmenu, ITEMNEXT);
+				action = ACTION_CLEAR;
+				break;
+			case XK_1: case XK_2: case XK_3: case XK_4: case XK_5: case XK_6: case XK_7: case XK_8: case XK_9:
 				item = itemcycle(currmenu, ITEMFIRST);
 				lastitem = itemcycle(currmenu, ITEMLAST);
 				for (int i = ksym - XK_1; i > 0 && item != lastitem; i--) {
@@ -1324,27 +1354,32 @@ enteritem:
 					item = itemcycle(currmenu, ITEMNEXT);
 				}
 				action = ACTION_CLEAR;
-			} else if ((ksym == XK_Return || ksym == XK_Right || ksym == KSYMRIGHT) &&
-			            currmenu->selected != NULL) {
-				item = currmenu->selected;
-				goto enteritem;
-			} else if ((ksym == XK_Escape || ksym == XK_Left || ksym == KSYMLEFT) &&
-			           currmenu->parent != NULL) {
-				item = currmenu->parent->selected;
-				currmenu = currmenu->parent;
-				action = ACTION_CLEAR | ACTION_MAP;
-			} else if (ksym == XK_BackSpace || ksym == XK_Clear || ksym == XK_Delete) {
+				break;
+			case XK_Return: case XK_Right:
+				if (currmenu->selected) {
+					item = currmenu->selected;
+					goto enteritem;
+				}
+				break;
+			case XK_Escape: case XK_Left:
+				if (currmenu->parent) {
+					item = currmenu->parent->selected;
+					currmenu = currmenu->parent;
+					action = ACTION_CLEAR | ACTION_MAP;
+				}
+				break;
+			case XK_BackSpace: case XK_Clear: case XK_Delete:
 				action = ACTION_CLEAR;
 				break;
-			} else {
+			default:
 append:
-				if (append(text, buf, sizeof text, len)) {
-					if (!(item = matchitem(currmenu, text, 0))) {
-						item = NULL;
-					}
-				} else if (len == 0) {
-					break; /* we may have pressed a dead key */
+				for (i = 0; i < 2; i++) {
+					append(text, buf, sizeof text, len);
+					if ((item = matchitem(currmenu, text, 0)))
+						break;
+					text[0] = '\0';
 				}
+				break;
 			}
 			select = item;
 			action |= ACTION_SELECT | ACTION_DRAW;
