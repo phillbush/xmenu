@@ -3,7 +3,7 @@
 xmenu \- menu utility for X
 .SH SYNOPSIS
 .B xmenu
-.RB [ \-irtw ]
+.RB [ \-irw ]
 .RB [ -p
 .IR position ]
 .RI [ title ]
@@ -58,10 +58,6 @@ must spawn at the position 100x500 of the monitor 0.
 If this option is set, the right mouse button is disabled;
 so pressing it will not trigger any menu item.
 .TP
-.B -t
-If this option is set, the type-to-select feature is enabled,
-so typing a string will select the first item matching it.
-.TP
 .B -w
 Asks the window manager to draw a border around the menus.
 This option may be buggy in some window managers,
@@ -105,6 +101,7 @@ Items can be selected using the arrow keys,
 Tab (with and without Shift),
 Home, End,
 Enter and Esc, and 1-9 keys.
+Items can also be selected by typing the first several characters in it.
 .TP
 .BR Home
 Select the first item in the menu.
@@ -117,16 +114,14 @@ Cycle through the items in the regular direction.
 .TP
 .BR Tab
 Cycle through the items in the regular direction.
-If the type-to-select feature is enabled, and there is a typed string in memory,
-cycle through matching items instead.
+When the type\-to\-select feature is active, cycle through matching items instead.
 .TP
 .BR Up
 Cycle through the items in the reverse direction.
 .TP
 .BR Shift-Tab
 Cycle through the items in the reverse direction.
-If the type-to-select feature is enabled, and there is a typed string in memory,
-cycle through matching items instead.
+When the type\-to\-select feature is active, cycle through matching items instead.
 .TP
 .BR Right ", " Enter
 Select the highlighted item.
@@ -136,6 +131,10 @@ Go to the menu above.
 .TP
 .B Esc
 Go to the menu above or exit xmenu.
+.PP
+.B xmenu
+features the type\-to\-select selecting style,
+where typing a string will select the first item matching it.
 .PP
 Additional key bindings can be set at compile time by changing the
 .B config.h

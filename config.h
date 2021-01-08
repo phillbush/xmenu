@@ -34,9 +34,6 @@ static struct Config config = {
 
 	/* area around the icon, the triangle and the separator */
 	.horzpadding = 8,
-
-	/* if nonzero, enable type-to-select feature, can be togglet with -t */
-	.typetoselect = 0
 };
 
 /*
