@@ -8,6 +8,9 @@ MANPREFIX ?= ${PREFIX}/share/man
 LOCALINC ?= /usr/local/include
 LOCALLIB ?= /usr/local/lib
 
+# SHELL variable (mainly for non-GNU make)
+SHELL ?= /bin/sh
+
 X11INC ?= /usr/X11R6/include
 X11LIB ?= /usr/X11R6/lib
 
