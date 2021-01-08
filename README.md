@@ -47,7 +47,7 @@ The files are:
 
 First, edit `./config.mk` to match your local setup.
 
-In order to build XMenu you need the `Imlib2`, `Xlib` and `Xft` header files.
+In order to build XMenu you need the `Imlib2`, `Xlib`, `Xinerama` and `Xft` header files.
 The default configuration for XMenu is specified in the file `config.h`,
 you can edit it, but most configuration can be changed at runtime via
 X resources.  Enter the following command to build XMenu.  This command
