@@ -1329,6 +1329,7 @@ enteritem:
 			case XK_ISO_Left_Tab:
 				if (*text) {
 					item = matchitem(currmenu, text, -1);
+					action = ACTION_SELECT | ACTION_DRAW;
 					break;
 				}
 				/* FALLTHROUGH */
@@ -1339,6 +1340,7 @@ enteritem:
 			case XK_Tab:
 				if (*text) {
 					item = matchitem(currmenu, text, 1);
+					action = ACTION_SELECT | ACTION_DRAW;
 					break;
 				}
 				/* FALLTHROUGH */
