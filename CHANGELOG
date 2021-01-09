@@ -1,5 +1,8 @@
                                CHANGELOG
 
+4.5.1 (2021-01-09)
+• Fixed SHIFT key; it cleared the selection, now it doesn't.
+
 4.5.0 (2021-01-08).
 • Added type-to-select feature (#21).
 • Added support for setting the text alignment.
