@@ -1320,11 +1320,11 @@ enteritem:
 			switch (ksym) {
 			case XK_Home:
 				item = itemcycle(currmenu, ITEMFIRST);
-				action = ACTION_CLEAR;
+				action = ACTION_CLEAR | ACTION_SELECT | ACTION_DRAW;
 				break;
 			case XK_End:
 				item = itemcycle(currmenu, ITEMLAST);
-				action = ACTION_CLEAR;
+				action = ACTION_CLEAR | ACTION_SELECT | ACTION_DRAW;
 				break;
 			case XK_ISO_Left_Tab:
 				if (*text) {
@@ -1334,7 +1334,7 @@ enteritem:
 				/* FALLTHROUGH */
 			case XK_Up:
 				item = itemcycle(currmenu, ITEMPREV);
-				action = ACTION_CLEAR;
+				action = ACTION_CLEAR | ACTION_SELECT | ACTION_DRAW;
 				break;
 			case XK_Tab:
 				if (*text) {
@@ -1344,7 +1344,7 @@ enteritem:
 				/* FALLTHROUGH */
 			case XK_Down:
 				item = itemcycle(currmenu, ITEMNEXT);
-				action = ACTION_CLEAR;
+				action = ACTION_CLEAR | ACTION_SELECT | ACTION_DRAW;
 				break;
 			case XK_1: case XK_2: case XK_3: case XK_4: case XK_5: case XK_6: case XK_7: case XK_8: case XK_9:
 				item = itemcycle(currmenu, ITEMFIRST);
@@ -1353,13 +1353,14 @@ enteritem:
 					currmenu->selected = item;
 					item = itemcycle(currmenu, ITEMNEXT);
 				}
-				action = ACTION_CLEAR;
+				action = ACTION_CLEAR | ACTION_SELECT | ACTION_DRAW;
 				break;
 			case XK_Return: case XK_Right:
 				if (currmenu->selected) {
 					item = currmenu->selected;
 					goto enteritem;
 				}
+				action = ACTION_SELECT | ACTION_DRAW;
 				break;
 			case XK_Escape: case XK_Left:
 				if (currmenu->parent) {
@@ -1367,12 +1368,15 @@ enteritem:
 					currmenu = currmenu->parent;
 					action = ACTION_CLEAR | ACTION_MAP;
 				}
+				action = ACTION_SELECT | ACTION_DRAW;
 				break;
 			case XK_BackSpace: case XK_Clear: case XK_Delete:
-				action = ACTION_CLEAR;
+				action = ACTION_CLEAR | ACTION_SELECT | ACTION_DRAW;
 				break;
 			default:
 append:
+				if (*buf == '\0' || iscntrl(*buf))
+					break;
 				for (i = 0; i < 2; i++) {
 					append(text, buf, sizeof text, len);
 					if ((item = matchitem(currmenu, text, 0)))
@@ -1382,7 +1386,6 @@ append:
 				break;
 			}
 			select = item;
-			action |= ACTION_SELECT | ACTION_DRAW;
 			break;
 		case LeaveNotify:
 			previtem = NULL;
