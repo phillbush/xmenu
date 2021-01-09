@@ -1383,6 +1383,7 @@ append:
 						break;
 					text[0] = '\0';
 				}
+				action = ACTION_SELECT | ACTION_DRAW;
 				break;
 			}
 			select = item;

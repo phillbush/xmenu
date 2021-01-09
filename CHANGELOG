@@ -1,5 +1,8 @@
                                CHANGELOG
 
+4.5.2 (2021-01-09)
+• Fixed missing line in xmenu.c.
+
 4.5.1 (2021-01-09)
 • Fixed SHIFT key; it cleared the selection, now it doesn't.
 
