@@ -1,0 +1,148 @@
+                               CHANGELOG
+
+4.5.0 (2021-01-08).
+• Added type-to-select feature (#21).
+• Added support for setting the text alignment.
+• Added -r option to disable right mouse button (#17).
+• Added CHANGELOG.
+• Changed order of parsing of options.
+• Fixed config.mk formatting (#18, #23).
+• Fixed README's list of header dependencies (#24).
+
+4.4.1 (2020-10-18).
+• Fixed Makefile by removing -D flag of install(1) and making it portable.
+• Fixed menu placement when pointer is at the very top of the menu (#16).
+
+4.4.0 (2020-09-27).
+• Added support for custom key bindings in config.h.
+• Added support for 1 to 9 keys for moving (#14).
+• Added support for Home and End keys for moving.
+• Fixed code to free stuff earlier, when they're no longer used.
+
+4.3.2 (2020-09-13).
+• Changed license.
+• Fixed initmonitor() routine to free unused data.
+
+4.3.1 (2020-08-12).
+• Added warning messages for unsuccessful icon loading.
+• Changed wording in some error messages.
+• Changed README to add reference to xdg-xmenu, by OliverLew.
+
+4.3.0 (2020-08-01).
+• Added ability to search the system for font containing character.
+• Changed drawtext() routine (split part of it into getfontucode()).
+• Fixed getfontucode() by adding sanity check tests.
+• Removed the -f option.
+
+4.2.0 (2020-07-31).
+• Added the -f option.
+• Changed xmenu.c to use BETWEEN macro.
+• Fixed fallback position.
+• Fixed manpage; simplifying description of -i option.
+• Fixed xmenu.h; removed unused elements in struct Item.
+• Fixed cleanup function to free fonts.
+
+4.1.4 (2020-07-30).
+• Added detection of icons in menus.
+• Fixed y position of child menus.
+• Fixed placement in some window managers when using -w.
+• Fixed README to add reference to added features.
+
+4.1.3 (2020-07-30).
+• Fixed xmenu.c and xmenu.h: removed redundant variables.
+
+4.1.2 (2020-07-29).
+• Fixed computation of the text y position.
+
+4.1.1 (2020-07-29).
+• Changed README to README.md (#9).
+• Fixed config.mk to load -lXinerama.
+
+4.1.0 (2020-07-29).
+• Added Xinerama support (#8).
+
+4.0.2 (2020-07-29).
+• Fixed menu drawing; menus are now drawed on demand.
+
+4.0.1 (2020-07-29).
+• Fixed calculation of text width.
+
+4.0.0 (2020-07-29).
+• Added support for fallback fonts.
+• Changed license.
+
+3.4.1 (2020-07-28).
+• Fixed performance issue with many icons (#7).
+
+3.4.0 (2020-07-23).
+• Added the -p option (to set the root menu position).
+
+3.3.0 (2020-07-15).
+• Added the -i option (to disable icons).
+• Changed code for computing widths and x position.
+
+3.2.1 (2020-06-29).
+• Fixed manpage; add reference to added features in the manual.
+
+3.2.0 (2020-06-29).
+• Added support for EWMH properties.
+• Added support for gaps between menus (#3).
+• Changed README to add reference to xclickroot(1).
+• Changed how configuration is done; added a config structure.
+• Fixed missing #include.
+• Fixed missing type cast.
+
+3.1.1 (2020-06-20).
+• Changed how height is calculated; now it's set directly.
+• Fix Makefile; removed slashes after DESTDIR (#2).
+
+3.1.0 (2020-06-05).
+• Fixed several typos and mismatches between code, manual and README.
+
+3.0.0 (2020-05-31).
+• Added support for icons.
+• Added some icons samples (in ./icons/).
+• Added demo gif.
+• Added the -w option (again).
+• Changed Makefile; using -D option of install(1).
+• Changed input parsing to use stdlib functions rather than get byte-by-byte.
+• Changed xmenu.c; making global variables local.
+• Changed calcmenu() routine (split into three routines).
+• Fixed segfault in case of empty input.
+• Fixed calls to strdup(3); called twice only when label and output differs.
+• Fixed menu position calculation (it didn't take borders into account).
+• Fixed manpage; updated to new features.
+• Fixed xmenu.c; removed unused code.
+• Fixed cleanup routine; freeing allocated stuff.
+
+2.0.0 (2020-05-27).
+• Changed xmenu.c; making global variables local.
+• Changed README; including more information.
+• Changed getmenuitem() routine (split into getmenu() and getitem()).
+• Changed drawing routines in xmenu.c (drawseparator() and drawitem()).
+• Fixed xmenu.c; removed unused code.
+• Removed the -w option.
+
+1.0.0 (2020-05-19).
+• Added keyboard navigation.
+• Added manpage.
+• Added support for X resources.
+• Added XFT support (antialiased fonts).
+• Added setting of WM_CLASS property.
+• Added recalcmenu() to recalculate menu position when -w is used.
+• Added support for WM_DELETE_WINDOW property (ability to close window).
+• Changed xmenu.sh script to pipe into sh(1).
+• Changed color scheme (stolen from firefox's context menu).
+• Changed algorithm for remapping menus (find lowest common ancestor menu).
+• Changed computing of menu width to be based on font.
+• Changed triangle size; now it's smaller.
+• Changed xmenu.sh; it now supposes that xmenu is installed.
+• Fixed README; it was a copy of dwm's.
+• Fixed Makefile; make install didn't install the manpage.
+• Fixed pointer and keyboard grabbing race condition.
+• Fixed order of function calls (grab keyboard after reading input).
+
+0.5.0 (2020-05-16).
+• Added menu separators (lines without labels in the input).
+• Added double buffering, rather than drawing directly on windows.
+• Added -w option.
