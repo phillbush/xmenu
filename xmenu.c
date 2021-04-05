@@ -721,8 +721,10 @@ setupmenu(struct Menu *menu, XClassHint *classh)
 	/* set window title (used if wflag is on) */
 	if (menu->parent == NULL) {
 		title = classh->res_name;
-	} else {
+	} else if (menu->caller->output) {
 		title = menu->caller->output;
+	} else {
+		title = "\0";
 	}
 	XStringListToTextProperty(&title, 1, &wintitle);
 
