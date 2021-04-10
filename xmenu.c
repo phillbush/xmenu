@@ -432,6 +432,10 @@ buildmenutree(unsigned level, const char *label, const char *output, char *file)
 		for (item = prevmenu->list; item->next != NULL; item = item->next)
 			;
 
+		/* a separator is no valid root for a submenu */
+		if (!item->label)
+			errx(1, "a separator is no valid root for a submenu");
+
 		prevmenu = menu;
 		menu->caller = item;
 		item->submenu = menu;
@@ -717,8 +721,10 @@ setupmenu(struct Menu *menu, XClassHint *classh)
 	/* set window title (used if wflag is on) */
 	if (menu->parent == NULL) {
 		title = classh->res_name;
-	} else {
+	} else if (menu->caller->output) {
 		title = menu->caller->output;
+	} else {
+		title = "\0";
 	}
 	XStringListToTextProperty(&title, 1, &wintitle);
 
