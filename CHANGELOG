@@ -1,5 +1,12 @@
                                CHANGELOG
 
+4.5.5 (2021-04-11)
+• Added support for mouse scrolling (#26).
+• Changed Makefile; simplify ${DESTDIR} (#25).
+• Changed README; removed demo.gif.
+• Fixed LICENSE.
+• Fixed segfault if a sub-menu is added to a separator (#29).
+
 4.5.4 (2021-01-09)
 • Fixed ESC key.
 
