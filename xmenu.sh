@@ -1,6 +1,6 @@
 #!/bin/sh
 
-cat <<EOF | xmenu | sh &
+xmenu <<EOF | sh &
 Applications
 	IMG:./icons/web.png	Web Browser	firefox
 	IMG:./icons/gimp.png	Image editor	gimp

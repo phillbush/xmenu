@@ -200,7 +200,7 @@ creating a command to be run by the shell.
 .EX
 #!/bin/sh
 
-cat <<EOF | xmenu | sh &
+xmenu <<EOF | sh &
 Applications
 	IMG:./web.png	Web Browser	firefox
 	IMG:./gimp.png	Image editor	gimp
