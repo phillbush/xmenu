@@ -82,7 +82,7 @@ Read the [manual](https://github.com/phillbush/xmenu/wiki) for more information 
 ## Acknowledgements
 
 * [thingmenu](https://github.com/singpolyma/thingmenu) for being the base
-  for xmenu's code.  However, xmenu evolved enough that it no longer resambles
+  for xmenu's code.  However, xmenu evolved enough that it no longer resembles
   thingmenu at all.
 * [dmenu](https://tools.suckless.org/dmenu/) for inspiring the stdin-to-stdout
   interface, and being base for drawing routines and input method code.
