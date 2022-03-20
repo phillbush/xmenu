@@ -37,8 +37,6 @@ The files are:
 * `./README`:     This file.
 * `./Makefile`:   The makefile.
 * `./config.h`:   The hardcoded default configuration for XMenu.
-* `./config.mk`:  The setup for the makefile.
-* `./demo.gif`:   A gif demonstrating how XMenu works.
 * `./xmenu.1`:    The manual file (man page) for XMenu.
 * `./xmenu.c`:    The source code of XMenu.
 * `./xmenu.sh`:   A sample script illustrating how to use XMenu.
