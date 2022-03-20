@@ -16,7 +16,118 @@
 #include <X11/Xft/Xft.h>
 #include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
-#include "xmenu.h"
+
+/* macros */
+#define CLASS               "XMenu"
+#define LEN(x)              (sizeof (x) / sizeof (x[0]))
+#define MAX(x,y)            ((x)>(y)?(x):(y))
+#define MIN(x,y)            ((x)<(y)?(x):(y))
+#define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
+#define GETNUM(n, s) { \
+	unsigned long __TMP__; \
+	if ((__TMP__ = strtoul((s), NULL, 10)) < INT_MAX) \
+		(n) = __TMP__; \
+	}
+
+/* Actions for the main loop */
+enum {
+	ACTION_NOP    = 0,
+	ACTION_CLEAR  = 1<<0,     /* clear text */
+	ACTION_SELECT = 1<<1,     /* select item */
+	ACTION_MAP    = 1<<2,     /* remap menu windows */
+	ACTION_DRAW   = 1<<3,     /* redraw menu windows */
+	ACTION_WARP   = 1<<4,     /* warp the pointer */
+};
+
+/* enum for keyboard menu navigation */
+enum { ITEMPREV, ITEMNEXT, ITEMFIRST, ITEMLAST };
+
+/* enum for text alignment */
+enum {LeftAlignment, CenterAlignment, RightAlignment};
+
+/* color enum */
+enum {ColorFG, ColorBG, ColorLast};
+
+/* EWMH atoms */
+enum {NetWMName, NetWMWindowType, NetWMWindowTypePopupMenu, NetLast};
+
+/* configuration structure */
+struct Config {
+	/* the values below are set by config.h */
+	const char *font;
+	const char *background_color;
+	const char *foreground_color;
+	const char *selbackground_color;
+	const char *selforeground_color;
+	const char *separator_color;
+	const char *border_color;
+	int width_pixels;
+	int height_pixels;
+	int border_pixels;
+	int separator_pixels;
+	int gap_pixels;
+	int triangle_width;
+	int triangle_height;
+	int iconpadding;
+	int horzpadding;
+	int alignment;
+
+	/* the values below are set by options */
+	int monitor;
+	int posx, posy;         /* rootmenu position */
+
+	/* the value below is computed by xmenu */
+	int iconsize;
+};
+
+/* draw context structure */
+struct DC {
+	XftColor normal[ColorLast];
+	XftColor selected[ColorLast];
+	XftColor border;
+	XftColor separator;
+
+	GC gc;
+
+	FcPattern *pattern;
+	XftFont **fonts;
+	size_t nfonts;
+};
+
+/* menu item structure */
+struct Item {
+	char *label;            /* string to be drawed on menu */
+	char *output;           /* string to be outputed when item is clicked */
+	char *file;             /* filename of the icon */
+	int y;                  /* item y position relative to menu */
+	int h;                  /* item height */
+	int textw;              /* text width */
+	struct Item *prev;      /* previous item */
+	struct Item *next;      /* next item */
+	struct Menu *submenu;   /* submenu spawned by clicking on item */
+	Drawable sel, unsel;    /* pixmap for selected and unselected item */
+	Imlib_Image icon;
+};
+
+/* monitor geometry structure */
+struct Monitor {
+	int x, y, w, h;         /* monitor geometry */
+};
+
+/* menu structure */
+struct Menu {
+	struct Menu *parent;    /* parent menu */
+	struct Item *caller;    /* item that spawned the menu */
+	struct Item *list;      /* list of items contained by the menu */
+	struct Item *selected;  /* item currently selected in the menu */
+	int x, y, w, h;         /* menu geometry */
+	int hasicon;            /* whether the menu has item with icons */
+	int drawn;              /* whether the menu was already drawn */
+	int maxtextw;           /* maximum text width */
+	unsigned level;         /* menu level relative to root */
+	Window win;             /* menu window to map on the screen */
+	XIC xic;                /* input context */
+};
 
 /* X stuff */
 static Display *dpy;
@@ -25,20 +136,27 @@ static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
 static XrmDatabase xdb;
+static XClassHint classh;
 static char *xrm;
 static struct DC dc;
-static struct Monitor mon;
 static Atom utf8string;
 static Atom wmdelete;
 static Atom netatom[NetLast];
 static XIM xim;
 
 /* flags */
-static int iflag = 0;   /* whether to disable icons */
-static int rflag = 0;   /* whether to disable right-click */
-static int mflag = 0;   /* whether the user specified a monitor with -p */
-static int pflag = 0;   /* whether the user specified a position with -p */
-static int wflag = 0;   /* whether to let the window manager control XMenu */
+static int iflag = 0;                   /* whether to disable icons */
+static int rflag = 0;                   /* whether to disable right-click */
+static int mflag = 0;                   /* whether the user specified a monitor with -p */
+static int pflag = 0;                   /* whether the user specified a position with -p */
+static int wflag = 0;                   /* whether to let the window manager control XMenu */
+static int rootmodeflag = 0;            /* wheter to run in root mode */
+static int passclickflag = 0;           /* whether to pass click to root window */
+static int firsttime = 1;               /* set to 0 after first run */
+
+/* arguments */
+static unsigned int button = 0;         /* button to trigger pmenu in root mode */
+static unsigned int modifier = 0;       /* modifier to trigger pmenu */
 
 /* include config variable */
 #include "config.h"
@@ -135,13 +253,58 @@ getresources(void)
 	}
 }
 
+/* set button global variable */
+static void
+setbutton(char *s)
+{
+	size_t len;
+
+	if ((len = strlen(s)) < 1)
+		return;
+	switch (s[len-1]) {
+	case '1': button = Button1; break;
+	case '2': button = Button2; break;
+	case '3': button = Button3; break;
+	default:  button = atoi(&s[len-1]); break;
+	}
+}
+
+/* set modifier global variable */
+static void
+setmodifier(char *s)
+{
+	size_t len;
+
+	if ((len = strlen(s)) < 1)
+		return;
+	switch (s[len-1]) {
+	case '1': modifier = Mod1Mask; break;
+	case '2': modifier = Mod2Mask; break;
+	case '3': modifier = Mod3Mask; break;
+	case '4': modifier = Mod4Mask; break;
+	case '5': modifier = Mod5Mask; break;
+	default:
+		if (strcasecmp(s, "Alt") == 0) {
+			modifier = Mod1Mask;
+		} else if (strcasecmp(s, "Super") == 0) {
+			modifier = Mod4Mask;
+		}
+		break;
+	}
+}
+
 /* get configuration from command-line options */
-static char *
+static void
 getoptions(int argc, char *argv[])
 {
 	int ch;
+	char *s, *t;
 
-	while ((ch = getopt(argc, argv, "ip:rw")) != -1) {
+	classh.res_class = CLASS;
+	classh.res_name = argv[0];
+	if ((s = strrchr(argv[0], '/')) != NULL)
+		classh.res_name = s + 1;
+	while ((ch = getopt(argc, argv, "ip:rwx:X:")) != -1) {
 		switch (ch) {
 		case 'i':
 			iflag = 1;
@@ -156,6 +319,18 @@ getoptions(int argc, char *argv[])
 		case 'w':
 			wflag = 1;
 			break;
+		case 'X':
+			passclickflag = 1;
+			/* PASSTHROUGH */
+		case 'x':
+			rootmodeflag = 1;
+			s = optarg;
+			setbutton(s);
+			if ((t = strchr(s, '-')) == NULL)
+				return;
+			*t = '\0';
+			setmodifier(s);
+			break;
 		default:
 			usage();
 			break;
@@ -163,11 +338,9 @@ getoptions(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	if (argc > 1)
+	if (argc != 0)
 		usage();
-	else if (argc == 1)
-		return *argv;
-	return PROGNAME;
+	return;
 }
 
 /* parse font string */
@@ -218,7 +391,7 @@ ealloccolor(const char *s, XftColor *color)
 
 /* query monitor information and cursor position */
 static void
-initmonitor(void)
+getmonitor(struct Monitor *mon)
 {
 	XineramaScreenInfo *info = NULL;
 	Window dw;          /* dummy variable */
@@ -230,9 +403,9 @@ initmonitor(void)
 
 	XQueryPointer(dpy, rootwin, &dw, &dw, &cursx, &cursy, &di, &di, &du);
 
-	mon.x = mon.y = 0;
-	mon.w = DisplayWidth(dpy, screen);
-	mon.h = DisplayHeight(dpy, screen);
+	mon->x = mon->y = 0;
+	mon->w = DisplayWidth(dpy, screen);
+	mon->h = DisplayHeight(dpy, screen);
 
 	if ((info = XineramaQueryScreens(dpy, &nmons)) != NULL) {
 		int selmon = 0;
@@ -249,10 +422,10 @@ initmonitor(void)
 			selmon = config.monitor;
 		}
 
-		mon.x = info[selmon].x_org;
-		mon.y = info[selmon].y_org;
-		mon.w = info[selmon].width;
-		mon.h = info[selmon].height;
+		mon->x = info[selmon].x_org;
+		mon->y = info[selmon].y_org;
+		mon->w = info[selmon].width;
+		mon->h = info[selmon].height;
 
 		XFree(info);
 	}
@@ -261,8 +434,8 @@ initmonitor(void)
 		config.posx = cursx;
 		config.posy = cursy;
 	} else if (mflag) {
-		config.posx += mon.x;
-		config.posy += mon.y;
+		config.posx += mon->x;
+		config.posy += mon->y;
 	}
 }
 
@@ -354,8 +527,8 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->selected = NULL;
 	menu->w = 0;        /* recalculated by setupmenu() */
 	menu->h = 0;        /* recalculated by setupmenu() */
-	menu->x = mon.x;    /* recalculated by setupmenu() */
-	menu->y = mon.y;    /* recalculated by setupmenu() */
+	menu->x = 0;        /* recalculated by setupmenu() */
+	menu->y = 0;        /* recalculated by setupmenu() */
 	menu->level = level;
 	menu->drawn = 0;
 	menu->hasicon = 0;
@@ -368,7 +541,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	               | PointerMotionMask | LeaveWindowMask;
 	if (wflag)
 		swa.event_mask |= StructureNotifyMask;
-	menu->win = XCreateWindow(dpy, rootwin, 0, 0, 1, 1, 0,
+	menu->win = XCreateWindow(dpy, rootwin, 0, 0, 1, 1, config.border_pixels,
 	                          CopyFromParent, CopyFromParent, CopyFromParent,
 	                          CWOverrideRedirect | CWBackPixel |
 	                          CWBorderPixel | CWEventMask | CWSaveUnder,
@@ -663,42 +836,42 @@ setupitems(struct Menu *menu)
 
 /* setup the position of a menu */
 static void
-setupmenupos(struct Menu *menu)
+setupmenupos(struct Menu *menu, struct Monitor *mon)
 {
 	int width, height;
 
 	width = menu->w + config.border_pixels * 2;
 	height = menu->h + config.border_pixels * 2;
 	if (menu->parent == NULL) { /* if root menu, calculate in respect to cursor */
-		if (pflag || (config.posx >= mon.x && mon.x + mon.w - config.posx >= width))
+		if (pflag || (config.posx >= mon->x && mon->x + mon->w - config.posx >= width))
 			menu->x = config.posx;
 		else if (config.posx > width)
 			menu->x = config.posx - width;
 
-		if (pflag || (config.posy >= mon.y && mon.y + mon.h - config.posy >= height))
+		if (pflag || (config.posy >= mon->y && mon->y + mon->h - config.posy >= height))
 			menu->y = config.posy;
-		else if (mon.y + mon.h > height)
-			menu->y = mon.y + mon.h - height;
+		else if (mon->y + mon->h > height)
+			menu->y = mon->y + mon->h - height;
 	} else {                    /* else, calculate in respect to parent menu */
 		int parentwidth;
 
 		parentwidth = menu->parent->x + menu->parent->w + config.border_pixels + config.gap_pixels;
 
-		if (mon.x + mon.w - parentwidth >= width)
+		if (mon->x + mon->w - parentwidth >= width)
 			menu->x = parentwidth;
 		else if (menu->parent->x > menu->w + config.border_pixels + config.gap_pixels)
 			menu->x = menu->parent->x - menu->w - config.border_pixels - config.gap_pixels;
 
-		if (mon.y + mon.h - (menu->caller->y + menu->parent->y) >= height)
+		if (mon->y + mon->h - (menu->caller->y + menu->parent->y) >= height)
 			menu->y = menu->caller->y + menu->parent->y;
-		else if (mon.y + mon.h > height)
-			menu->y = mon.y + mon.h - height;
+		else if (mon->y + mon->h > height)
+			menu->y = mon->y + mon->h - height;
 	}
 }
 
 /* recursivelly setup menu configuration and its pixmap */
 static void
-setupmenu(struct Menu *menu, XClassHint *classh)
+setupmenu(struct Menu *menu, struct Monitor *mon)
 {
 	char *title;
 	struct Item *item;
@@ -707,45 +880,47 @@ setupmenu(struct Menu *menu, XClassHint *classh)
 	XTextProperty wintitle;
 
 	/* setup size and position of menus */
-	setupitems(menu);
-	setupmenupos(menu);
+	if (firsttime)
+		setupitems(menu);
+	setupmenupos(menu, mon);
 
 	/* update menu geometry */
-	changes.border_width = config.border_pixels;
 	changes.height = menu->h;
 	changes.width = menu->w;
 	changes.x = menu->x;
 	changes.y = menu->y;
-	XConfigureWindow(dpy, menu->win, CWBorderWidth | CWWidth | CWHeight | CWX | CWY, &changes);
+	XConfigureWindow(dpy, menu->win, CWWidth | CWHeight | CWX | CWY, &changes);
 
-	/* set window title (used if wflag is on) */
-	if (menu->parent == NULL) {
-		title = classh->res_name;
-	} else if (menu->caller->output) {
-		title = menu->caller->output;
-	} else {
-		title = "\0";
+	if (firsttime) {
+		/* set window title (used if wflag is on) */
+		if (menu->parent == NULL) {
+			title = classh.res_name;
+		} else if (menu->caller->output) {
+			title = menu->caller->output;
+		} else {
+			title = "\0";
+		}
+		XStringListToTextProperty(&title, 1, &wintitle);
+
+		/* set window manager hints */
+		sizeh.flags = USPosition | PMaxSize | PMinSize;
+		sizeh.min_width = sizeh.max_width = menu->w;
+		sizeh.min_height = sizeh.max_height = menu->h;
+		XSetWMProperties(dpy, menu->win, &wintitle, NULL, NULL, 0, &sizeh, NULL, &classh);
+
+		/* set WM protocols and ewmh window properties */
+		XSetWMProtocols(dpy, menu->win, &wmdelete, 1);
+		XChangeProperty(dpy, menu->win, netatom[NetWMName], utf8string, 8,
+	                	PropModeReplace, (unsigned char *)title, strlen(title));
+		XChangeProperty(dpy, menu->win, netatom[NetWMWindowType], XA_ATOM, 32,
+	                	PropModeReplace,
+	                	(unsigned char *)&netatom[NetWMWindowTypePopupMenu], 1);
 	}
-	XStringListToTextProperty(&title, 1, &wintitle);
-
-	/* set window manager hints */
-	sizeh.flags = USPosition | PMaxSize | PMinSize;
-	sizeh.min_width = sizeh.max_width = menu->w;
-	sizeh.min_height = sizeh.max_height = menu->h;
-	XSetWMProperties(dpy, menu->win, &wintitle, NULL, NULL, 0, &sizeh, NULL, classh);
-
-	/* set WM protocols and ewmh window properties */
-	XSetWMProtocols(dpy, menu->win, &wmdelete, 1);
-	XChangeProperty(dpy, menu->win, netatom[NetWMName], utf8string, 8,
-	                PropModeReplace, (unsigned char *)title, strlen(title));
-	XChangeProperty(dpy, menu->win, netatom[NetWMWindowType], XA_ATOM, 32,
-	                PropModeReplace,
-	                (unsigned char *)&netatom[NetWMWindowTypePopupMenu], 1);
 
 	/* calculate positions of submenus */
 	for (item = menu->list; item != NULL; item = item->next) {
 		if (item->submenu != NULL)
-			setupmenu(item->submenu, classh);
+			setupmenu(item->submenu, mon);
 	}
 }
 
@@ -990,11 +1165,22 @@ drawmenus(struct Menu *currmenu)
 	}
 }
 
-/* umap previous menus and map current menu and its parents */
+/* unmap current menu and its parents */
 static void
-mapmenu(struct Menu *currmenu)
+unmapmenu(struct Menu *currmenu)
 {
-	static struct Menu *prevmenu = NULL;
+	struct Menu *menu;
+
+	for (menu = currmenu; menu != NULL; menu = menu->parent) {
+		menu->selected = NULL;
+		XUnmapWindow(dpy, menu->win);
+	}
+}
+
+/* umap previous menus and map current menu and its parents */
+static struct Menu *
+mapmenu(struct Menu *currmenu, struct Menu *prevmenu, struct Monitor *mon)
+{
 	struct Menu *menu, *menu_;
 	struct Menu *lcamenu;   /* lowest common ancestor menu */
 	unsigned minlevel;      /* level of the closest to root menu */
@@ -1002,13 +1188,12 @@ mapmenu(struct Menu *currmenu)
 
 	/* do not remap current menu if it wasn't updated*/
 	if (prevmenu == currmenu)
-		return;
+		goto done;
 
 	/* if this is the first time mapping, skip calculations */
 	if (prevmenu == NULL) {
 		XMapWindow(dpy, currmenu->win);
-		prevmenu = currmenu;
-		return;
+		goto done;
 	}
 
 	/* find lowest common ancestor menu */
@@ -1037,17 +1222,16 @@ mapmenu(struct Menu *currmenu)
 
 	/* map menus from currmenu (inclusive) until lcamenu (exclusive) */
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent) {
-
 		if (wflag) {
-			setupmenupos(menu);
+			setupmenupos(menu, mon);
 			XMoveWindow(dpy, menu->win, menu->x, menu->y);
 		}
-
 		XMapWindow(dpy, menu->win);
 	}
 
-	prevmenu = currmenu;
 	grabfocus(currmenu->win);
+done:
+	return currmenu;
 }
 
 /* get menu of given window */
@@ -1255,11 +1439,11 @@ normalizeksym(KeySym ksym)
 
 /* run event loop */
 static void
-run(struct Menu *currmenu)
+run(struct Menu *currmenu, struct Monitor *mon)
 {
 	char text[BUFSIZ];
 	char buf[32];
-	struct Menu *menu;
+	struct Menu *menu, *prevmenu;
 	struct Item *item;
 	struct Item *previtem = NULL;
 	struct Item *lastitem, *select;
@@ -1272,7 +1456,7 @@ run(struct Menu *currmenu)
 	int i;
 
 	text[0] = '\0';
-	mapmenu(currmenu);
+	prevmenu = currmenu;
 	while (!XNextEvent(dpy, &ev)) {
 		if (XFilterEvent(&ev, None))
 			continue;
@@ -1319,7 +1503,7 @@ enteritem:
 					currmenu = item->submenu;
 				} else {
 					printf("%s\n", item->output);
-					return;
+					goto done;
 				}
 				select = currmenu->list;
 				action = ACTION_CLEAR | ACTION_SELECT | ACTION_MAP | ACTION_DRAW;
@@ -1331,7 +1515,7 @@ enteritem:
 		case ButtonPress:
 			menu = getmenu(currmenu, ev.xbutton.window);
 			if (menu == NULL)
-				return;
+				goto done;
 			break;
 		case KeyPress:
 			len = XmbLookupString(currmenu->xic, &ev.xkey, buf, sizeof buf, &ksym, &status);
@@ -1347,7 +1531,7 @@ enteritem:
 
 			/* esc closes xmenu when current menu is the root menu */
 			if (ksym == XK_Escape && currmenu->parent == NULL)
-				return;
+				goto done;
 
 			/* Shift-Tab = ISO_Left_Tab */
 			if (ksym == XK_Tab && (ev.xkey.state & ShiftMask))
@@ -1445,7 +1629,7 @@ append:
 			/* user closed window */
 			menu = getmenu(currmenu, ev.xclient.window);
 			if (menu->parent == NULL)
-				return;     /* closing the root menu closes the program */
+				goto done;  /* closing the root menu closes the program */
 			currmenu = menu->parent;
 			action = ACTION_MAP;
 			break;
@@ -1455,7 +1639,7 @@ append:
 		if (action & ACTION_SELECT)
 			currmenu->selected = select;
 		if (action & ACTION_MAP)
-			mapmenu(currmenu);
+			prevmenu = mapmenu(currmenu, prevmenu, mon);
 		if (action & ACTION_DRAW)
 			drawmenus(currmenu);
 		if (action & ACTION_WARP) {
@@ -1463,6 +1647,9 @@ append:
 			warped = 1;
 		}
 	}
+done:
+	unmapmenu(currmenu);
+	ungrab();
 }
 
 /* recursivelly free pixmaps and destroy windows */
@@ -1514,8 +1701,9 @@ cleandc(void)
 int
 main(int argc, char *argv[])
 {
+	struct Monitor mon;
 	struct Menu *rootmenu;
-	XClassHint classh;
+	XEvent ev;
 
 	/* open connection to server and set X variables */
 	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
@@ -1534,8 +1722,7 @@ main(int argc, char *argv[])
 
 	/* process configuration and window class */
 	getresources();
-	classh.res_class = PROGNAME;
-	classh.res_name = getoptions(argc, argv);
+	getoptions(argc, argv);
 
 	/* imlib2 stuff */
 	if (!iflag) {
@@ -1547,28 +1734,46 @@ main(int argc, char *argv[])
 	}
 
 	/* initializers */
-	initmonitor();
 	initdc();
 	initiconsize();
 	initatoms();
 
-	/* generate menus and set them up */
+	/* if running in root mode, get button presses from root window */
+	if (rootmodeflag)
+		XGrabButton(dpy, button, AnyModifier, rootwin, False, ButtonPressMask, GrabModeSync, GrabModeSync, None, None);
+
+	/* generate menus */
 	rootmenu = parsestdin();
 	if (rootmenu == NULL)
 		errx(1, "no menu generated");
-	setupmenu(rootmenu, &classh);
-
-	/* grab mouse and keyboard */
-	if (!wflag) {
-		grabpointer();
-		grabkeyboard();
-	}
 
 	/* run event loop */
-	run(rootmenu);
+	do {
+		if (rootmodeflag)
+			XNextEvent(dpy, &ev);
+		if (!rootmodeflag ||
+		    (ev.type == ButtonPress &&
+		     ((modifier != 0 && ev.xbutton.state == modifier) ||
+		      (ev.xbutton.subwindow == None)))) {
+			if (rootmodeflag && passclickflag) {
+				XAllowEvents(dpy, ReplayPointer, CurrentTime);
+			}
+			getmonitor(&mon);
+			if (!wflag) {
+				grabpointer();
+				grabkeyboard();
+			}
+			setupmenu(rootmenu, &mon);
+			mapmenu(rootmenu, NULL, &mon);
+			XFlush(dpy);
+			run(rootmenu, &mon);
+			firsttime = 0;
+		} else {
+			XAllowEvents(dpy, ReplayPointer, CurrentTime);
+		}
+	} while (rootmodeflag);
 
 	/* clean stuff */
-	ungrab();
 	cleanmenu(rootmenu);
 	cleandc();
 	XrmDestroyDatabase(xdb);

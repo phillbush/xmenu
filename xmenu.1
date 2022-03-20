@@ -62,6 +62,53 @@ so pressing it will not trigger any menu item.
 Asks the window manager to draw a border around the menus.
 This option may be buggy in some window managers,
 specially tiled ones that do not respect window hints.
+.TP
+\fB\-x\fP [\fImod\fP-]\fIbutton\fP
+This option requires an argument of the form
+\fImod\fP-\fIbutton\fP or \fIbutton\fP; where
+.I mod
+is
+.B Mod1
+to
+.BR Mod5 ,
+or
+.B Alt
+(equivalent to
+.BR Mod1 ),
+or
+.B Super
+(equivalent to
+.BR Mod4 );
+and
+.I button
+is the number of a mouse button.
+When this option is used,
+.B pmenu
+listens to button presses on the root window,
+and shows the pie menu when the given button is pressed,
+together with the given modifier,
+on the root window.
+For example, invoking
+.B pmenu
+with the option
+.B -x Super-3
+makes a menu open when clicking with the third mouse button on the root window,
+or when clicking with the third mouse button together with the Super (Mod4) modifier on any window.
+This option makes
+.B pmenu
+run continuously;
+so it should be used when
+.B pmenu
+is invoked in background on a X startup file (like
+.BR "~/.xinitrc" ).
+.TP
+\fB\-X\fP [\fImod\fP-]\fIbutton\fP
+Just like
+.BR \-x ,
+but also pass the click to the root window
+(for the window manager to use it, for example).
+This option is incompatible with
+.BR \-x .
 .PP
 Each item read from stdin has the following format:
 .IP
