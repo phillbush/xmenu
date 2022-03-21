@@ -18,10 +18,10 @@
 #include <Imlib2.h>
 
 /* macros */
+#define MAXPATHS 128            /* maximal number of paths to look for icons */
+#define ICONPATH "ICONPATH"     /* environment variable name */
 #define CLASS               "XMenu"
 #define LEN(x)              (sizeof (x) / sizeof (x[0]))
-#define MAX(x,y)            ((x)>(y)?(x):(y))
-#define MIN(x,y)            ((x)<(y)?(x):(y))
 #define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
 #define GETNUM(n, s) { \
 	unsigned long __TMP__; \
@@ -64,6 +64,7 @@ struct Config {
 	int width_pixels;
 	int height_pixels;
 	int border_pixels;
+	int max_items;
 	int separator_pixels;
 	int gap_pixels;
 	int triangle_width;
@@ -119,19 +120,20 @@ struct Menu {
 	struct Menu *parent;    /* parent menu */
 	struct Item *caller;    /* item that spawned the menu */
 	struct Item *list;      /* list of items contained by the menu */
+	struct Item *first;     /* first item displayed on the menu */
 	struct Item *selected;  /* item currently selected in the menu */
 	int x, y, w, h;         /* menu geometry */
 	int hasicon;            /* whether the menu has item with icons */
 	int drawn;              /* whether the menu was already drawn */
 	int maxtextw;           /* maximum text width */
-	unsigned level;         /* menu level relative to root */
+	int level;              /* menu level relative to root */
+	int overflow;           /* whether the menu is higher than the monitor */
 	Window win;             /* menu window to map on the screen */
 	XIC xic;                /* input context */
 };
 
 /* X stuff */
 static Display *dpy;
-static int screen;
 static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
@@ -142,6 +144,8 @@ static struct DC dc;
 static Atom utf8string;
 static Atom wmdelete;
 static Atom netatom[NetLast];
+static int screen;
+static int depth;
 static XIM xim;
 
 /* flags */
@@ -158,6 +162,11 @@ static int firsttime = 1;               /* set to 0 after first run */
 static unsigned int button = 0;         /* button to trigger pmenu in root mode */
 static unsigned int modifier = 0;       /* modifier to trigger pmenu */
 
+/* icons paths */
+static char *iconstring = NULL;         /* string read from getenv */
+static char *iconpaths[MAXPATHS];       /* paths to icon directories */
+static int niconpaths = 0;              /* number of paths to icon directories */
+
 /* include config variable */
 #include "config.h"
 
@@ -169,8 +178,43 @@ usage(void)
 	exit(1);
 }
 
-/* parse position string from -p,
- * put results on config.posx, config.posy, and config.monitor */
+/* maximum int */
+static int
+max(int x, int y)
+{
+	return x > y ? x : y;
+}
+
+/* minimum int */
+static int
+min(int x, int y)
+{
+	return x < y ? x : y;
+}
+
+/* call malloc checking for error */
+static void *
+emalloc(size_t size)
+{
+	void *p;
+
+	if ((p = malloc(size)) == NULL)
+		err(1, "malloc");
+	return p;
+}
+
+/* call strdup checking for error */
+static char *
+estrdup(const char *s)
+{
+	char *t;
+
+	if ((t = strdup(s)) == NULL)
+		err(1, "strdup");
+	return t;
+}
+
+/* parse position string from -p, put results on config.posx, config.posy, and config.monitor */
 static void
 parseposition(char *optarg)
 {
@@ -229,6 +273,8 @@ getresources(void)
 		GETNUM(config.width_pixels, xval.addr)
 	if (XrmGetResource(xdb, "xmenu.gap", "*", &type, &xval) == True)
 		GETNUM(config.gap_pixels, xval.addr)
+	if (XrmGetResource(xdb, "xmenu.maxItems", "*", &type, &xval) == True)
+		GETNUM(config.max_items, xval.addr)
 	if (XrmGetResource(xdb, "xmenu.background", "*", &type, &xval) == True)
 		config.background_color = xval.addr;
 	if (XrmGetResource(xdb, "xmenu.foreground", "*", &type, &xval) == True)
@@ -293,6 +339,22 @@ setmodifier(char *s)
 	}
 }
 
+/* parse icon path string */
+static void
+parseiconpaths(char *s)
+{
+	if (s == NULL)
+		return;
+	free(iconstring);
+	iconstring = estrdup(s);
+	niconpaths = 0;
+	for (s = strtok(iconstring, ":"); s != NULL; s = strtok(NULL, ":")) {
+		if (niconpaths < MAXPATHS) {
+			iconpaths[niconpaths++] = s;
+		}
+	}
+}
+
 /* get configuration from command-line options */
 static void
 getoptions(int argc, char *argv[])
@@ -304,6 +366,7 @@ getoptions(int argc, char *argv[])
 	classh.res_name = argv[0];
 	if ((s = strrchr(argv[0], '/')) != NULL)
 		classh.res_name = s + 1;
+	parseiconpaths(getenv(ICONPATH));
 	while ((ch = getopt(argc, argv, "ip:rwx:X:")) != -1) {
 		switch (ch) {
 		case 'i':
@@ -336,6 +399,8 @@ getoptions(int argc, char *argv[])
 			break;
 		}
 	}
+	if (rootmodeflag)
+		wflag = 0;
 	argc -= optind;
 	argv += optind;
 	if (argc != 0)
@@ -482,26 +547,22 @@ allocitem(const char *label, const char *output, char *file)
 {
 	struct Item *item;
 
-	if ((item = malloc(sizeof *item)) == NULL)
-		err(1, "malloc");
+	item = emalloc(sizeof *item);
 	if (label == NULL) {
 		item->label = NULL;
 		item->output = NULL;
 	} else {
-		if ((item->label = strdup(label)) == NULL)
-			err(1, "strdup");
+		item->label = estrdup(label);
 		if (label == output) {
 			item->output = item->label;
 		} else {
-			if ((item->output = strdup(output)) == NULL)
-				err(1, "strdup");
+			item->output = estrdup(output);
 		}
 	}
 	if (file == NULL) {
 		item->file = NULL;
 	} else {
-		if ((item->file = strdup(file)) == NULL)
-			err(1, "strdup");
+		item->file = estrdup(file);
 	}
 	item->y = 0;
 	item->h = 0;
@@ -514,24 +575,18 @@ allocitem(const char *label, const char *output, char *file)
 
 /* allocate a menu and create its window */
 static struct Menu *
-allocmenu(struct Menu *parent, struct Item *list, unsigned level)
+allocmenu(struct Menu *parent, struct Item *list, int level)
 {
 	XSetWindowAttributes swa;
 	struct Menu *menu;
 
-	if ((menu = malloc(sizeof *menu)) == NULL)
-		err(1, "malloc");
-	menu->parent = parent;
-	menu->list = list;
-	menu->caller = NULL;
-	menu->selected = NULL;
-	menu->w = 0;        /* recalculated by setupmenu() */
-	menu->h = 0;        /* recalculated by setupmenu() */
-	menu->x = 0;        /* recalculated by setupmenu() */
-	menu->y = 0;        /* recalculated by setupmenu() */
-	menu->level = level;
-	menu->drawn = 0;
-	menu->hasicon = 0;
+	menu = emalloc(sizeof *menu);
+	*menu = (struct Menu){
+		.parent = parent,
+		.list = list,
+		.level = level,
+		.first = NULL,
+	};
 
 	swa.override_redirect = (wflag) ? False : True;
 	swa.background_pixel = dc.normal[ColorBG].pixel;
@@ -557,14 +612,14 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 
 /* build the menu tree */
 static struct Menu *
-buildmenutree(unsigned level, const char *label, const char *output, char *file)
+buildmenutree(int level, const char *label, const char *output, char *file)
 {
 	static struct Menu *prevmenu = NULL;    /* menu the previous item was added to */
 	static struct Menu *rootmenu = NULL;    /* menu to be returned */
 	struct Item *curritem = NULL;           /* item currently being read */
 	struct Item *item;                      /* dummy item for loops */
 	struct Menu *menu;                      /* dummy menu for loops */
-	unsigned i;
+	int i;
 
 	/* create the item */
 	curritem = allocitem(label, output, file);
@@ -628,7 +683,7 @@ parsestdin(void)
 	struct Menu *rootmenu;
 	char *s, buf[BUFSIZ];
 	char *file, *label, *output;
-	unsigned level = 0;
+	int level = 0;
 
 	rootmenu = NULL;
 
@@ -796,20 +851,34 @@ drawtext(XftDraw *draw, XftColor *color, int x, int y, unsigned h, const char *t
 
 /* setup the height, width and icon of the items of a menu */
 static void
-setupitems(struct Menu *menu)
+setupitems(struct Menu *menu, struct Monitor *mon)
 {
+	Pixmap pix;
 	struct Item *item;
 	int itemwidth;
+	int menuh;
+	int maxh;
 
+	menu->first = menu->list;
 	menu->w = config.width_pixels;
 	menu->maxtextw = 0;
+	menuh = 0;
+	maxh = config.max_items > 3 ? (2 + config.max_items) * config.height_pixels : mon->h;
 	for (item = menu->list; item != NULL; item = item->next) {
-		item->y = menu->h;
+		item->y = menuh;
 		if (item->label == NULL)   /* height for separator item */
 			item->h = config.separator_pixels;
 		else
 			item->h = config.height_pixels;
-		menu->h += item->h;
+		menuh += item->h;
+		if (!menu->overflow) {
+			if (menu->h + config.height_pixels * 2 < maxh - config.border_pixels * 2) {
+				menu->h = menuh;
+			} else {
+				menu->overflow = 1;
+				menu->h += config.height_pixels * 2;
+			}
+		}
 		if (item->label)
 			item->textw = drawtext(NULL, NULL, 0, 0, 0, item->label);
 		else
@@ -829,8 +898,38 @@ setupitems(struct Menu *menu)
 		 */
 		itemwidth = item->textw + config.triangle_width + config.horzpadding * 3;
 		itemwidth += (iflag || !menu->hasicon) ? 0 : config.iconsize + config.horzpadding;
-		menu->w = MAX(menu->w, itemwidth);
-		menu->maxtextw = MAX(menu->maxtextw, item->textw);
+		menu->w = max(menu->w, itemwidth);
+		menu->maxtextw = max(menu->maxtextw, item->textw);
+	}
+	if (!menu->overflow) {
+		XSetWindowBackground(dpy, menu->win, dc.normal[ColorBG].pixel);
+	} else {
+		pix = XCreatePixmap(dpy, menu->win, menu->w, menu->h, depth);
+		XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
+		XFillRectangle(dpy, pix, dc.gc, 0, 0, menu->w, menu->h);
+		XSetForeground(dpy, dc.gc, dc.normal[ColorFG].pixel);
+		XFillPolygon(
+			dpy, pix, dc.gc,
+			(XPoint []){
+				{menu->w / 2 - 3, config.height_pixels / 2 + 2},
+				{3, -4},
+				{3, 4},
+				{-6, 0},
+			},
+			4, Convex, CoordModePrevious
+		);
+		XFillPolygon(
+			dpy, pix, dc.gc,
+			(XPoint []){
+				{menu->w / 2 - 3, menu->h - config.height_pixels / 2 - 2},
+				{3, 4},
+				{3, -4},
+				{-6, 0},
+			},
+			4, Convex, CoordModePrevious
+		);
+		XSetWindowBackgroundPixmap(dpy, menu->win, pix);
+		XFreePixmap(dpy, pix);
 	}
 }
 
@@ -880,8 +979,7 @@ setupmenu(struct Menu *menu, struct Monitor *mon)
 	XTextProperty wintitle;
 
 	/* setup size and position of menus */
-	if (firsttime)
-		setupitems(menu);
+	setupitems(menu, mon);
 	setupmenupos(menu, mon);
 
 	/* update menu geometry */
@@ -983,22 +1081,42 @@ ungrab(void)
 	XUngrabKeyboard(dpy, CurrentTime);
 }
 
+/* check if path is absolute or relative to current directory */
+static int
+isabsolute(const char *s)
+{
+	return s[0] == '/' || (s[0] == '.' && (s[1] == '/' || (s[1] == '.' && s[2] == '/')));
+}
+
 /* load and scale icon */
 static Imlib_Image
 loadicon(const char *file)
 {
 	Imlib_Image icon;
 	Imlib_Load_Error errcode;
+	char path[PATH_MAX];
 	const char *errstr;
 	int width;
 	int height;
 	int imgsize;
+	int i;
 
-	icon = imlib_load_image_with_error_return(file, &errcode);
 	if (*file == '\0') {
 		warnx("could not load icon (file name is blank)");
 		return NULL;
-	} else if (icon == NULL) {
+	}
+	if (isabsolute(file))
+		icon = imlib_load_image_with_error_return(file, &errcode);
+	else {
+		for (i = 0; i < niconpaths; i++) {
+			snprintf(path, sizeof(path), "%s/%s", iconpaths[i], file);
+			icon = imlib_load_image_with_error_return(path, &errcode);
+			if (icon != NULL || errcode != IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST) {
+				break;
+			}
+		}
+	}
+	if (icon == NULL) {
 		switch (errcode) {
 		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
 			errstr = "file does not exist";
@@ -1042,7 +1160,7 @@ loadicon(const char *file)
 
 	width = imlib_image_get_width();
 	height = imlib_image_get_height();
-	imgsize = MIN(width, height);
+	imgsize = min(width, height);
 
 	icon = imlib_create_cropped_scaled_image(0, 0, imgsize, imgsize,
 	                                         config.iconsize,
@@ -1061,22 +1179,20 @@ drawitems(struct Menu *menu)
 	int x, y;
 
 	for (item = menu->list; item != NULL; item = item->next) {
-		item->unsel = XCreatePixmap(dpy, menu->win, menu->w, item->h,
-		                          DefaultDepth(dpy, screen));
+		item->unsel = XCreatePixmap(dpy, menu->win, menu->w, item->h, depth);
 
 		XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
 		XFillRectangle(dpy, item->unsel, dc.gc, 0, 0, menu->w, item->h);
 
 		if (item->label == NULL) { /* item is separator */
-			y = item->h/2;
+			y = item->h / 2;
 			XSetForeground(dpy, dc.gc, dc.separator.pixel);
 			XDrawLine(dpy, item->unsel, dc.gc, config.horzpadding, y,
 			          menu->w - config.horzpadding, y);
 
 			item->sel = item->unsel;
 		} else {
-			item->sel = XCreatePixmap(dpy, menu->win, menu->w, item->h,
-			                          DefaultDepth(dpy, screen));
+			item->sel = XCreatePixmap(dpy, menu->win, menu->w, item->h, depth);
 			XSetForeground(dpy, dc.gc, dc.selected[ColorBG].pixel);
 			XFillRectangle(dpy, item->sel, dc.gc, 0, 0, menu->w, item->h);
 
@@ -1148,19 +1264,35 @@ drawmenus(struct Menu *currmenu)
 {
 	struct Menu *menu;
 	struct Item *item;
+	int y0, y;
+	int maxh;
 
 	for (menu = currmenu; menu != NULL; menu = menu->parent) {
 		if (!menu->drawn) {
 			drawitems(menu);
 			menu->drawn = 1;
 		}
-		for (item = menu->list; item != NULL; item = item->next) {
-			if (item == menu->selected)
-				XCopyArea(dpy, item->sel, menu->win, dc.gc, 0, 0,
-				          menu->w, item->h, 0, item->y);
-			else
-				XCopyArea(dpy, item->unsel, menu->win, dc.gc, 0, 0,
-				          menu->w, item->h, 0, item->y);
+		if (menu->overflow && menu->selected != NULL) {
+			maxh = menu->h - config.height_pixels * 2;
+			while (menu->first->next != NULL &&
+			       menu->selected->y >= menu->first->y + maxh) {
+				menu->first = menu->first->next;
+			}
+			while (menu->first->prev != NULL &&
+			       menu->selected->y < menu->first->y) {
+				menu->first = menu->first->prev;
+			}
+		}
+		y = menu->first->y;
+		y0 = menu->overflow ? config.height_pixels : 0;
+		for (item = menu->first; item != NULL; item = item->next) {
+			if (menu->overflow && item->y - y + item->h > menu->h - config.height_pixels * 2)
+				break;
+			if (item == menu->selected) {
+				XCopyArea(dpy, item->sel, menu->win, dc.gc, 0, 0, menu->w, item->h, 0, y0 + item->y - y);
+			} else {
+				XCopyArea(dpy, item->unsel, menu->win, dc.gc, 0, 0, menu->w, item->h, 0, y0 + item->y - y);
+			}
 		}
 	}
 }
@@ -1183,8 +1315,8 @@ mapmenu(struct Menu *currmenu, struct Menu *prevmenu, struct Monitor *mon)
 {
 	struct Menu *menu, *menu_;
 	struct Menu *lcamenu;   /* lowest common ancestor menu */
-	unsigned minlevel;      /* level of the closest to root menu */
-	unsigned maxlevel;      /* level of the closest to root menu */
+	int minlevel;           /* level of the closest to root menu */
+	int maxlevel;           /* level of the closest to root menu */
 
 	/* do not remap current menu if it wasn't updated*/
 	if (prevmenu == currmenu)
@@ -1197,8 +1329,8 @@ mapmenu(struct Menu *currmenu, struct Menu *prevmenu, struct Monitor *mon)
 	}
 
 	/* find lowest common ancestor menu */
-	minlevel = MIN(currmenu->level, prevmenu->level);
-	maxlevel = MAX(currmenu->level, prevmenu->level);
+	minlevel = min(currmenu->level, prevmenu->level);
+	maxlevel = max(currmenu->level, prevmenu->level);
 	if (currmenu->level == maxlevel) {
 		menu = currmenu;
 		menu_ = prevmenu;
@@ -1247,20 +1379,40 @@ getmenu(struct Menu *currmenu, Window win)
 	return NULL;
 }
 
-/* get item of given menu and position */
-static struct Item *
-getitem(struct Menu *menu, int y)
+/* get in *ret the item in given menu and position; return 1 if position is on a scroll triangle */
+static int
+getitem(struct Menu *menu, struct Item **ret, int y)
 {
 	struct Item *item;
+	int y0;
 
+	*ret = NULL;
 	if (menu == NULL)
-		return NULL;
-
-	for (item = menu->list; item != NULL; item = item->next)
-		if (y >= item->y && y <= item->y + item->h)
-			return item;
-
-	return NULL;
+		return 0;
+	if (menu->overflow) {
+		if (y < config.height_pixels) {
+			*ret = menu->first->prev;
+			return 1;
+		} else if (y > menu->h - config.height_pixels) {
+			y0 = menu->overflow ? config.height_pixels : 0;
+			y = menu->h - y0 + menu->first->y;
+			for (item = menu->first; item != NULL; item = item->next)
+				if (y >= item->y && y <= item->y + item->h)
+					break;
+			if (item != NULL)
+				*ret = menu->first->next;
+			return 1;
+		}
+	}
+	y0 = menu->overflow ? config.height_pixels : 0;
+	y -= y0 - menu->first->y;
+	for (item = menu->first; item != NULL; item = item->next) {
+		if (y >= item->y && y <= item->y + item->h) {
+			*ret = item;
+			break;
+		}
+	}
+	return 0;
 }
 
 /* cycle through the items; non-zero direction is next, zero is prev */
@@ -1469,7 +1621,8 @@ run(struct Menu *currmenu, struct Monitor *mon)
 		case MotionNotify:
 			if (!warped) {
 				menu = getmenu(currmenu, ev.xbutton.window);
-				item = getitem(menu, ev.xbutton.y);
+				if (getitem(menu, &item, ev.xbutton.y))
+					break;
 				if (menu == NULL || item == NULL || previtem == item)
 					break;
 				previtem = item;
@@ -1493,7 +1646,12 @@ run(struct Menu *currmenu, struct Monitor *mon)
 				action = ACTION_CLEAR | ACTION_SELECT | ACTION_DRAW | ACTION_WARP;
 			} else if (isclickbutton(ev.xbutton.button)) {
 				menu = getmenu(currmenu, ev.xbutton.window);
-				item = getitem(menu, ev.xbutton.y);
+				if (getitem(menu, &item, ev.xbutton.y) && item != NULL) {
+					select = NULL;
+					menu->first = item;
+					action = ACTION_CLEAR | ACTION_SELECT | ACTION_MAP | ACTION_DRAW;
+					break;
+				}
 				if (menu == NULL || item == NULL)
 					break;
 enteritem:
@@ -1624,7 +1782,7 @@ append:
 			menu->y = ev.xconfigure.y;
 			break;
 		case ClientMessage:
-			if ((unsigned long) ev.xclient.data.l[0] != wmdelete)
+			if ((unsigned long)ev.xclient.data.l[0] != wmdelete)
 				break;
 			/* user closed window */
 			menu = getmenu(currmenu, ev.xclient.window);
@@ -1714,6 +1872,7 @@ main(int argc, char *argv[])
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
+	depth = DefaultDepth(dpy, screen);
 	XrmInitialize();
 	if ((xrm = XResourceManagerString(dpy)) != NULL)
 		xdb = XrmGetStringDatabase(xrm);

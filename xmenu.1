@@ -126,7 +126,11 @@ items indented with a tab is shown in a submenu of the preceding item not indent
 An item without initial tabs is a top-level item.
 .IP
 The image is a string of the form "IMG:/path/to/image.png".
-It specifies a image to be shown as icon at the left of the entry.
+It specifies the path to a image file to be shown as icon at the left of the entry.
+If the path does not begin with "/", "./" or "../",
+the file is searched on the paths specified in the
+.B ICONPATH
+environment variable.
 .IP
 The label is the string that will be shown as a item in the menu.
 An item without label is considered a separator and is drawn as a thin line in the menu
@@ -237,6 +241,22 @@ or
 .BR "\(dqright\(dq" ,
 text is aligned to the left, center, or right of the menu, respectively.
 By default, text is aligned to the left.
+.TP
+.B xmenu.maxItems
+Maximum number of items to be displayed in a menu.
+If more a menu has more than this number of items,
+they will be scrolled with arrow buttons.
+.SH ENVIRONMENT
+The following environment variables affect the execution of
+.BR pmenu .
+.TP
+.B DISPLAY
+The display to start
+.B pmenu
+on.
+.TP
+.B ICONPATH
+A colon-separated list of directories used to search for the location of image files.
 .SH EXAMPLES
 The following script illustrates the use of
 .BR xmenu .

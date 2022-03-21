@@ -16,6 +16,7 @@ static struct Config config = {
 	.border_pixels = 1,         /* menu border */
 	.separator_pixels = 3,      /* space around separator */
 	.gap_pixels = 0,            /* gap between menus */
+	.max_items = 0,             /* maximum number of items of a menu, 0 to compute based on monitor height */
 
 	/* text alignment, set to LeftAlignment, CenterAlignment or RightAlignment */
 	.alignment = LeftAlignment,
