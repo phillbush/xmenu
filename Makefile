@@ -1,55 +1,35 @@
-# program name
-PROG = xmenu
+.POSIX:
 
 # paths
-PREFIX    ?= /usr/local
-MANPREFIX ?= ${PREFIX}/share/man
-LOCALINC ?= /usr/local/include
-LOCALLIB ?= /usr/local/lib
-X11INC ?= /usr/X11R6/include
-X11LIB ?= /usr/X11R6/lib
-FREETYPEINC ?= /usr/include/freetype2
+PREFIX = /usr/local
+BINDIR = $(DESTDIR)$(PREFIX)/bin
+MANDIR = $(DESTDIR)$(PREFIX)/share/man/man1
+
+# build variables
+CC          = cc
+FREETYPEINC = /usr/include/freetype2
 # OpenBSD (uncomment)
-#FREETYPEINC = ${X11INC}/freetype2
+#FREETYPEINC = /usr/X11R6/include/freetype2
+CFLAGS      = -Wall -Wextra -I/usr/include -I/usr/X11R6/include\
+			  -I$(FREETYPEINC)
+LDFLAGS     = -L/usr/lib -L/usr/X11R6/lib -lfontconfig -lXft -lX11 -lXinerama\
+			  -lImlib2
 
-# includes and libs
-INCS += -I${LOCALINC} -I${X11INC} -I${FREETYPEINC}
-LIBS += -L${LOCALLIB} -L${X11LIB} -lfontconfig -lXft -lX11 -lXinerama -lImlib2
-
-# flags
-CFLAGS   += ${DEBUG} -Wall -Wextra ${INCS} ${CPPFLAGS}
-LDFLAGS  += ${LIBS}
-
-# compiler and linker
-CC = cc
-
-bindir = ${DESTDIR}${PREFIX}
-mandir = ${DESTDIR}${MANPREFIX}
-
-SRCS = ${PROG}.c
-OBJS = ${SRCS:.c=.o}
-
-all: ${PROG}
-
-${PROG}: ${OBJS}
-	${CC} -o $@ ${OBJS} ${LDFLAGS}
-
-${OBJS}: config.h
-
-.c.o:
-	${CC} ${CFLAGS} -c $<
-
+# build rules
+all: xmenu
+xmenu: xmenu.c config.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ xmenu.c
 clean:
-	-rm ${OBJS} ${PROG}
+	@rm -f xmenu
 
+# install rules
 install: all
-	mkdir -p ${bindir}/bin
-	install -m 755 ${PROG} ${bindir}/bin/${PROG}
-	mkdir -p ${mandir}/man1
-	install -m 644 ${PROG}.1 ${mandir}/man1/${PROG}.1
-
+	mkdir -p $(BINDIR)
+	cp xmenu $(BINDIR)
+	chmod 755 $(BINDIR)/xmenu
+	mkdir -p $(MANDIR)
+	cp xmenu.1 $(MANDIR)
+	chmod 644 $(MANDIR)/xmenu.1
 uninstall:
-	rm -f ${bindir}/bin/${PROG}
-	rm -f ${mandir}/man1/${PROG}.1
-
-.PHONY: all clean install uninstall
+	rm -f $(BINDIR)/xmenu
+	rm -f $(MANDIR)/xmenu.1
