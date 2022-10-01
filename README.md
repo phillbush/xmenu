@@ -4,9 +4,6 @@
 	<img src="https://user-images.githubusercontent.com/63266536/114306062-ffb67000-9ab0-11eb-9a10-be30eadc68b4.gif", title="demo"/>
 </p>
 
-> Check out the `testing` branch for a faster version of `xmenu` with a
-> different syntax that is not based on tabs.
-
 XMenu is a menu utility for X.
 XMenu receives a menu specification in stdin, shows a menu for the user
 to select one of the options, and outputs the option selected to stdout.
