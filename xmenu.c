@@ -1912,7 +1912,7 @@ main(int argc, char *argv[])
 			XNextEvent(dpy, &ev);
 		if (!rootmodeflag ||
 		    (ev.type == ButtonPress &&
-		     ((modifier != 0 && ev.xbutton.state == modifier) ||
+		     ((modifier != 0 && (ev.xbutton.state & modifier)) ||
 		      (ev.xbutton.subwindow == None)))) {
 			if (rootmodeflag && passclickflag) {
 				XAllowEvents(dpy, ReplayPointer, CurrentTime);
