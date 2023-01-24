@@ -85,22 +85,22 @@ and
 .I button
 is the number of a mouse button.
 When this option is used,
-.B pmenu
+.B xmenu
 listens to button presses on the root window,
 and shows the pie menu when the given button is pressed,
 together with the given modifier,
 on the root window.
 For example, invoking
-.B pmenu
+.B xmenu
 with the option
 .B -x Super-3
 makes a menu open when clicking with the third mouse button on the root window,
 or when clicking with the third mouse button together with the Super (Mod4) modifier on any window.
 This option makes
-.B pmenu
+.B xmenu
 run continuously;
 so it should be used when
-.B pmenu
+.B xmenu
 is invoked in background on a X startup file (like
 .BR "~/.xinitrc" ).
 .TP
@@ -250,11 +250,11 @@ If more a menu has more than this number of items,
 they will be scrolled with arrow buttons.
 .SH ENVIRONMENT
 The following environment variables affect the execution of
-.BR pmenu .
+.BR xmenu .
 .TP
 .B DISPLAY
 The display to start
-.B pmenu
+.B xmenu
 on.
 .TP
 .B ICONPATH
