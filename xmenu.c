@@ -174,7 +174,8 @@ static int niconpaths = 0;              /* number of paths to icon directories *
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-irw] [-p position] [title]\n");
+
+	(void)fprintf(stderr, "usage: xmenu [-irw] [-p position] [(-x|-X) [modifier-]button] [title]\n");
 	exit(1);
 }
 
