@@ -1662,6 +1662,7 @@ enteritem:
 					currmenu = item->submenu;
 				} else {
 					printf("%s\n", item->output);
+					fflush(stdout);
 					goto done;
 				}
 				select = currmenu->list;
