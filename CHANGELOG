@@ -1,5 +1,10 @@
                                CHANGELOG
 
+4.6.0 (2023-04-08)
+• Added daemon/root mode.
+• Added maxItems resource.
+• Fixed manual and usage message.
+
 4.5.5 (2021-04-11)
 • Added support for mouse scrolling (#26).
 • Changed Makefile; simplify ${DESTDIR} (#25).
