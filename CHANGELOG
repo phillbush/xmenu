@@ -1,5 +1,9 @@
                                CHANGELOG
 
+4.6.1 (2023-04-09)
+• Fixed flushing stdout (#43).
+• Fixed boundary crossing positioning (#44).
+
 4.6.0 (2023-04-08)
 • Added daemon/root mode.
 • Added maxItems resource.
