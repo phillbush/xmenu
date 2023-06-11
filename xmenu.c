@@ -124,6 +124,7 @@ struct Menu {
 	struct Item *selected;  /* item currently selected in the menu */
 	int x, y, w, h;         /* menu geometry */
 	int hasicon;            /* whether the menu has item with icons */
+	int haschild;           /* whether the menu has item with submenu */
 	int drawn;              /* whether the menu was already drawn */
 	int maxtextw;           /* maximum text width */
 	int level;              /* menu level relative to root */
@@ -665,6 +666,7 @@ buildmenutree(int level, const char *label, const char *output, char *file)
 		if (!item->label)
 			errx(1, "a separator is no valid root for a submenu");
 
+		prevmenu->haschild = 1;
 		prevmenu = menu;
 		menu->caller = item;
 		item->submenu = menu;
@@ -897,7 +899,8 @@ setupitems(struct Menu *menu, struct Monitor *mon)
 		 * if the iflag is set (icons are disabled) then the horizontal
 		 * padding appears 3 times: before the label and around the triangle.
 		 */
-		itemwidth = item->textw + config.triangle_width + config.horzpadding * 3;
+		itemwidth = item->textw + config.triangle_width + config.horzpadding * 2;
+		itemwidth += (menu->haschild) ? config.triangle_width + config.horzpadding : 0;
 		itemwidth += (iflag || !menu->hasicon) ? 0 : config.iconsize + config.horzpadding;
 		menu->w = max(menu->w, itemwidth);
 		menu->maxtextw = max(menu->maxtextw, item->textw);
