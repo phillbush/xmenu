@@ -899,7 +899,7 @@ setupitems(struct Menu *menu, struct Monitor *mon)
 		 * if the iflag is set (icons are disabled) then the horizontal
 		 * padding appears 3 times: before the label and around the triangle.
 		 */
-		itemwidth = item->textw + config.triangle_width + config.horzpadding * 2;
+		itemwidth = item->textw + config.horzpadding * 2;
 		itemwidth += (menu->haschild) ? config.triangle_width + config.horzpadding : 0;
 		itemwidth += (iflag || !menu->hasicon) ? 0 : config.iconsize + config.horzpadding;
 		menu->w = max(menu->w, itemwidth);
