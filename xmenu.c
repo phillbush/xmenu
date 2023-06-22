@@ -386,7 +386,7 @@ getoptions(int argc, char *argv[])
 			break;
 		case 'X':
 			passclickflag = 1;
-			/* PASSTHROUGH */
+			/* FALLTHROUGH */
 		case 'x':
 			rootmodeflag = 1;
 			s = optarg;
@@ -1613,6 +1613,7 @@ run(struct Menu *currmenu, struct Monitor *mon)
 
 	text[0] = '\0';
 	prevmenu = currmenu;
+	select = NULL;
 	while (!XNextEvent(dpy, &ev)) {
 		if (XFilterEvent(&ev, None))
 			continue;
