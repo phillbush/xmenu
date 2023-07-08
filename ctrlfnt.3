@@ -1,0 +1,180 @@
+.Dd March 17, 2023
+.Dt CTRLFNT 3
+.Os
+.Sh NAME
+.Nm ctrlfnt_open ,
+.Nm ctrlfnt_draw ,
+.Nm ctrlfnt_width ,
+.Nm ctrlfnt_height ,
+.Nm ctrlfnt_free
+.Nd Xft selection ownership and requesting helper functions
+.Sh SYNOPSIS
+.In X11/Xlib.h
+.In X11/Xft/Xft.h
+.In control/ctrlfnt.h
+.Ft void
+.Fo ctrlfnt_init
+.Ft "void"
+.Fc
+.Ft "CtrlFontSet *"
+.Fo ctrlfnt_open
+.Fa "Display display"
+.Fa "int screen"
+.Fa "Visual *visual"
+.Fa "Colormap colormap"
+.Fa "const char *fontset_spec"
+.Fa "double fontsize"
+.Fc
+.Ft int
+.Fo ctrlfnt_draw
+.Fa "CtrlFontSet *fontset"
+.Fa "Picture picture"
+.Fa "Picture src"
+.Fa "XRectangle rectangle"
+.Fa "cont char *text"
+.Fa "int nbytes"
+.Fc
+.Ft int
+.Fo ctrlfnt_width
+.Fa "CtrlFontSet *fontset"
+.Fa "cont char *text"
+.Fa "int nbytes"
+.Fc
+.Ft int
+.Fo ctrlfnt_height
+.Fa "CtrlFontSet *fontset"
+.Fc
+.Ft void
+.Fo ctrlfnt_free
+.Fa "CtrlFontSet *fontset"
+.Fc
+.Ft void
+.Fo ctrlfnt_term
+.Ft "void"
+.Fc
+.Sh ARGUMENTS
+.Bl -tag -width Ds
+.It Fa display
+Specifies the connection to the X server.
+.It Fa colormap
+Specifies the colormap to draw the string with.
+.It Fa picture
+Specifies the picture to draw the string on.
+.It Fa fontset
+Specifies the fontset created with
+.Fn ctrlfnt_open .
+.It Fa fontset_spec
+Specifies the string specifying the fonts to be open.
+.It Fa fontsize
+Specifies the font size in points.
+If equal to
+.Ic 0.0 ,
+use the default font size (equal to
+.Ic 8.0
+points).
+.It Fa nbytes
+Specifies the size of
+.Fa text
+in bytes.
+.It Fa rectangle
+Specifies the rectangle within the drawable to place the the drawn string in.
+.It Fa screen
+Specifies a X screen.
+.It Fa src
+Specifies the source picture containing the color to draw the string with.
+.It Fa text
+Specifies the string to draw.
+.It Fa visual
+Specifies the visual to draw the string with.
+.El
+.Sh DESCRIPTION
+The
+.Fn ctrlfnt_init
+function initializes the fontconfig library.
+.Pp
+The
+.Fn ctrlfnt_open
+function opens the fonts specified in
+.Fa fontset_spec
+into a newly allocated
+.Fa fontset
+structure, and returns its address.
+The open fonts will have size equal to
+.Fa fontsize
+in points.
+The fontset is created for the given
+.Fa display
+and
+.Fa screen ,
+with the given
+.Fa visual
+and
+.Fa colormap .
+.Pp
+The
+.Fn ctrlfnt_draw
+function uses
+.Fa fontset
+to draw the first
+.Fa nbytes
+of
+.Fa text
+in the given
+.Fa picture
+within the given
+.Fa rectangle ,
+using
+.Fa src
+as source color.
+It returns the width of the drawn text, or
+.Ic -1
+if the text could not be drawn because of any error.
+.Pp
+The
+.Fn ctrlfnt_width
+function returns the width of the first
+.Fa nbytes
+of
+.Fa text
+if drawn by
+.Fn ctrlfnt_draw
+using the given
+.Fa fontset ,
+or
+.Ic -1
+if the width could not be computed.
+(This function returns the same as
+.Fn ctrlfnt_draw
+without drawing anything).
+.Pp
+The
+.Fn ctrlfnt_height
+returns the height of the fonts in
+.Fa fontset .
+.Pp
+the
+.Fn ctrlfnt_free
+frees the fonts open in
+.Ft fontset .
+.Pp
+The
+.Fn ctrlfnt_term
+function terminates the fontconfig library.
+.Sh RETURN VALUES
+The
+.Fn ctrlfnt_open
+function returns NULL on error.
+The
+.Fn ctrlfnt_draw ,
+.Fn ctrlfnt_width ,
+and
+.Fn ctrlfnt_height ,
+functions return a value less than zero on error.
+.Pp
+If an error occurs, the functions write a string describing the error into standard output with
+.Xr warnx 3 .
+.Sh EXAMPLES
+[...]
+.Sh SEE ALSO
+.Xr Xft 3 ,
+.Xr X 7
