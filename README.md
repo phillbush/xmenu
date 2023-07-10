@@ -1,3 +1,9 @@
+# XMenu is being refactored; check out the [`rewrite`](https://github.com/phillbush/xmenu/tree/rewrite) branch
+
+As soon as testing on the
+[`rewrite`](https://github.com/phillbush/xmenu/tree/rewrite) branch is
+done, it is going to be merged into the `master` branch.
+
 # XMenu
 
 <p align="center">
