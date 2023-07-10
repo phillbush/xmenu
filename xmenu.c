@@ -2087,6 +2087,7 @@ forkandtearoff(Widget *widget, Menu *menu)
 			err(EXIT_FAILURE, "close");
 		}
 		*widget = (Widget){ 0 };
+		widget->display = NULL;
 		cleanmenu(options.items, menu->first);
 		options.items = menu->first;
 		options.userplaced = true;
