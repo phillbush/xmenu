@@ -1768,6 +1768,8 @@ popupmenu(Widget *widget, XRectangle *basis)
 		xgap = widget->gap;
 		ygap = -widget->shadowwid;
 		tearoff = widget->tearoff;
+		if (tearoff)
+			ygap -= widget->itemh;
 		(void)grab(widget);
 	} else {
 		caller = NULL;
@@ -1840,6 +1842,8 @@ popupmenu(Widget *widget, XRectangle *basis)
 	menu->geometry.width = MIN(menu->geometry.width, monitor->width/2);
 
 	/* place menu to align with parent menu and be visible on monitor */
+	if (menu->overflow && widget->menus != NULL)
+		ygap -= widget->itemh;
 	menu->geometry.x = monitor->x;
 	menu->geometry.y = monitor->y;
 	if (monitor->x + monitor->width - (basis->x + basis->width + xgap)
