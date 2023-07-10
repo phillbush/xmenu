@@ -1457,7 +1457,7 @@ drawmenu(Widget *widget)
 	size_t i, j;
 	Imlib_Image image;
 	XRectangle rect;
-	int iconw, iconh, y;
+	int textx, textw, iconw, iconh, y;
 	struct Canvas canvas[CANVAS_FINAL][LAYER_LAST];
 
 	if ((menu = widget->menus) == NULL)
@@ -1600,11 +1600,29 @@ drawmenu(Widget *widget)
 				DIR_RIGHT
 			);
 		}
+		textw = ctrlfnt_width(
+			widget->fontset,
+			item->label,
+			item->labellen
+		);
+		if (widget->alignment == ALIGN_RIGHT && menu->hassubmenu)
+			textx = rect.width - textw - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD;
+		else if (widget->alignment == ALIGN_RIGHT)
+			textx = rect.width - textw - PADDING;
+		else if (widget->alignment == ALIGN_CENTER)
+			textx = rect.x + (menu->geometry.width - textw) / 2;
+		else
+			textx = rect.x;
 		ctrlfnt_draw(
 			widget->fontset,
 			canvas[CANVAS_NORMAL][LAYER_FG].picture,
 			widget->colors[SCHEME_NORMAL][COLOR_FG].pict,
-			rect,
+			(XRectangle){
+				.x = textx,
+				.y = rect.y,
+				.width = rect.width,
+				.height = rect.height,
+			},
 			item->label,
 			item->labellen
 		);
@@ -1612,7 +1630,12 @@ drawmenu(Widget *widget)
 			widget->fontset,
 			canvas[CANVAS_SELECT][LAYER_FG].picture,
 			widget->colors[SCHEME_SELECT][COLOR_FG].pict,
-			rect,
+			(XRectangle){
+				.x = textx,
+				.y = rect.y,
+				.width = rect.width,
+				.height = rect.height,
+			},
 			item->label,
 			item->labellen
 		);
