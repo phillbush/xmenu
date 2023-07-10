@@ -72,8 +72,8 @@
 	X(NORMAL_BG,    "Background",           "background"            ) \
 	X(NORMAL_FG,    "Foreground",           "foreground"            ) \
 	X(OPACITY,      "Opacity",              "opacity"               ) \
-	X(SELECT_BG,    "ActiveBackground",     "activebackground"      ) \
-	X(SELECT_FG,    "ActiveForeground",     "activeforeground"      ) \
+	X(SELECT_BG,    "ActiveBackground",     "activeBackground"      ) \
+	X(SELECT_FG,    "ActiveForeground",     "activeForeground"      ) \
 	X(SEPARAT_CLR,  "SeparatorColor",       "separatorColor"        ) \
 	X(SHADOW_BOT,   "BottomShadowColor",    "bottomShadowColor"     ) \
 	X(SHADOW_MID,   "MiddleShadowColor",    "middleShadowColor"     ) \
