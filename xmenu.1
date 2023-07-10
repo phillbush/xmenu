@@ -1,4 +1,4 @@
-.Dd July 4, 2023
+.Dd July 9, 2023
 .Dt XMENU 1
 .Os
 .Sh NAME
@@ -6,10 +6,9 @@
 .Nd menu utility for X
 .Sh SYNOPSIS
 .Nm xmenu
-.Op Fl tw
+.Op Fl w
 .Op Fl N Ar name
 .Op Fl p Ar position
-.Op Fl x Ar button
 .Op Ar title
 .Sh DESCRIPTION
 .Nm
@@ -28,8 +27,9 @@ member of the
 property.
 Ar name
 is used to retrieve resources.
-If not specified, defaults to the command
-.Nm was invoked as
+If not specified, defaults to the command that
+.Nm
+was invoked as
 (that is, the
 .Xr basename 3
 of its
@@ -53,38 +53,11 @@ it can instead be a string like
 or
 .Qq Cm cursor ,
 specifyingthe monitor where the cursor is on.
-.It Fl t
-Add a entry at the top of the menu to torn it off.
 .It Fl w
 Asks the window manager to draw a border around the menu.
 This makes
 .Nm
-istart torn off.
-.It Fl x Ar button
-This option requires an argument of the form
-.Cm "[MODIFIER-]BUTTON" ;
-where
-.Cm MODIFIER
-is
-.Cm Mod1
-to
-.Cm Mod5 ,
-or
-.Cm Alt
-(equivalent to
-.Cm Mod1 ) ,
-or
-.Cm Super
-(equivalent to
-.Cm Mod4 ) ;
-and
-.Cm BUTTON
-is the number of a mouse button.
-When this option is used,
-.Nm
-listens to button presses on the root window,
-and shows the menu when the given button is pressed on the root window,
-or (together with the modifier) on any window.
+start torn off.
 .El
 .Pp
 Each item read from standard input has the following format
@@ -229,6 +202,13 @@ Background opacity as a floating point number between 0.0 and 1.0 inclusive.
 The color of the separator between items in the menu.
 .It Ic shadowThickness
 The size in pixels of the Motif-like 3D relief.
+.It Ic tearOff
+If set to
+.Qq Ic True ,
+.Qq Ic On ,
+or
+.Qq Ic Enable ,
+creates a dashed line on the top of each non-windowed menu to tear them off into a new windowed menu.
 .It Ic topShadowColor , middleShadowColor , bottomShadowColor
 The color of the top/light, middle and bottom/dark parts of the Motif-like 3D relief.
 Setting these resources override
@@ -272,6 +252,5 @@ EOF
 For example, by selecting "Applications", a new menu will appear.
 Selecting "Web Browser" in the new menu opens firefox.
 .Sh SEE ALSO
-.Xr 9menu 1 ,
-.Xr dmenu 1 ,
-.Xr thingmenu 1
+.Xr xclickroot 1 ,
+.Xr X 7

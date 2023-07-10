@@ -25,3 +25,6 @@ int ctrlfnt_height(CtrlFontSet *fontset);
 void ctrlfnt_free(CtrlFontSet *fontset);
 void ctrlfnt_init(void);
 void ctrlfnt_term(void);
+
+/* like ctrlfnt_free, but do not destroy X objects */
+void ctrlfnt__free(CtrlFontSet *fontset);

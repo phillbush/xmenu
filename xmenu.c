@@ -1,9 +1,12 @@
 #include <ctype.h>
 #include <err.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <limits.h>
 #include <locale.h>
 #include <poll.h>
+#include <setjmp.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,6 +43,7 @@
 #define TRIANGLE_WIDTH          3
 #define TRIANGLE_PAD            8
 #define SCROLL_TIME             128
+#define DASH_SIZE               8
 
 #define ATOMS                                   \
 	X(UTF8_STRING)                          \
@@ -55,6 +59,7 @@
 	X(_SELECT_FG,   "Selforeground",        "selforeground"         ) \
 	X(_BORDER,      "Border",               "border"                ) \
 	X(_SEPARAT,     "Separator",            "separator"             ) \
+	X(_TEAROFF,     "TearOffModel",         "tearOffModel"          ) \
 	/* current resources                                           */ \
 	X(ALIGNMENT,    "Alignment",            "alignment"             ) \
 	X(BORDER_CLR,   "BorderColor",          "borderColor"           ) \
@@ -73,7 +78,8 @@
 	X(SHADOW_BOT,   "BottomShadowColor",    "bottomShadowColor"     ) \
 	X(SHADOW_MID,   "MiddleShadowColor",    "middleShadowColor"     ) \
 	X(SHADOW_TOP,   "TopShadowColor",       "topShadowColor"        ) \
-	X(SHADOW_WID,   "ShadowThickness",      "shadowThickness"       )
+	X(SHADOW_WID,   "ShadowThickness",      "shadowThickness"       ) \
+	X(TEAROFF,      "TearOff",              "tearOff"               )
 
 #define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
 #define DEF_COLOR_BG     COLOR(0x3100, 0x3100, 0x3100)
@@ -170,13 +176,9 @@ typedef struct Menu {
 typedef struct Options {
 	Item *items;
 	bool windowed;
-	bool tornoff;
 	bool userplaced;
 	bool xneg, yneg;
 	bool monplaced;
-	bool rootmode;
-	unsigned int button;
-	unsigned int modifier;
 	int monitor;
 	int argc;
 	char **argv;
@@ -213,6 +215,7 @@ typedef struct Widget {
 	int shadowwid, borderwid, iconsize, gap;
 	int maxitems;
 	bool initimlib;
+	bool tearoff;
 	enum {
 		ALIGN_LEFT,
 		ALIGN_CENTER,
@@ -232,15 +235,16 @@ typedef struct Widget {
 	} application, resources[NRESOURCES];
 } Widget;
 
+static jmp_buf jmpenv;
 static Options options = { 0 };
-static Item tornoff = { .label = "tornoff" };
+static Item tearoff = { .label = "tearoff" };
 static Item scrollup = { .label = "scrollup" };
 static Item scrolldown = { .label = "scrolldown" };
 
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-tw] [-N name] "
+	(void)fprintf(stderr, "usage: xmenu [-w] [-N name] "
 	              "[-p position] [-x button]\n");
 	exit(EXIT_FAILURE);
 }
@@ -273,6 +277,16 @@ egettime(struct timespec *ts)
 	}
 }
 
+static pid_t
+efork(void)
+{
+	pid_t pid;
+
+	if ((pid = fork()) == -1)
+		err(EXIT_FAILURE, "fork");
+	return pid;
+}
+
 static void
 setatoi(int *n, const char *s)
 {
@@ -298,44 +312,6 @@ setatof(double *x, const char *s)
 	d = strtod(s, &endp);
 	if (s[0] != '\0' && *endp == '\0' && d >= 0.0 && d < 100.0) {
 		*x = d;
-	}
-}
-
-static void
-setbutton(const char *s)
-{
-	size_t len;
-
-	if ((len = strlen(s)) < 1)
-		return;
-	switch (s[len-1]) {
-	case '1': options.button = Button1; break;
-	case '2': options.button = Button2; break;
-	case '3': options.button = Button3; break;
-	default:  options.button = atoi(&s[len-1]); break;
-	}
-}
-
-static void
-setmodifier(const char *s)
-{
-	size_t span;
-
-	if ((span = strcspn(s, "-")) < 1)
-		return;
-	switch (s[span-1]) {
-	case '1': options.modifier = Mod1Mask; break;
-	case '2': options.modifier = Mod2Mask; break;
-	case '3': options.modifier = Mod3Mask; break;
-	case '4': options.modifier = Mod4Mask; break;
-	case '5': options.modifier = Mod5Mask; break;
-	default:
-		if (strncasecmp(s, "Alt", 3) == 0) {
-			options.modifier = Mod1Mask;
-		} else if (strncasecmp(s, "Super", 5) == 0) {
-			options.modifier = Mod4Mask;
-		}
-		break;
 	}
 }
 
@@ -411,16 +387,8 @@ parseoptions(int argc, char *argv[])
 	case 'p':
 		parsegeometry(optarg);
 		break;
-	case 't':
-		options.tornoff = true;
-		break;
 	case 'w':
 		options.windowed = true;
-		break;
-	case 'x':
-		options.rootmode = true;
-		setbutton(optarg);
-		setmodifier(optarg);
 		break;
 	default:
 		usage();
@@ -429,18 +397,28 @@ parseoptions(int argc, char *argv[])
 	/* options below are deprecated and ignored */
 	case 'i':
 	case 'r':
+	case 'x':
 	case 'X':
 		break;
 	}
-	if (options.rootmode)
-		options.windowed = false;
-	if (argc - optind != 0)
+	argc -= optind;
+	argv += optind;
+	switch (argc) {
+	case 1:
+		options.title = argv[0];
+		break;
+	case 0:
+		options.title = CLASS;
+		break;
+	default:
 		usage();
+		exit(EXIT_FAILURE);
+	}
 	return;
 }
 
 static Window
-createwindow(Widget *widget, XRectangle *geometry, long eventmask, Bool override)
+createwindow(Widget *widget, XRectangle *geometry, long eventmask, bool override)
 {
 	return XCreateWindow(
 		widget->display,
@@ -716,6 +694,14 @@ loadresources(Widget *widget, const char *str)
 		case SHADOW_WID:
 			setatoi(&widget->shadowwid, value);
 			break;
+		case _TEAROFF:
+		case TEAROFF:
+			widget->tearoff = (
+				strcasecmp(value, "ON") == 0 ||
+				strcasecmp(value, "TRUE") == 0 ||
+				strcasecmp(value, "1") == 0 ||
+				strcasestr(value, "ENABLED") != NULL
+			);
 		case NRESOURCES:
 			break;
 		}
@@ -784,22 +770,15 @@ initxconn(Widget *widget)
 		return RETURN_FAILURE;
 	}
 	widget->fd = XConnectionNumber(widget->display);
+	while (fcntl(widget->fd, F_SETFD, FD_CLOEXEC) == RETURN_FAILURE) {
+		if (errno == EINTR)
+			continue;
+		warn("fcntl");
+		return RETURN_FAILURE;
+	}
 	XInternAtoms(widget->display, atomnames, NATOMS, False, widget->atoms);
 	widget->screen = DefaultScreen(widget->display);
 	widget->rootwin = DefaultRootWindow(widget->display);
-	if (options.rootmode) {
-		XGrabButton(
-			widget->display,
-			options.button,
-			AnyModifier,
-			widget->rootwin,
-			False,
-			ButtonPressMask,
-			GrabModeSync,
-			GrabModeSync,
-			None, None
-		);
-	}
 	return RETURN_SUCCESS;
 }
 
@@ -1005,15 +984,17 @@ parsestdin(void)
 }
 
 static void
-cleanmenu(Item *item)
+cleanmenu(Item *item, Item *skip)
 {
 	Item *tmp;
 
 	if (item == NULL)
 		return;
+	if (item == skip)
+		return;
 	while (item != NULL) {
 		if (item->children != NULL)
-			cleanmenu(item->children);
+			cleanmenu(item->children, skip);
 		tmp = item;
 		item = item->next;
 		if (tmp->label != tmp->output)
@@ -1064,7 +1045,6 @@ cleanup(Widget *widget)
 		XDestroyWindow(widget->display, widget->window);
 	if (widget->display != NULL)
 		XCloseDisplay(widget->display);
-	ctrlfnt_term();
 }
 
 static void
@@ -1078,17 +1058,19 @@ getposition(Widget *widget, XRectangle *geometry)
 	int i;
 	int x, y;
 
-	geometry->width = geometry->height = 0;
-	XQueryPointer(
-		widget->display,
-		widget->rootwin,
-		&dw, &dw,
-		&x, &y,
-		&di, &di,
-		&du
-	);
-	geometry->x = x;
-	geometry->y = y;
+	if (!options.userplaced) {
+		XQueryPointer(
+			widget->display,
+			widget->rootwin,
+			&dw, &dw,
+			&x, &y,
+			&di, &di,
+			&du
+		);
+		geometry->width = geometry->height = 0;
+		geometry->x = x;
+		geometry->y = y;
+	}
 	widget->monitor.x = widget->monitor.y = 0;
 	widget->monitor.width = DisplayWidth(widget->display, widget->screen);
 	widget->monitor.height = DisplayHeight(widget->display, widget->screen);
@@ -1189,6 +1171,57 @@ drawshadows(Widget *widget, Picture picture, XRectangle *geometry)
 }
 
 static void
+drawdashline(Widget *widget, Picture picture, int width, int y)
+{
+	XRectangle toprects[32];
+	XRectangle botrects[32];
+	size_t i, nrects;
+	int x;
+	int w;
+	int maxw;
+
+	x = widget->shadowwid + PADDING;
+	y += widget->itemh / 2;
+	w = 0;
+	maxw = width - widget->shadowwid * 2 - PADDING * 2;
+	while (w < maxw) {
+		nrects = 0;
+		for (i = 0; i < LEN(toprects); i++) {
+			if (w >= maxw)
+				break;
+			toprects[i].x = x + w;
+			toprects[i].y = y - 1;
+			toprects[i].width = DASH_SIZE;
+			toprects[i].height = 1;
+			botrects[i].x = x + w;
+			botrects[i].y = y;
+			botrects[i].width = DASH_SIZE;
+			botrects[i].height = 1;
+			w += DASH_SIZE * 2;
+			nrects++;
+		}
+		for (i = 0; i < nrects; i++) {
+			XRenderFillRectangles(
+				widget->display,
+				PictOpSrc,
+				picture,
+				&widget->colors[SCHEME_SHADOW][COLOR_TOP].chans,
+				toprects,
+				nrects
+			);
+			XRenderFillRectangles(
+				widget->display,
+				PictOpSrc,
+				picture,
+				&widget->colors[SCHEME_SHADOW][COLOR_BOT].chans,
+				botrects,
+				nrects
+			);
+		}
+	}
+}
+
+static void
 drawseparator(Widget *widget, Picture picture, XRectangle *rect)
 {
 	XRenderFillRectangle(
@@ -1198,7 +1231,7 @@ drawseparator(Widget *widget, Picture picture, XRectangle *rect)
 		&widget->colors[SCHEME_SHADOW][COLOR_BOT].chans,
 		widget->shadowwid + PADDING,
 		rect->y + widget->itemh / 2 - 1,
-		rect->width - widget->shadowwid * 2 - PADDING * 2 - 1,
+		rect->width - widget->shadowwid * 2 - PADDING * 2,
 		1
 	);
 	XRenderFillRectangle(
@@ -1206,7 +1239,7 @@ drawseparator(Widget *widget, Picture picture, XRectangle *rect)
 		PictOpSrc,
 		picture,
 		&widget->colors[SCHEME_SHADOW][COLOR_TOP].chans,
-		widget->shadowwid + PADDING + 1,
+		widget->shadowwid + PADDING,
 		rect->y + widget->itemh / 2,
 		rect->width - widget->shadowwid * 2 - PADDING * 2,
 		1
@@ -1283,6 +1316,12 @@ drawtriangle(Widget *widget, Picture picture, Picture src, int x, int y, int dir
 	);
 }
 
+static bool
+cantearoff(Widget *widget, Menu *menu)
+{
+	return (menu->next != NULL || !options.windowed) && widget->tearoff;
+}
+
 static int
 firstitempos(Widget *widget, Menu *menu)
 {
@@ -1290,6 +1329,8 @@ firstitempos(Widget *widget, Menu *menu)
 
 	y = widget->shadowwid;
 	if (menu->overflow)
+		y += widget->itemh;
+	if (cantearoff(widget, menu))
 		y += widget->itemh;
 	return y;
 }
@@ -1416,7 +1457,7 @@ drawmenu(Widget *widget)
 	size_t i, j;
 	Imlib_Image image;
 	XRectangle rect;
-	int iconw, iconh;
+	int iconw, iconh, y;
 	struct Canvas canvas[CANVAS_FINAL][LAYER_LAST];
 
 	if ((menu = widget->menus) == NULL)
@@ -1584,13 +1625,14 @@ next:
 		}
 	}
 	for (i = 0; i < CANVAS_FINAL; i++) {
+		y = widget->shadowwid;
 		if (menu->overflow) {
 			drawtriangle(
 				widget,
 				canvas[i][LAYER_FG].picture,
 				widget->colors[i][COLOR_FG].pict,
 				menu->geometry.width / 2 - TRIANGLE_HEIGHT / 2,
-				widget->itemh /2 - TRIANGLE_WIDTH / 2,
+				y + widget->itemh /2 - TRIANGLE_WIDTH / 2,
 				DIR_UP
 			);
 			drawtriangle(
@@ -1601,6 +1643,19 @@ next:
 				menu->geometry.height - widget->itemh /2
 				- TRIANGLE_WIDTH / 2,
 				DIR_DOWN
+			);
+			y += widget->itemh;
+		}
+		if (cantearoff(widget, menu)) {
+			drawdashline(
+				widget,
+				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				menu->geometry.width, y
+			);
+			drawdashline(
+				widget,
+				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				menu->geometry.width, y
 			);
 		}
 		XRenderComposite(
@@ -1698,7 +1753,7 @@ popupmenu(Widget *widget, XRectangle *basis)
 	unsigned int textw, menuh;
 	int xgap, ygap;
 	char *name;
-	bool override_redirect;
+	bool override_redirect, tearoff;
 
 	type = widget->atoms[_NET_WM_WINDOW_TYPE_POPUP_MENU];
 	override_redirect = true;
@@ -1712,12 +1767,14 @@ popupmenu(Widget *widget, XRectangle *basis)
 		items = caller->children;
 		xgap = widget->gap;
 		ygap = -widget->shadowwid;
+		tearoff = widget->tearoff;
 		(void)grab(widget);
 	} else {
 		caller = NULL;
-		name = CLASS;
+		name = options.title;
 		items = options.items;
 		xgap = ygap = INITIAL_DISPLACEMENT;
+		tearoff = false;
 		if (options.windowed) {
 			override_redirect = false;
 			type = widget->atoms[_NET_WM_WINDOW_TYPE_MENU];
@@ -1734,6 +1791,8 @@ popupmenu(Widget *widget, XRectangle *basis)
 	menu->next = widget->menus;
 	widget->menus = menu;
 	menuh = widget->shadowwid * 2;
+	if (tearoff)
+		menuh += widget->itemh;
 	menu->geometry.height = widget->shadowwid * 2;
 	nitems = 0;
 	menu->nicons = 0;
@@ -1901,6 +1960,13 @@ getitem(Widget *widget, Menu *menu, long y, int *ypos)
 	}
 	if (menu->overflow)
 		h += widget->itemh;
+	if (cantearoff(widget, menu)) {
+		if (y < h + widget->itemh) {
+			item = &tearoff;
+			goto done;
+		}
+		h += widget->itemh;
+	}
 	for (item = menu->first; item != NULL; item = item->next) {
 		if (item->label == NULL) {
 			h += widget->itemh;
@@ -1983,12 +2049,38 @@ scroll(Widget *widget, bool down)
 }
 
 static void
+forkandtearoff(Widget *widget, Menu *menu)
+{
+	if (efork() == 0) {
+		/* child */
+		ctrlfnt__free(widget->fontset);
+		while (close(widget->fd) == -1) {
+			if (errno == EINTR)
+				continue;
+			err(EXIT_FAILURE, "close");
+		}
+		*widget = (Widget){ 0 };
+		cleanmenu(options.items, menu->first);
+		options.items = menu->first;
+		options.userplaced = true;
+		options.windowed = true;
+		options.geometry.x = menu->geometry.x;
+		options.geometry.y = menu->geometry.y;
+		options.geometry.width = 0;
+		options.geometry.height = 0;
+		longjmp(jmpenv, 1);
+		exit(EXIT_FAILURE);
+	}
+	closewidget(widget);
+}
+
+static void
 openitem(Widget *widget, Item *item, int ypos)
 {
 	XRectangle rect;
 	Menu *menu;
 
-	if (item == NULL)
+	if (item == NULL || item == &tearoff)
 		return;
 	menu = widget->menus;
 	menu->selected = item;
@@ -2030,10 +2122,18 @@ xbuttonrelease(Widget *widget, XEvent *xev)
 	menu = getmenu(widget, xevent->window);
 	if (menu == NULL)
 		return;
+	item = getitem(widget, menu, xevent->y, &ypos);
+	if (item == NULL)
+		return;
+	if (item->children != NULL)
+		return;
 	while (widget->menus != menu)
 		delmenu(widget);
-	item = getitem(widget, menu, xevent->y, &ypos);
-	openitem(widget, item, ypos);
+	if (item == &tearoff) {
+		forkandtearoff(widget, menu);
+	} else {
+		openitem(widget, item, ypos);
+	}
 }
 
 static void
@@ -2063,6 +2163,7 @@ xconfigurenotify(Widget *widget, XEvent *xev)
 {
 	XConfigureEvent *xevent;
 	Menu *menu;
+	int width, height;
 
 	xevent = (XConfigureEvent *)xev;
 	for (menu = widget->menus; menu != NULL; menu = menu->next)
@@ -2070,13 +2171,18 @@ xconfigurenotify(Widget *widget, XEvent *xev)
 			break;
 	if (menu == NULL)
 		return;
+	width = menu->geometry.width;
+	height = menu->geometry.height;
 	menu->geometry.x = xevent->x;
 	menu->geometry.y = xevent->y;
 	menu->geometry.width = xevent->width;
 	menu->geometry.height = xevent->height;
+	if (width == menu->geometry.width && height == menu->geometry.height)
+		return;
 	drawmenu(widget);
-	if (menu->selected != NULL)
+	if (menu->selected != NULL) {
 		drawselection(widget, menu, menu->selposition);
+	}
 }
 
 static void
@@ -2251,9 +2357,8 @@ xmotion(Widget *widget, XEvent *xev)
 }
 
 static void
-run(Widget *widget)
+run(Widget *widget, XRectangle *geometry)
 {
-	XRectangle geometry;
 	XEvent xev;
 	static void (*xevents[LASTEvent])(Widget *, XEvent *) = {
 		[ButtonPress]           = xbuttonpress,
@@ -2264,13 +2369,11 @@ run(Widget *widget)
 		[MotionNotify]          = xmotion,
 	};
 
-	getposition(widget, &geometry);
+	getposition(widget, geometry);
 	if (!options.windowed)
 		if (grab(widget) == RETURN_FAILURE)
 			return;
-	if (options.userplaced)
-		geometry = options.geometry;
-	popupmenu(widget, &geometry);
+	popupmenu(widget, geometry);
 	while (!XNextEvent(widget->display, &xev)) {
 		if (xev.type < LASTEvent && xevents[xev.type] != NULL) {
 			(*xevents[xev.type])(widget, &xev);
@@ -2284,7 +2387,9 @@ run(Widget *widget)
 int
 main(int argc, char *argv[])
 {
+	struct sigaction sa;
 	Widget widget = { 0 };
+	XRectangle geometry = { 0 };
 	int (*initsteps[])(Widget *) = {
 		initxconn,
 		initvisual,
@@ -2293,20 +2398,27 @@ main(int argc, char *argv[])
 	};
 	size_t i;
 
+	sa.sa_handler = SIG_IGN;
+	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
+	sigemptyset(&sa.sa_mask);
+	if (sigaction(SIGCHLD, &sa, NULL) == -1)
+		err(EXIT_FAILURE, "sigaction");
 	parseiconpaths(getenv("ICONPATH"));
 	parseoptions(argc, argv);
-	for (i = 0; i < LEN(initsteps); i++)
-		if ((*initsteps[i])(&widget) == RETURN_FAILURE)
-			goto error;
 	if ((options.items = parsestdin()) == NULL) {
 		warnx("no menu generated");
 		goto error;
 	}
-	run(&widget);
+	(void)setjmp(jmpenv);
+	if (options.userplaced)
+		geometry = options.geometry;
+	for (i = 0; i < LEN(initsteps); i++)
+		if ((*initsteps[i])(&widget) == RETURN_FAILURE)
+			goto error;
+	run(&widget, &geometry);
 error:
-	free(options.iconstring);
-	cleanmenu(options.items);
 	cleanup(&widget);
-
+	free(options.iconstring);
+	cleanmenu(options.items, NULL);
 	return EXIT_SUCCESS;
 }

@@ -692,6 +692,18 @@ ctrlfnt_free(CtrlFontSet *fontset)
 }
 
 void
+ctrlfnt__free(CtrlFontSet *fontset)
+{
+	if (fontset == NULL)
+		return;
+	if (fontset->xft_fontset != NULL) {
+		free(fontset->xft_fontset->fonts);
+		free(fontset->xft_fontset);
+	}
+	free(fontset);
+}
+
+void
 ctrlfnt_init(void)
 {
 	(void)FcInit();

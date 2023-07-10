@@ -2,6 +2,7 @@ PROG = xmenu
 OBJS = ${PROG:=.o} ctrlfnt.o
 SRCS = ${OBJS:.o=.c}
 MAN = ${PROG:=.1}
+DOC = README.md
 
 PREFIX ?= /usr/local
 MANPREFIX ?= ${PREFIX}/share/man
@@ -18,6 +19,16 @@ bindir = ${DESTDIR}${PREFIX}/bin
 mandir = ${DESTDIR}${MANPREFIX}/man1
 
 all: ${PROG}
+
+# generate README.md from manual; you do not need to run this
+${DOC}: ${MAN}
+	{ \
+		cat README ; \
+		mandoc -I os=UNIX -T ascii ${MAN} | \
+		col -b | \
+		expand -t 8 | \
+		sed 's,^,	,' ; \
+	} >${DOC}
 
 ${PROG}: ${OBJS}
 	${CC} -o $@ ${OBJS} ${LIBS} ${LDFLAGS}
