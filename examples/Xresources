@@ -1,0 +1,30 @@
+! Font
+XMenu.faceName:                 DejaVu Sans,Noto Sans CJK JP
+XMenu.faceSize:                 12
+
+! Windows 98 colors and border size
+XMenu.background:               #D4D0C8
+XMenu.foreground:               #000000
+XMenu.activeBackground:         #0A246A
+XMenu.activeForeground:         #FFFFFF
+XMenu.separatorColor:           #808080
+XMenu.borderColor:              #404040
+XMenu.borderWidth:              1
+
+! 3D/Motif-like relief
+XMenu.shadowThickness:          1
+XMenu.topShadowColor:           #FFFFFF
+XMenu.bottomShadowColor:        #808080
+XMenu.middleShadowColor:        #D4D0C8
+
+! Menu alignment
+XMenu.alignment:                right
+
+! Enable torn off menus
+XMenu.tearOff:                  On
+
+! Transparency
+XMenu.opacity:                  0.9
+
+! Useless gaps, in pixels
+XMenu.gap:                      3

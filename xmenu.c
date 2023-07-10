@@ -1780,6 +1780,7 @@ popupmenu(Widget *widget, XRectangle *basis)
 
 	type = widget->atoms[_NET_WM_WINDOW_TYPE_POPUP_MENU];
 	override_redirect = true;
+	tearoff = widget->tearoff;
 	if (widget->menus != NULL) {
 		if (widget->menus->selected == NULL)
 			return;         /* no item selected */
@@ -1788,9 +1789,8 @@ popupmenu(Widget *widget, XRectangle *basis)
 		caller = widget->menus->selected;
 		name = caller->output;
 		items = caller->children;
-		xgap = widget->gap;
+		xgap = widget->gap + widget->borderwid * 2;
 		ygap = -widget->shadowwid;
-		tearoff = widget->tearoff;
 		if (tearoff)
 			ygap -= widget->itemh;
 		(void)grab(widget);
@@ -1799,8 +1799,8 @@ popupmenu(Widget *widget, XRectangle *basis)
 		name = options.title;
 		items = options.items;
 		xgap = ygap = INITIAL_DISPLACEMENT;
-		tearoff = false;
 		if (options.windowed) {
+			tearoff = false;
 			override_redirect = false;
 			type = widget->atoms[_NET_WM_WINDOW_TYPE_MENU];
 		}
