@@ -36,8 +36,6 @@ ${PROG}: ${OBJS}
 .c.o:
 	${CC} -std=c99 -pedantic ${DEFS} ${INCS} ${CFLAGS} ${CPPFLAGS} -o $@ -c $<
 
-${OBJS}: config.h
-
 tags: ${SRCS}
 	ctags ${SRCS}
 

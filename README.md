@@ -93,6 +93,14 @@ the manual into `${PREFIX}` (`/usr/local`).
 The code and manual are under the MIT/X license.
 See `./LICENSE` for more information.
 
+## Acknowledgements
+
+* [thingmenu](https://github.com/singpolyma/thingmenu) for being the base
+  for xmenu's code.  However, xmenu evolved enough that it no longer resembles
+  thingmenu at all.
+* [dmenu](https://tools.suckless.org/dmenu/) for inspiring the stdin-to-stdout
+  interface, and being base for drawing routines and input method code.
+
 ## Manual
 
 	XMENU(1)                    General Commands Manual                   XMENU(1)
