@@ -136,6 +136,10 @@ See `./LICENSE` for more information.
 	     -w      Asks the window manager to draw a border around the menu.  This
 	             makes xmenu start torn off.
 	
+	     If the argument title is given, the title of the menu window is set to
+	     it.
+	
+	SYNTAX
 	     Each item read from standard input has the following format (bracket
 	     groups optional elements):
 	
@@ -159,7 +163,10 @@ See `./LICENSE` for more information.
 	     o   The label is the string that will be shown as an item in the menu.
 	         An item without label or with a single colon (:) as label is
 	         considered a separator and is drawn as a thin line in the menu
-	         separating the item above from the item below.
+	         separating the item above from the item below.  An item whose label
+	         is equal to two apostrophes "''" does not appear on the menu, it's
+	         output provides an alternative output for the previous item when the
+	         user clicks with the middle mouse button.
 	
 	     o   The output is the string that will be output after selecting the
 	         item.  If an item does not have tabs after the label, its label is
@@ -168,14 +175,28 @@ See `./LICENSE` for more information.
 	
 	     o   The newline terminates the item specification.
 	
-	     If the argument title is given, the title of the menu window is set to
-	     it.
-	
 	USAGE
-	     xmenu is controlled by the mouse, but can also be controlled by the
-	     keyboard.  Items can be selected using the arrow keys.  Tab (with and
-	     without Shift), Home, End, Enter and Esc, and 1-9 keys.  Itams can also
-	     be selected by typing the first several characters in it.
+	     xmenu is controlled by the mouse.  Each menu has a list of items that can
+	     be activated by clicking on it with the first, second or third mouse
+	     buttons.
+	
+	     o   If there is a right-pointing triangle on the item, it pops up a
+	         submenu when activated.
+	
+	     o   If the item is a dash at the top of the menu, it tears the menu off
+	         (that is, the menu becomes "windowed").
+	
+	     o   If the item is a continuous horizontal line, it is a separator and
+	         cannot be selected.
+	
+	     o   Otherwise, the item outputs some string when activated.  Some items
+	         output an "alternative string" when activated with the second mouse
+	         buton (see above at SYNTAX).
+	
+	     but can also be controlled by the keyboard.  Items can be selected using
+	     the arrow keys.  Tab (with and without Shift), Home, End, Enter and Esc,
+	     and 1-9 keys.  Items can also be selected by typing the first several
+	     characters in it.
 	
 	     Down    Cycle through the items in the regular direction.
 	
