@@ -60,6 +60,11 @@ This makes
 start torn off.
 .El
 .Pp
+If the argument
+.Ar title
+is given, the title of the menu window is set to it.
+.Sh SYNTAX
+.Pp
 Each item read from standard input has the following format
 (bracket groups optional elements):
 .Bd -literal -offset indent
@@ -78,7 +83,7 @@ items indented with a tab are placed in a submenu of the preceding item not inde
 An item without initial tabs is a top-level item.
 .It
 The image is a string of the form
-.Qq Cm "IMG:/path/to/image.png" .
+.Qq Ic "IMG:/path/to/image.png" .
 It specifies the path to an image file to be shown as icon at the left of the entry.
 If the path does not begin with
 .Qq Pa / ,
@@ -91,49 +96,68 @@ environment variable.
 .It
 The label is the string that will be shown as an item in the menu.
 An item without label or with a single colon
-.Pq Cm \&:
+.Pq Ic \&:
 as label is considered a separator and is drawn as a thin line in the menu
 separating the item above from the item below.
+An item whose label is equal to two apostrophes
+.Qq Ic "''"
+does not appear on the menu, it's output provides an alternative output for the previous item
+when the user clicks with the middle mouse button.
 .It
 The output is the string that will be output after selecting the item.
 If an item does not have tabs after the label, its label is used as its output.
 If the output is empty or is a colon
-.Pq Cm \&: ,
+.Pq Ic \&: ,
 the item cannot be selected.
 .It
 The newline terminates the item specification.
 .El
-.Pp
-If the argument
-.Ar title
-is given, the title of the menu window is set to it.
 .Sh USAGE
 .Nm
-is controlled by the mouse, but can also be controlled by the keyboard.
+is controlled by the mouse.
+Each menu has a list of items that can be activated by clicking on it with the
+first, second or third mouse buttons.
+.Bl -bullet
+.It
+If there is a right-pointing triangle on the item, it pops up a submenu when activated.
+.It
+If the item is a dash at the top of the menu,
+it tears the menu off (that is, the menu becomes "windowed").
+.It
+If the item is a continuous horizontal line,
+it is a separator and cannot be selected.
+.It
+Otherwise, the item outputs some string when activated.
+Some items output an "alternative string" when activated with the second mouse buton
+(see above at
+.Sx SYNTAX ) .
+.El
+.Pp
+but can also be controlled by the keyboard.
 Items can be selected using the arrow keys.
 Tab (with and without Shift), Home, End, Enter and Esc, and 1-9 keys.
-Itams can also be selected by typing the first several characters in it.
+Items can also be selected by typing the first several characters in it.
 .Bl -tag -width Ds
-.It Cm Down
+.It Ic Down
 Cycle through the items in the regular direction.
-.It Cm End
+.It Ic End
 Selects the last item in the menu.
-.It Cm Esc
+.It Ic Esc
 Go to the menu above in the hierarchy or exit
 .Nm .
-.It Cm Home
+.It Ic Home
 Selects the first item in the menu.
-.It Cm Left
+.It Ic Left
 Go to the menu above in the hierarchy.
-.It Cm Right , Enter
+.It Ic Right , Enter
 Select the highlighted item.
-.It Cm Shift-Tab
+.It Ic Shift-Tab
 Cycle through the items in the reverse direction.
 When the type-to-select feature is active, cycle through matching items instead.
-.It Cm Tab
+.It Ic Tab
 Cycle through the items in the regular direction.
 When the type-to-select feature is active, cycle through matching items instead.
-.It Cm Up
+.It Ic Up
 Cycle through the items in the reverse direction.
 .El
 .Pp
@@ -155,10 +179,10 @@ The backround color of selected items in the menu.
 The color of the label text of selected items in the menu.
 .It Ic alignment
 If set to
-.Qq Cm left ,
-.Qq Cm center ,
+.Qq Ic left ,
+.Qq Ic center ,
 or
-.Qq Cm right ,
+.Qq Ic right ,
 text is aligned to the left, center, or right of the menu, respectively.
 By default, text is aligned to the left.
 .It Ic background
@@ -170,7 +194,7 @@ The size in pixels of the border around the menu.
 .It Ic faceName
 Font for drawing text.
 If the value is prefixed with
-.Qq Cm "xft:"
+.Qq Ic "xft:"
 (case insensitive), then
 .Nm
 uses the
@@ -178,9 +202,9 @@ uses the
 library for drawing text;
 and fallback fonts can be specified by delimiting the fonts with commas.
 If the value is prefixed with
-.Qq Cm "x:"
+.Qq Ic "x:"
 or
-.Qq Cm "x11:"
+.Qq Ic "x11:"
 (case insensitive), then
 .Nm
 uses the X11 library for drawing text.

@@ -148,6 +148,7 @@ enum Resource {
 typedef struct Item {
 	char *label;            /* string to be drawed on menu */
 	char *output;           /* string to be outputed when item is clicked */
+	char *altoutput;        /* string to be outputed when item is clicked with alt button */
 	char *file;             /* filename of the icon */
 	size_t labellen;
 	struct Item *prev;
@@ -447,9 +448,10 @@ createwindow(Widget *widget, XRectangle *geometry, long eventmask, bool override
 static Item *
 allocitem(const char *label, const char *output, char *file)
 {
-	struct Item *item;
+	Item *item;
 
 	item = emalloc(sizeof *item);
+	*item = (Item){ 0 };
 	if (label == NULL) {
 		item->label = NULL;
 		item->output = NULL;
@@ -463,15 +465,8 @@ allocitem(const char *label, const char *output, char *file)
 			item->output = estrdup(output);
 		}
 	}
-	if (file == NULL) {
-		item->file = NULL;
-	} else {
+	if (file != NULL)
 		item->file = estrdup(file);
-	}
-	item->prev = NULL;
-	item->next = NULL;
-	item->parent = NULL;
-	item->children = NULL;
 	return item;
 }
 
@@ -956,8 +951,14 @@ parsestdin(void)
 				output++;
 		}
 
-		item = allocitem(label, output, file);
+		if (prev != NULL && prev->label != NULL &&
+		    level == prevlvl && strcmp(label, "''") == 0) {
+			free(prev->altoutput);
+			prev->altoutput = estrdup(output);
+			continue;
+		}
 
+		item = allocitem(label, output, file);
 		if (prev == NULL) {
 			root = item;
 		} else if (level < prevlvl) {
@@ -999,6 +1000,7 @@ cleanmenu(Item *item, Item *skip)
 		item = item->next;
 		if (tmp->label != tmp->output)
 			free(tmp->label);
+		free(tmp->altoutput);
 		free(tmp->output);
 		free(tmp);
 	}
@@ -1798,7 +1800,10 @@ popupmenu(Widget *widget, XRectangle *basis)
 		caller = NULL;
 		name = options.title;
 		items = options.items;
-		xgap = ygap = INITIAL_DISPLACEMENT;
+		if (options.userplaced)
+			xgap = ygap = 0;
+		else
+			xgap = ygap = INITIAL_DISPLACEMENT;
 		if (options.windowed) {
 			tearoff = false;
 			override_redirect = false;
@@ -1814,7 +1819,6 @@ popupmenu(Widget *widget, XRectangle *basis)
 		.caller = caller,
 	};
 	menu->next = widget->menus;
-	widget->menus = menu;
 	menuh = widget->shadowwid * 2;
 	if (tearoff)
 		menuh += widget->itemh;
@@ -1880,7 +1884,7 @@ popupmenu(Widget *widget, XRectangle *basis)
 		menu->geometry.y = basis->y + ygap;
 	} else if (monitor->y + monitor->height > menu->geometry.height + ygap) {
 		menu->geometry.y = monitor->y + monitor->height;
-		menu->geometry.y -= menu->geometry.height + ygap;
+		menu->geometry.y -= menu->geometry.height;
 	}
 
 	menu->window = createwindow(
@@ -1929,6 +1933,7 @@ popupmenu(Widget *widget, XRectangle *basis)
 		1
 	);
 
+	widget->menus = menu;
 	drawmenu(widget);
 	XMapRaised(widget->display, menu->window);
 }
@@ -2103,7 +2108,7 @@ forkandtearoff(Widget *widget, Menu *menu)
 }
 
 static void
-openitem(Widget *widget, Item *item, int ypos)
+openitem(Widget *widget, Item *item, int ypos, bool alt)
 {
 	XRectangle rect;
 	Menu *menu;
@@ -2118,6 +2123,10 @@ openitem(Widget *widget, Item *item, int ypos)
 		return;
 	if (item->children != NULL) {
 		popupmenu(widget, &rect);
+	} else if (alt && item->altoutput != NULL) {
+		(void)printf("%s\n", item->altoutput);
+		(void)fflush(stdout);
+		closewidget(widget);
 	} else if (item->output != NULL) {
 		(void)printf("%s\n", item->output);
 		(void)fflush(stdout);
@@ -2143,10 +2152,13 @@ xbuttonrelease(Widget *widget, XEvent *xev)
 	Item *item;
 	Menu *menu;
 	int ypos;
+	bool alt = false;
 
 	xevent = (XButtonEvent *)xev;
-	if (xevent->button != Button1 && xevent->button != Button3)
+	if (xevent->button != Button1 && xevent->button != Button2 &&
+	    xevent->button != Button3)
 		return;
+	alt = (xevent->button == Button2);
 	menu = getmenu(widget, xevent->window);
 	if (menu == NULL)
 		return;
@@ -2160,7 +2172,7 @@ xbuttonrelease(Widget *widget, XEvent *xev)
 	if (item == &tearoff) {
 		forkandtearoff(widget, menu);
 	} else {
-		openitem(widget, item, ypos);
+		openitem(widget, item, ypos, alt);
 	}
 }
 
@@ -2181,7 +2193,7 @@ xbuttonpress(Widget *widget, XEvent *xev)
 		while (widget->menus != menu)
 			delmenu(widget);
 		if (item->children != NULL) {
-			openitem(widget, item, ypos);
+			openitem(widget, item, ypos, false);
 		}
 	}
 }
@@ -2350,7 +2362,7 @@ gohome:
 	case XK_Return:
 		if (menu->selected == NULL)
 			break;
-		openitem(widget, menu->selected, menu->selposition);
+		openitem(widget, menu->selected, menu->selposition, false);
 		break;
 	}
 }
@@ -2379,7 +2391,7 @@ xmotion(Widget *widget, XEvent *xev)
 		while (widget->menus != menu)
 			delmenu(widget);
 		if (item->children != NULL) {
-			openitem(widget, item, ypos);
+			openitem(widget, item, ypos, false);
 		}
 	}
 }
