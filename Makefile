@@ -20,15 +20,17 @@ mandir = ${DESTDIR}${MANPREFIX}/man1
 
 all: ${PROG}
 
-# generate README.md from manual; you do not need to run this
-${DOC}: ${MAN}
-	{ \
-		cat README ; \
-		mandoc -I os=UNIX -T ascii ${MAN} | \
-		col -b | \
-		expand -t 8 | \
-		sed 's,^,	,' ; \
-	} >${DOC}
+foo:
+	printf 'ana\
+	banana'
+
+# update README.md with manual; you do not need to run this
+${DOC}: ${MAN} ${DOC}
+	printf "/## Manual/\n\
+	;d\n\
+	a\n## Manual\n\n.\n\
+	r !mandoc -I os=UNIX -T ascii ${MAN} | col -b | expand -t 8 | sed -E 's,^.+,\t&,'\n\
+	w\n" | ed -s README.md
 
 ${PROG}: ${OBJS}
 	${CC} -o $@ ${OBJS} ${LIBS} ${LDFLAGS}
