@@ -20,10 +20,6 @@ mandir = ${DESTDIR}${MANPREFIX}/man1
 
 all: ${PROG}
 
-foo:
-	printf 'ana\
-	banana'
-
 # update README.md with manual; you do not need to run this
 ${DOC}: ${MAN} ${DOC}
 	printf "/## Manual/\n\
