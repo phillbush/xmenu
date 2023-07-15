@@ -181,6 +181,7 @@ typedef struct Menu {
 typedef struct Options {
 	Item *items;
 	bool windowed;
+	bool rootmode;
 	bool userplaced;
 	bool xneg, yneg;
 	bool monplaced;
@@ -191,6 +192,9 @@ typedef struct Options {
 	char *name;
 	char *class;
 	char *title;
+
+	unsigned int button;
+	unsigned int modifier;
 	Window client;
 
 	char *iconstring;
@@ -252,7 +256,7 @@ static void
 usage(void)
 {
 	(void)fprintf(stderr, "usage: xmenu [-fw] [-N name] "
-	              "[-p position] [-t window]\n");
+	              "[-p position] [-t window] [-x button]\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -369,6 +373,45 @@ parseiconpaths(char *s)
 	}
 }
 
+static bool
+setbutton(const char *s)
+{
+	size_t len;
+	char c;
+
+	if ((len = strlen(s)) < 1)
+		return false;
+	c = s[len - 1];
+	if (c >= '1' && c <= '9') {
+		options.button = c - '0';
+		return true;
+	}
+	return false;
+}
+
+static void
+setmodifier(const char *s)
+{
+	size_t span;
+
+	if ((span = strcspn(s, "-")) < 1)
+		return;
+	switch (s[span - 1]) {
+	case '1': options.modifier = Mod1Mask; break;
+	case '2': options.modifier = Mod2Mask; break;
+	case '3': options.modifier = Mod3Mask; break;
+	case '4': options.modifier = Mod4Mask; break;
+	case '5': options.modifier = Mod5Mask; break;
+	default:
+		if (strncasecmp(s, "Alt", 3) == 0) {
+			options.modifier = Mod1Mask;
+		} else if (strncasecmp(s, "Super", 5) == 0) {
+			options.modifier = Mod4Mask;
+		}
+		break;
+	}
+}
+
 static void
 parseoptions(int argc, char *argv[])
 {
@@ -403,6 +446,11 @@ parseoptions(int argc, char *argv[])
 	case 'w':
 		options.windowed = true;
 		break;
+	case 'x':
+		if (setbutton(optarg))
+			options.rootmode = true;
+		setmodifier(optarg);
+		break;
 	default:
 		usage();
 		break;
@@ -410,9 +458,14 @@ parseoptions(int argc, char *argv[])
 	/* options below are deprecated and ignored */
 	case 'i':
 	case 'r':
-	case 'x':
 	case 'X':
 		break;
+	}
+	if (options.rootmode) {
+		options.client = None;
+		options.windowed = false;
+	} else if (options.windowed) {
+		options.rootmode = false;
 	}
 	argc -= optind;
 	argv += optind;
@@ -786,6 +839,20 @@ initxconn(Widget *widget)
 	XInternAtoms(widget->display, atomnames, NATOMS, False, widget->atoms);
 	widget->screen = DefaultScreen(widget->display);
 	widget->rootwin = DefaultRootWindow(widget->display);
+	if (options.rootmode) {
+		XGrabButton(
+			widget->display,
+			options.button,
+			AnyModifier,
+			widget->rootwin,
+			False,
+			ButtonPressMask,
+			GrabModeSync,
+			GrabModeSync,
+			None,
+			None
+		);
+	}
 	return RETURN_SUCCESS;
 }
 
@@ -1912,7 +1979,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
 		override_redirect
 	);
-	if (options.client != None) {
+	if (!options.rootmode && options.client != None) {
 		(void)XSetTransientForHint(
 			widget->display,
 			menu->window,
@@ -2130,6 +2197,7 @@ forkandtearoff(Widget *widget, Menu *menu)
 		options.items = menu->first;
 		options.userplaced = true;
 		options.windowed = true;
+		options.rootmode = false;
 		options.geometry.x = menu->geometry.x;
 		options.geometry.y = menu->geometry.y;
 		options.geometry.width = 0;
@@ -2542,6 +2610,34 @@ run(Widget *widget, XRectangle *geometry)
 	}
 }
 
+static void
+waitrootclick(Widget *widget)
+{
+	XEvent xev;
+
+	if (!options.rootmode)
+		return;
+	while (!XNextEvent(widget->display, &xev)) {
+		if (xev.type != ButtonPress)
+			continue;
+		if ((options.modifier != 0 &&
+		     (xev.xbutton.state & options.modifier)) ||
+		    xev.xbutton.subwindow == None) {
+			XAllowEvents(
+				widget->display,
+				AsyncPointer,
+				xev.xbutton.time
+			);
+			return;
+		}
+		XAllowEvents(
+			widget->display,
+			ReplayPointer,
+			xev.xbutton.time
+		);
+	}
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -2573,7 +2669,11 @@ main(int argc, char *argv[])
 	for (i = 0; i < LEN(initsteps); i++)
 		if ((*initsteps[i])(&widget) == RETURN_FAILURE)
 			goto error;
-	run(&widget, &geometry);
+	do {
+		waitrootclick(&widget);
+		run(&widget, &geometry);
+		ungrab(&widget);
+	} while (options.rootmode);
 error:
 	cleanup(&widget);
 	free(options.iconstring);

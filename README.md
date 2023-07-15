@@ -109,7 +109,8 @@ See `./LICENSE` for more information.
 	     xmenu - menu utility for X
 
 	SYNOPSIS
-	     xmenu [-fw] [-N name] [-p position] [-t window] [title]
+	     xmenu [-fw] [-N name] [-p position] [-t window] [-x modifier-button]
+	           [title]
 
 	DESCRIPTION
 	     xmenu is a menu for X.  It reads a list of newline-separateditems from
@@ -141,14 +142,27 @@ See `./LICENSE` for more information.
 	             string like "current" or "cursor", specifyingthe monitor where
 	             the cursor is on.
 
-	     -w      Asks the window manager to draw a border around the menu.  This
-	             makes xmenu start torn off.
-
 	     -t window
 	             Make the menu windows transient for the given window.  That is,
 	             notify the window manager that the menus are bound to the given
 	             window.  This also makes xmenu close when the window is
 	             destroyed.
+
+	     -w      Asks the window manager to draw a border around the menu.  This
+	             makes xmenu start torn off.
+
+	     -x modifier-button
+	             This option requires an argument of the form modifier-button or
+	             button; where modifier is Mod1 to Mod5, or Alt (equivalent to
+	             Mod1), or Super (equivalent to Mod4); and button is the number of
+	             a mouse button.  When this option is used, xmenu listens to
+	             button presses on the root window, and shows the menu when the
+	             given button is pressed on the root window or when that button is
+	             pressed together with the given modifier on any window.  This
+	             option makes xmenu run continuously; so it should be used when
+	             xmenu is invoked in background on a X11 startup file (like
+	             ~/.xinitrc or ~/.xsession).  This option cannot be used together
+	             with -w or -t.
 
 	     If the argument title is given, the title of the menu window is set to
 	     it.

@@ -10,6 +10,7 @@
 .Op Fl N Ar name
 .Op Fl p Ar position
 .Op Fl t Ar window
+.Op Fl x Ar modifier-button
 .Op Ar title
 .Sh DESCRIPTION
 .Nm
@@ -64,11 +65,6 @@ it can instead be a string like
 or
 .Qq Cm cursor ,
 specifyingthe monitor where the cursor is on.
-.It Fl w
-Asks the window manager to draw a border around the menu.
-This makes
-.Nm
-start torn off.
 .It Fl t Ar window
 Make the menu windows transient for the given
 .Ar window .
@@ -79,6 +75,52 @@ This also makes
 close when the
 .Ar window
 is destroyed.
+.It Fl w
+Asks the window manager to draw a border around the menu.
+This makes
+.Nm
+start torn off.
+.It Fl x Ar modifier-button
+This option requires an argument of the form
+.Ar modifier-button
+or
+.Ar button ;
+where
+.Ar modifier
+is
+.Cm Mod1
+to
+.Cm Mod5 ,
+or
+.Cm Alt
+(equivalent to
+.Cm Mod1 ) ,
+or
+.Cm Super
+(equivalent to
+.Cm Mod4 ) ;
+and
+.Ar button
+is the number of a mouse button.
+When this option is used,
+.Nm
+listens to button presses on the root window,
+and shows the menu when the given button is pressed on the root window
+or when that button is pressed together with the given modifier on any window.
+This option makes
+.Nm
+run continuously;
+so it should be used when
+.Nm
+is invoked in background on a X11 startup file
+(like
+.Pa "~/.xinitrc"
+or
+.Pa "~/.xsession" ) .
+This option cannot be used together with
+.Fl w
+or
+.Fl t .
 .El
 .Pp
 If the argument
