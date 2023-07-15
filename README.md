@@ -109,7 +109,7 @@ See `./LICENSE` for more information.
 	     xmenu - menu utility for X
 
 	SYNOPSIS
-	     xmenu [-fw] [-N name] [-p position] [title]
+	     xmenu [-fw] [-N name] [-p position] [-T window] [title]
 
 	DESCRIPTION
 	     xmenu is a menu for X.  It reads a list of newline-separateditems from
@@ -143,6 +143,12 @@ See `./LICENSE` for more information.
 
 	     -w      Asks the window manager to draw a border around the menu.  This
 	             makes xmenu start torn off.
+
+	     -T window
+	             Make the menu windows transient for the given window.  That is,
+	             notify the window manager that the menus are bound to the given
+	             window.  This also makes xmenu close when the window is
+	             destroyed.
 
 	     If the argument title is given, the title of the menu window is set to
 	     it.

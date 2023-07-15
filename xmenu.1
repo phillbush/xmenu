@@ -9,6 +9,7 @@
 .Op Fl fw
 .Op Fl N Ar name
 .Op Fl p Ar position
+.Op Fl T Ar window
 .Op Ar title
 .Sh DESCRIPTION
 .Nm
@@ -68,6 +69,16 @@ Asks the window manager to draw a border around the menu.
 This makes
 .Nm
 start torn off.
+.It Fl T Ar window
+Make the menu windows transient for the given
+.Ar window .
+That is, notify the window manager that the menus are bound to the given
+.Ar window .
+This also makes
+.Nm
+close when the
+.Ar window
+is destroyed.
 .El
 .Pp
 If the argument

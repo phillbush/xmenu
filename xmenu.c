@@ -191,6 +191,7 @@ typedef struct Options {
 	char *name;
 	char *class;
 	char *title;
+	Window client;
 
 	char *iconstring;
 	char *iconpaths[MAXPATHS];
@@ -251,7 +252,7 @@ static void
 usage(void)
 {
 	(void)fprintf(stderr, "usage: xmenu [-fw] [-N name] "
-	              "[-p position] [-x button]\n");
+	              "[-p position] [-T window]\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -386,7 +387,7 @@ parseoptions(int argc, char *argv[])
 	} else {
 		options.name = NAME;
 	}
-	while ((ch = getopt(argc, argv, "ifN:p:rtwx:X:")) != -1) switch (ch) {
+	while ((ch = getopt(argc, argv, "ifN:p:rT:twx:X:")) != -1) switch (ch) {
 	case 'N':
 		options.name = optarg;
 		break;
@@ -395,6 +396,9 @@ parseoptions(int argc, char *argv[])
 		break;
 	case 'p':
 		parsegeometry(optarg);
+		break;
+	case 'T':
+		options.client = strtoul(optarg, NULL, 0);
 		break;
 	case 'w':
 		options.windowed = true;
@@ -1908,6 +1912,18 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
 		override_redirect
 	);
+	if (options.client != None) {
+		(void)XSetTransientForHint(
+			widget->display,
+			menu->window,
+			options.client
+		);
+		(void)XSelectInput(
+			widget->display,
+			options.client,
+			StructureNotifyMask
+		);
+	}
 	(void)XSetWMProtocols(
 		widget->display,
 		menu->window,
@@ -2327,6 +2343,18 @@ xclientmessage(Widget *widget, XEvent *xev)
 }
 
 static void
+xdestroy(Widget *widget, XEvent *xev)
+{
+	XDestroyWindowEvent *xevent;
+
+	xevent = (XDestroyWindowEvent *)xev;
+	if (options.client == None || xevent->window != options.client)
+		return;
+	closewidget(widget);
+	delmenu(widget);
+}
+
+static void
 xkeypress(Widget *widget, XEvent *xev)
 {
 	XKeyEvent *xevent;
@@ -2496,6 +2524,7 @@ run(Widget *widget, XRectangle *geometry)
 		[ClientMessage]         = xclientmessage,
 		[KeyPress]              = xkeypress,
 		[MotionNotify]          = xmotion,
+		[DestroyNotify]         = xdestroy,
 	};
 
 	getposition(widget, geometry);
