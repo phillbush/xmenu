@@ -252,7 +252,7 @@ static void
 usage(void)
 {
 	(void)fprintf(stderr, "usage: xmenu [-fw] [-N name] "
-	              "[-p position] [-T window]\n");
+	              "[-p position] [-t window]\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -387,7 +387,7 @@ parseoptions(int argc, char *argv[])
 	} else {
 		options.name = NAME;
 	}
-	while ((ch = getopt(argc, argv, "ifN:p:rT:twx:X:")) != -1) switch (ch) {
+	while ((ch = getopt(argc, argv, "ifN:p:rt:wx:X:")) != -1) switch (ch) {
 	case 'N':
 		options.name = optarg;
 		break;
@@ -397,7 +397,7 @@ parseoptions(int argc, char *argv[])
 	case 'p':
 		parsegeometry(optarg);
 		break;
-	case 'T':
+	case 't':
 		options.client = strtoul(optarg, NULL, 0);
 		break;
 	case 'w':
