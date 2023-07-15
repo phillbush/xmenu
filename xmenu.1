@@ -6,7 +6,7 @@
 .Nd menu utility for X
 .Sh SYNOPSIS
 .Nm xmenu
-.Op Fl w
+.Op Fl fw
 .Op Fl N Ar name
 .Op Fl p Ar position
 .Op Ar title
@@ -19,6 +19,16 @@ and writes the selected item into standard output.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
+.It Fl f
+Enable file system navigation.
+If this flag is set,
+any menu item whose output begins with a slash is interpreted as the path to a directory.
+Entering this item will open a menu containing the entries of that directory,
+so the user can navigate the contents of the directory with
+.Nm .
+When an item is selected, its absolute path is output prefixed with
+.Qq Ic "file:" .
+A directory's path can be output by selecting it with the middle mouse button.
 .It Fl N Ar name
 Specifiy the
 .Ic res_name
@@ -259,13 +269,15 @@ creating a command to be run by the shell.
 .Bd -literal -offset indent
 $!/bin/sh
 
-xmenu <<EOF | sh &
+xmenu -f <<EOF | sh &
 Applications
 	IMG:./web.png	Web Browser	firefox
 	IMG:./gimp.png	Image Editor	gimp
 Terminal (xterm)			xterm
 Terminal (urxvt)			urxvt
 Terminal (st)				st
+
+Navigate Home				/home/user
 
 Shutdown				poweroff
 Reboot					reboot
@@ -274,6 +286,11 @@ EOF
 .Pp
 For example, by selecting "Applications", a new menu will appear.
 Selecting "Web Browser" in the new menu opens firefox.
+.Pp
+The
+.Fl f
+option makes it possible to browse the contents of the home directory by selecting the "Navigate Home" item.
+This will open a submenu listing all the entries of the home directory.
 .Sh SEE ALSO
 .Xr xclickroot 1 ,
 .Xr X 7

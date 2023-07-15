@@ -109,7 +109,7 @@ See `./LICENSE` for more information.
 	     xmenu - menu utility for X
 
 	SYNOPSIS
-	     xmenu [-w] [-N name] [-p position] [title]
+	     xmenu [-fw] [-N name] [-p position] [title]
 
 	DESCRIPTION
 	     xmenu is a menu for X.  It reads a list of newline-separateditems from
@@ -117,6 +117,14 @@ See `./LICENSE` for more information.
 	     writes the selected item into standard output.
 
 	     The options are as follows:
+
+	     -f      Enable file system navigation.  If this flag is set, any menu
+	             item whose output begins with a slash is interpreted as the path
+	             to a directory.  Entering this item will open a menu containing
+	             the entries of that directory, so the user can navigate the
+	             contents of the directory with xmenu.  When an item is selected,
+	             its absolute path is output prefixed with "file:".  A directory's
+	             path can be output by selecting it with the middle mouse button.
 
 	     -N name
 	             Specifiy the res_name member of the XClassHint(3) property.  Ar
@@ -307,7 +315,7 @@ See `./LICENSE` for more information.
 
 	           $!/bin/sh
 
-	           xmenu <<EOF | sh &
+	           xmenu -f <<EOF | sh &
 	           Applications
 	                   IMG:./web.png   Web Browser     firefox
 	                   IMG:./gimp.png  Image Editor    gimp
@@ -315,12 +323,18 @@ See `./LICENSE` for more information.
 	           Terminal (urxvt)                        urxvt
 	           Terminal (st)                           st
 
+	           Navigate Home                           /home/user
+
 	           Shutdown                                poweroff
 	           Reboot                                  reboot
 	           EOF
 
 	     For example, by selecting "Applications", a new menu will appear.
 	     Selecting "Web Browser" in the new menu opens firefox.
+
+	     The -f option makes it possible to browse the contents of the home
+	     directory by selecting the "Navigate Home" item.  This will open a
+	     submenu listing all the entries of the home directory.
 
 	SEE ALSO
 	     xclickroot(1), X(7)

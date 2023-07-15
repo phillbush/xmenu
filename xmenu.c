@@ -1,4 +1,7 @@
+#include <sys/types.h>
+
 #include <ctype.h>
+#include <dirent.h>
 #include <err.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -159,7 +162,7 @@ typedef struct Item {
 
 typedef struct Menu {
 	struct Menu *next;
-	struct Item *caller, *items, *selected;
+	struct Item *items, *selected;
 	struct Item *first, *last, *lastsave;
 	XRectangle geometry;
 	int selposition;
@@ -172,6 +175,7 @@ typedef struct Menu {
 	bool overflow;
 	bool hasicon;
 	bool hassubmenu;
+	bool directory;
 } Menu;
 
 typedef struct Options {
@@ -180,6 +184,7 @@ typedef struct Options {
 	bool userplaced;
 	bool xneg, yneg;
 	bool monplaced;
+	bool filebrowse;
 	int monitor;
 	int argc;
 	char **argv;
@@ -245,7 +250,7 @@ static Item scrolldown = { .label = "scrolldown" };
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-w] [-N name] "
+	(void)fprintf(stderr, "usage: xmenu [-fw] [-N name] "
 	              "[-p position] [-x button]\n");
 	exit(EXIT_FAILURE);
 }
@@ -381,9 +386,12 @@ parseoptions(int argc, char *argv[])
 	} else {
 		options.name = NAME;
 	}
-	while ((ch = getopt(argc, argv, "iN:p:rtwx:X:")) != -1) switch (ch) {
+	while ((ch = getopt(argc, argv, "ifN:p:rtwx:X:")) != -1) switch (ch) {
 	case 'N':
 		options.name = optarg;
+		break;
+	case 'f':
+		options.filebrowse = true;
 		break;
 	case 'p':
 		parsegeometry(optarg);
@@ -951,7 +959,7 @@ parsestdin(void)
 				output++;
 		}
 
-		if (prev != NULL && prev->label != NULL &&
+		if (label != NULL && prev != NULL && prev->label != NULL &&
 		    level == prevlvl && strcmp(label, "''") == 0) {
 			free(prev->altoutput);
 			prev->altoutput = estrdup(output);
@@ -985,7 +993,7 @@ parsestdin(void)
 }
 
 static void
-cleanmenu(Item *item, Item *skip)
+cleanitems(Item *item, Item *skip)
 {
 	Item *tmp;
 
@@ -995,7 +1003,7 @@ cleanmenu(Item *item, Item *skip)
 		return;
 	while (item != NULL) {
 		if (item->children != NULL)
-			cleanmenu(item->children, skip);
+			cleanitems(item->children, skip);
 		tmp = item;
 		item = item->next;
 		if (tmp->label != tmp->output)
@@ -1451,6 +1459,16 @@ loadicon(Widget *widget, const char *file, int size, int *width_ret, int *height
 	return icon;
 }
 
+static bool
+openssubmenu(Item *item)
+{
+	if (item->children != NULL)
+		return true;
+	if (options.filebrowse && item->output != NULL && item->output[0] == '/')
+		return true;
+	return false;
+}
+
 static void
 drawmenu(Widget *widget)
 {
@@ -1584,7 +1602,7 @@ drawmenu(Widget *widget)
 			);
 			imlib_free_image();
 		}
-		if (item->children != NULL) {
+		if (openssubmenu(item)) {
 			drawtriangle(
 				widget,
 				canvas[CANVAS_NORMAL][LAYER_FG].picture,
@@ -1767,13 +1785,13 @@ drawselection(Widget *widget, Menu *menu, int ypos)
 }
 
 static void
-popupmenu(Widget *widget, XRectangle *basis)
+popupmenu(Widget *widget, Item *items, XRectangle *basis)
 {
 	XRectangle *monitor = &widget->monitor;
 	Menu *menu;
 	Item *caller;
 	Atom type;
-	Item *items, *item;
+	Item *item;
 	size_t nitems;
 	unsigned int textw, menuh;
 	int xgap, ygap;
@@ -1786,11 +1804,10 @@ popupmenu(Widget *widget, XRectangle *basis)
 	if (widget->menus != NULL) {
 		if (widget->menus->selected == NULL)
 			return;         /* no item selected */
-		if (widget->menus->selected->children == NULL)
+		if (!openssubmenu(widget->menus->selected))
 			return;         /* item creates no submenu */
 		caller = widget->menus->selected;
 		name = caller->output;
-		items = caller->children;
 		xgap = widget->gap + widget->borderwid * 2;
 		ygap = -widget->shadowwid;
 		if (tearoff)
@@ -1799,7 +1816,6 @@ popupmenu(Widget *widget, XRectangle *basis)
 	} else {
 		caller = NULL;
 		name = options.title;
-		items = options.items;
 		if (options.userplaced)
 			xgap = ygap = 0;
 		else
@@ -1816,7 +1832,6 @@ popupmenu(Widget *widget, XRectangle *basis)
 		.first = items,
 		.last = NULL,
 		.selected = NULL,
-		.caller = caller,
 	};
 	menu->next = widget->menus;
 	menuh = widget->shadowwid * 2;
@@ -1842,7 +1857,7 @@ popupmenu(Widget *widget, XRectangle *basis)
 			menu->hasicon = true;
 			menu->nicons++;
 		}
-		if (item->children != NULL)
+		if (openssubmenu(item))
 			menu->hassubmenu = true;
 		menu->geometry.width = MAX(menu->geometry.width, textw);
 		if (menu->overflow)
@@ -1946,6 +1961,8 @@ delmenu(Widget *widget)
 
 	if ((menu = widget->menus) == NULL)
 		return;
+	if (menu->directory)
+		cleanitems(menu->items, NULL);
 	widget->menus = menu->next;
 	XDestroyWindow(widget->display, menu->window);
 	for (i = 0; i < CANVAS_LAST; i++) {
@@ -2093,7 +2110,7 @@ forkandtearoff(Widget *widget, Menu *menu)
 		}
 		*widget = (Widget){ 0 };
 		widget->display = NULL;
-		cleanmenu(options.items, menu->first);
+		cleanitems(options.items, menu->first);
 		options.items = menu->first;
 		options.userplaced = true;
 		options.windowed = true;
@@ -2107,11 +2124,75 @@ forkandtearoff(Widget *widget, Menu *menu)
 	closewidget(widget);
 }
 
+static int
+direntsel(const struct dirent *dp)
+{
+	return dp->d_name[0] != '.' && strpbrk(dp->d_name, "\t\n") == NULL;
+}
+
+static int
+direntcmp(const struct dirent **ap, const struct dirent **bp)
+{
+	const struct dirent *a = *ap;
+	const struct dirent *b = *bp;
+
+	if (a->d_type == DT_DIR && b->d_type != DT_DIR)
+		return -1;
+	if (b->d_type == DT_DIR && a->d_type != DT_DIR)
+		return 1;
+	return strcoll(a->d_name, b->d_name);
+}
+
+static Item *
+listdirentries(const char *dirname)
+{
+	struct dirent **namelist;
+	Item *items, *item, *prev;
+	int nents, i;
+	char buf[PATH_MAX + 8];
+
+	nents = scandir(dirname, &namelist, &direntsel, &direntcmp);
+	if (nents == -1)
+		return NULL;
+	items = NULL;
+	prev = NULL;
+	for (i = 0; i < nents; i++) {
+		snprintf(
+			buf,
+			sizeof(buf),
+			"%s%s/%s",
+			namelist[i]->d_type == DT_DIR ? "" : "file:",
+			dirname,
+			namelist[i]->d_name
+		);
+		item = allocitem(namelist[i]->d_name, buf, NULL);
+		if (prev == NULL)
+			items = item;
+		else
+			prev->next = item;
+		item->prev = prev;
+		prev = item;
+		free(namelist[i]);
+	}
+	free(namelist);
+	return items;
+}
+
+static void
+printitem(Widget *widget, const char *str)
+{
+	(void)printf("%s\n", str);
+	(void)fflush(stdout);
+	closewidget(widget);
+}
+
 static void
 openitem(Widget *widget, Item *item, int ypos, bool alt)
 {
 	XRectangle rect;
 	Menu *menu;
+	Item *items;
+	char buf[PATH_MAX + 8];
 
 	if (item == NULL || item == &tearoff)
 		return;
@@ -2122,15 +2203,23 @@ openitem(Widget *widget, Item *item, int ypos, bool alt)
 	if (item == &scrollup || item == &scrolldown)
 		return;
 	if (item->children != NULL) {
-		popupmenu(widget, &rect);
+		popupmenu(widget, item->children, &rect);
 	} else if (alt && item->altoutput != NULL) {
-		(void)printf("%s\n", item->altoutput);
-		(void)fflush(stdout);
-		closewidget(widget);
+		printitem(widget, item->altoutput);
+	} else if (options.filebrowse && item->output != NULL &&
+	           item->output[0] == '/') {
+		if (alt) {
+			snprintf(buf, PATH_MAX, "%s%s", "file:", item->output);
+			printitem(widget, buf);
+			return;
+		}
+		items = listdirentries(item->output);
+		if (items == NULL)
+			return;
+		popupmenu(widget, items, &rect);
+		widget->menus->directory = true;
 	} else if (item->output != NULL) {
-		(void)printf("%s\n", item->output);
-		(void)fflush(stdout);
-		closewidget(widget);
+		printitem(widget, item->output);
 	}
 }
 
@@ -2413,7 +2502,7 @@ run(Widget *widget, XRectangle *geometry)
 	if (!options.windowed)
 		if (grab(widget) == RETURN_FAILURE)
 			return;
-	popupmenu(widget, geometry);
+	popupmenu(widget, options.items, geometry);
 	while (!XNextEvent(widget->display, &xev)) {
 		if (xev.type < LASTEvent && xevents[xev.type] != NULL) {
 			(*xevents[xev.type])(widget, &xev);
@@ -2459,6 +2548,6 @@ main(int argc, char *argv[])
 error:
 	cleanup(&widget);
 	free(options.iconstring);
-	cleanmenu(options.items, NULL);
+	cleanitems(options.items, NULL);
 	return EXIT_SUCCESS;
 }
