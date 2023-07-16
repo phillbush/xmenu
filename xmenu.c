@@ -1837,18 +1837,20 @@ drawselection(Widget *widget, Menu *menu, int ypos)
 		menu->geometry.width,
 		menu->geometry.height
 	);
-	XRenderComposite(
-		widget->display,
-		PictOpOver,
-		menu->canvas[CANVAS_SELECT].picture,
-		None,
-		menu->canvas[CANVAS_FINAL].picture,
-		0, ypos,
-		0, 0,
-		0, ypos,
-		menu->geometry.width,
-		widget->itemh
-	);
+	if (ypos >= 0) {
+		XRenderComposite(
+			widget->display,
+			PictOpOver,
+			menu->canvas[CANVAS_SELECT].picture,
+			None,
+			menu->canvas[CANVAS_FINAL].picture,
+			0, ypos,
+			0, 0,
+			0, ypos,
+			menu->geometry.width,
+			widget->itemh
+		);
+	}
 	XSetWindowBackgroundPixmap(
 		widget->display,
 		menu->window,
@@ -2067,6 +2069,14 @@ ungrab(Widget *widget)
 static void
 closewidget(Widget *widget)
 {
+	while (widget->menus != NULL)
+		delmenu(widget);
+	ungrab(widget);
+}
+
+static void
+closepopups(Widget *widget)
+{
 	while (widget->menus != NULL) {
 		if (options.windowed && widget->menus->next == NULL) {
 			ungrab(widget);
@@ -2210,7 +2220,7 @@ forkandtearoff(Widget *widget, Menu *menu)
 		longjmp(jmpenv, 1);
 		exit(EXIT_FAILURE);
 	}
-	closewidget(widget);
+	closepopups(widget);
 }
 
 static int
@@ -2272,7 +2282,7 @@ printitem(Widget *widget, const char *str)
 {
 	(void)printf("%s\n", str);
 	(void)fflush(stdout);
-	closewidget(widget);
+	closepopups(widget);
 }
 
 static void
@@ -2365,11 +2375,12 @@ xbuttonpress(Widget *widget, XEvent *xev)
 	xevent = (XButtonEvent *)xev;
 	menu = getmenu(widget, xevent->window);
 	if (menu == NULL) {
-		closewidget(widget);
+		closepopups(widget);
 		return;
-	} else if ((item = getitem(widget, menu, xevent->y, &ypos)) != NULL) {
-		while (widget->menus != menu)
-			delmenu(widget);
+	}
+	while (widget->menus != menu)
+		delmenu(widget);
+	if ((item = getitem(widget, menu, xevent->y, &ypos)) != NULL) {
 		if (item->children != NULL) {
 			openitem(widget, item, ypos, false);
 		}
@@ -2412,7 +2423,6 @@ xclientmessage(Widget *widget, XEvent *xev)
 	if ((Atom)(xevent->data.l[0]) != widget->atoms[WM_DELETE_WINDOW])
 		return;
 	closewidget(widget);
-	delmenu(widget);
 }
 
 static void
@@ -2424,7 +2434,6 @@ xdestroy(Widget *widget, XEvent *xev)
 	if (options.client == None || xevent->window != options.client)
 		return;
 	closewidget(widget);
-	delmenu(widget);
 }
 
 static void
@@ -2558,6 +2567,20 @@ gohome:
 }
 
 static void
+xleave(Widget *widget, XEvent *xev)
+{
+	XCrossingEvent *xevent;
+	Menu *menu;
+
+	xevent = (XCrossingEvent *)xev;
+	menu = getmenu(widget, xevent->window);
+	if (menu != widget->menus)
+		return;
+	menu->selected = NULL;
+	drawselection(widget, menu, -1);
+}
+
+static void
 xmotion(Widget *widget, XEvent *xev)
 {
 	XMotionEvent *xevent;
@@ -2573,11 +2596,13 @@ xmotion(Widget *widget, XEvent *xev)
 	if (item == &scrollup || item == &scrolldown) {
 		scroll(widget, item == &scrolldown);
 	}
-	if (item == NULL || item == menu->selected)
+	if (item == menu->selected)
 		return;
+	if (item == NULL)
+		ypos = -1;
 	menu->selected = item;
 	drawselection(widget, menu, ypos);
-	if (xevent->state & (Button1Mask|Button3Mask)) {
+	if (item != NULL && xevent->state & (Button1Mask|Button3Mask)) {
 		while (widget->menus != menu)
 			delmenu(widget);
 		if (item->children != NULL) {
@@ -2591,6 +2616,7 @@ run(Widget *widget, XRectangle *geometry)
 {
 	XEvent xev;
 	static void (*xevents[LASTEvent])(Widget *, XEvent *) = {
+		[LeaveNotify]           = xleave,
 		[ButtonPress]           = xbuttonpress,
 		[ButtonRelease]         = xbuttonrelease,
 		[ConfigureNotify]       = xconfigurenotify,
