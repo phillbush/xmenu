@@ -164,6 +164,7 @@ typedef struct Menu {
 	struct Menu *next;
 	struct Item *items, *selected;
 	struct Item *first, *last, *lastsave;
+	char *title;
 	XRectangle geometry;
 	int selposition;
 	Window window;
@@ -186,6 +187,7 @@ typedef struct Options {
 	bool xneg, yneg;
 	bool monplaced;
 	bool filebrowse;
+	bool freetitle;
 	int monitor;
 	int argc;
 	char **argv;
@@ -1901,6 +1903,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 	*menu = (Menu){
 		.items = items,
 		.first = items,
+		.title = name,
 		.last = NULL,
 		.selected = NULL,
 	};
@@ -2193,15 +2196,17 @@ forkandtearoff(Widget *widget, Menu *menu)
 		}
 		*widget = (Widget){ 0 };
 		widget->display = NULL;
-		cleanitems(options.items, menu->first);
 		options.items = menu->first;
 		options.userplaced = true;
 		options.windowed = true;
 		options.rootmode = false;
+		options.title = estrdup(menu->title);
+		options.freetitle = true;
 		options.geometry.x = menu->geometry.x;
 		options.geometry.y = menu->geometry.y;
 		options.geometry.width = 0;
 		options.geometry.height = 0;
+		cleanitems(options.items, menu->first);
 		longjmp(jmpenv, 1);
 		exit(EXIT_FAILURE);
 	}
@@ -2677,6 +2682,8 @@ main(int argc, char *argv[])
 error:
 	cleanup(&widget);
 	free(options.iconstring);
+	if (options.freetitle)
+		free(options.title);
 	cleanitems(options.items, NULL);
 	return EXIT_SUCCESS;
 }
