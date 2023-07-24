@@ -1392,7 +1392,7 @@ drawtriangle(Widget *widget, Picture picture, Picture src, int x, int y, int dir
 		PictOpOver,
 		src,
 		picture,
-		widget->xformat,
+		widget->alphaformat,
 		0, 0,
 		&triangle,
 		1
