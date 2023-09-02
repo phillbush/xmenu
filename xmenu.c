@@ -45,7 +45,7 @@
 #define TRIANGLE_HEIGHT         8
 #define TRIANGLE_WIDTH          3
 #define TRIANGLE_PAD            8
-#define SCROLL_TIME             128
+#define SCROLL_TIME             32
 #define DASH_SIZE               8
 
 #define ATOMS                                   \
@@ -1415,9 +1415,9 @@ firstitempos(Widget *widget, Menu *menu)
 	int y;
 
 	y = widget->shadowwid;
-	if (menu->overflow)
-		y += widget->itemh;
 	if (cantearoff(widget, menu))
+		y += widget->itemh;
+	if (menu->overflow)
 		y += widget->itemh;
 	return y;
 }
@@ -1746,6 +1746,19 @@ next:
 	}
 	for (i = 0; i < CANVAS_FINAL; i++) {
 		y = widget->shadowwid;
+		if (cantearoff(widget, menu)) {
+			drawdashline(
+				widget,
+				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				menu->geometry.width, y
+			);
+			drawdashline(
+				widget,
+				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				menu->geometry.width, y
+			);
+			y += widget->itemh;
+		}
 		if (menu->overflow) {
 			drawtriangle(
 				widget,
@@ -1763,19 +1776,6 @@ next:
 				menu->geometry.height - widget->itemh /2
 				- TRIANGLE_WIDTH / 2,
 				DIR_DOWN
-			);
-			y += widget->itemh;
-		}
-		if (cantearoff(widget, menu)) {
-			drawdashline(
-				widget,
-				canvas[CANVAS_NORMAL][LAYER_FG].picture,
-				menu->geometry.width, y
-			);
-			drawdashline(
-				widget,
-				canvas[CANVAS_SELECT][LAYER_FG].picture,
-				menu->geometry.width, y
 			);
 		}
 		XRenderComposite(
@@ -2097,6 +2097,13 @@ getitem(Widget *widget, Menu *menu, long y, int *ypos)
 	Item *item;
 
 	h = widget->shadowwid;
+	if (cantearoff(widget, menu)) {
+		if (y < h + widget->itemh) {
+			item = &tearoff;
+			goto done;
+		}
+		h += widget->itemh;
+	}
 	if (menu->overflow && y >= h && y < h + widget->itemh) {
 		item = &scrollup;
 		goto done;
@@ -2109,13 +2116,6 @@ getitem(Widget *widget, Menu *menu, long y, int *ypos)
 	}
 	if (menu->overflow)
 		h += widget->itemh;
-	if (cantearoff(widget, menu)) {
-		if (y < h + widget->itemh) {
-			item = &tearoff;
-			goto done;
-		}
-		h += widget->itemh;
-	}
 	for (item = menu->first; item != NULL; item = item->next) {
 		if (item->label == NULL) {
 			h += widget->itemh;
@@ -2154,7 +2154,7 @@ scroll(Widget *widget, bool down)
 	if (down)
 		rect.y = menu->geometry.height - widget->itemh - widget->shadowwid;
 	else
-		rect.y = widget->shadowwid;
+		rect.y = widget->shadowwid + widget->itemh;
 	rect.x = 0;
 	rect.width = menu->geometry.width;
 	rect.height = widget->itemh;
