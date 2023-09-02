@@ -225,7 +225,7 @@ typedef struct Widget {
 	Cursor cursor;
 	Menu *menus;
 	unsigned int fonth;
-	unsigned int itemh;
+	unsigned int itemh, separatorh;
 	int shadowwid, borderwid, iconsize, gap;
 	int maxitems;
 	bool initimlib;
@@ -586,6 +586,7 @@ setfont(Widget *widget, const char *facename, double facesize)
 	widget->fonth = ctrlfnt_height(fontset);
 	widget->itemh = widget->fonth + PADDING * 2;
 	widget->itemh = MAX(widget->itemh, MIN_HEIGHT);
+	widget->separatorh = widget->itemh / 2;
 }
 
 static void
@@ -1268,7 +1269,7 @@ drawdashline(Widget *widget, Picture picture, int width, int y)
 	int maxw;
 
 	x = widget->shadowwid + PADDING;
-	y += widget->itemh / 2;
+	y += widget->separatorh / 2;
 	w = 0;
 	maxw = width - widget->shadowwid * 2 - PADDING * 2;
 	while (w < maxw) {
@@ -1317,7 +1318,7 @@ drawseparator(Widget *widget, Picture picture, XRectangle *rect)
 		picture,
 		&widget->colors[SCHEME_SHADOW][COLOR_BOT].chans,
 		widget->shadowwid + PADDING,
-		rect->y + widget->itemh / 2 - 1,
+		rect->y + widget->separatorh / 2 - 1,
 		rect->width - widget->shadowwid * 2 - PADDING * 2,
 		1
 	);
@@ -1327,7 +1328,7 @@ drawseparator(Widget *widget, Picture picture, XRectangle *rect)
 		picture,
 		&widget->colors[SCHEME_SHADOW][COLOR_TOP].chans,
 		widget->shadowwid + PADDING,
-		rect->y + widget->itemh / 2,
+		rect->y + widget->separatorh / 2,
 		rect->width - widget->shadowwid * 2 - PADDING * 2,
 		1
 	);
@@ -1416,9 +1417,9 @@ firstitempos(Widget *widget, Menu *menu)
 
 	y = widget->shadowwid;
 	if (cantearoff(widget, menu))
-		y += widget->itemh;
+		y += widget->separatorh;
 	if (menu->overflow)
-		y += widget->itemh;
+		y += widget->separatorh;
 	return y;
 }
 
@@ -1639,6 +1640,7 @@ drawmenu(Widget *widget)
 	rect.width = menu->geometry.width;
 	for (item = menu->first; item != NULL; item = item->next) {
 		if (item->label == NULL) {
+			rect.height = widget->separatorh;
 			drawseparator(
 				widget,
 				canvas[CANVAS_NORMAL][LAYER_FG].picture,
@@ -1757,7 +1759,7 @@ next:
 				canvas[CANVAS_SELECT][LAYER_FG].picture,
 				menu->geometry.width, y
 			);
-			y += widget->itemh;
+			y += widget->separatorh;
 		}
 		if (menu->overflow) {
 			drawtriangle(
@@ -1765,7 +1767,7 @@ next:
 				canvas[i][LAYER_FG].picture,
 				widget->colors[i][COLOR_FG].pict,
 				menu->geometry.width / 2 - TRIANGLE_HEIGHT / 2,
-				y + widget->itemh /2 - TRIANGLE_WIDTH / 2,
+				y + widget->separatorh /2 - TRIANGLE_WIDTH / 2,
 				DIR_UP
 			);
 			drawtriangle(
@@ -1773,7 +1775,7 @@ next:
 				canvas[i][LAYER_FG].picture,
 				widget->colors[i][COLOR_FG].pict,
 				menu->geometry.width / 2 - TRIANGLE_HEIGHT / 2,
-				menu->geometry.height - widget->itemh /2
+				menu->geometry.height - widget->separatorh /2
 				- TRIANGLE_WIDTH / 2,
 				DIR_DOWN
 			);
@@ -1819,6 +1821,15 @@ next:
 static void
 drawselection(Widget *widget, Menu *menu, int ypos)
 {
+	int height;
+
+	if (menu->selected == NULL)
+		return;
+	if (menu->selected == &tearoff || menu->selected == &scrollup ||
+	    menu->selected == &scrolldown)
+		height = widget->separatorh;
+	else
+		height = widget->itemh;
 	menu->selposition = ypos;
 	XRenderFillRectangle(
 		widget->display,
@@ -1852,7 +1863,7 @@ drawselection(Widget *widget, Menu *menu, int ypos)
 			0, 0,
 			0, ypos,
 			menu->geometry.width,
-			widget->itemh
+			height
 		);
 	}
 	XSetWindowBackgroundPixmap(
@@ -1890,7 +1901,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 		xgap = widget->gap + widget->borderwid * 2;
 		ygap = -widget->shadowwid;
 		if (tearoff)
-			ygap -= widget->itemh;
+			ygap -= widget->separatorh;
 		(void)grab(widget);
 	} else {
 		caller = NULL;
@@ -1916,7 +1927,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 	menu->next = widget->menus;
 	menuh = widget->shadowwid * 2;
 	if (tearoff)
-		menuh += widget->itemh;
+		menuh += widget->separatorh;
 	menu->geometry.height = widget->shadowwid * 2;
 	nitems = 0;
 	menu->nicons = 0;
@@ -1931,7 +1942,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 			);
 		} else {
 			textw = 0;
-			menuh += widget->itemh;
+			menuh += widget->separatorh;
 		}
 		if (item->file != NULL) {
 			menu->hasicon = true;
@@ -1947,7 +1958,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 			menu->lastsave = menu->last = item->prev;
 			menu->overflow = true;
 		}
-		if (menuh + widget->itemh * 2 <= monitor->height) {
+		if (menuh + widget->separatorh * 2 <= monitor->height) {
 			menu->geometry.height = menuh;
 		} else {
 			menu->lastsave = menu->last = item->prev;
@@ -1965,7 +1976,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 
 	/* place menu to align with parent menu and be visible on monitor */
 	if (menu->overflow && widget->menus != NULL)
-		ygap -= widget->itemh;
+		ygap -= widget->separatorh;
 	menu->geometry.x = monitor->x;
 	menu->geometry.y = monitor->y;
 	if (monitor->x + monitor->width - (basis->x + basis->width + xgap)
@@ -2098,27 +2109,27 @@ getitem(Widget *widget, Menu *menu, long y, int *ypos)
 
 	h = widget->shadowwid;
 	if (cantearoff(widget, menu)) {
-		if (y < h + widget->itemh) {
+		if (y < h + widget->separatorh) {
 			item = &tearoff;
 			goto done;
 		}
-		h += widget->itemh;
+		h += widget->separatorh;
 	}
-	if (menu->overflow && y >= h && y < h + widget->itemh) {
+	if (menu->overflow && y >= h && y < h + widget->separatorh) {
 		item = &scrollup;
 		goto done;
 	}
-	if (menu->overflow && y >= menu->geometry.height - widget->itemh &&
+	if (menu->overflow && y >= menu->geometry.height - widget->separatorh &&
 	    y < menu->geometry.height) {
-		h = menu->geometry.height - widget->itemh;
+		h = menu->geometry.height - widget->separatorh;
 		item = &scrolldown;
 		goto done;
 	}
 	if (menu->overflow)
-		h += widget->itemh;
+		h += widget->separatorh;
 	for (item = menu->first; item != NULL; item = item->next) {
 		if (item->label == NULL) {
-			h += widget->itemh;
+			h += widget->separatorh;
 			continue;
 		}
 		if (y >= h && y < (long)h + widget->itemh)
@@ -2152,12 +2163,12 @@ scroll(Widget *widget, bool down)
 	if ((menu = widget->menus) == NULL)
 		return;
 	if (down)
-		rect.y = menu->geometry.height - widget->itemh - widget->shadowwid;
+		rect.y = menu->geometry.height - widget->separatorh - widget->shadowwid;
 	else
-		rect.y = widget->shadowwid + widget->itemh;
+		rect.y = widget->shadowwid + widget->separatorh;
 	rect.x = 0;
 	rect.width = menu->geometry.width;
-	rect.height = widget->itemh;
+	rect.height = widget->separatorh;
 	for (;;) {
 		if (XPending(widget->display) > 0)
 			break;
@@ -2487,6 +2498,8 @@ gohome:
 			if (menu->overflow && item == last) {
 				first = first->next;
 				last = last->next;
+			} else if (item->label == NULL) {
+				ypos += widget->separatorh;
 			} else {
 				ypos += widget->itemh;
 			}
@@ -2522,8 +2535,10 @@ gohome:
 				first = first->prev;
 				last = last->prev;
 				ypos = firstitempos(widget, menu);
+			} else if (item->label == NULL) {
+				ypos += widget->separatorh;
 			} else {
-				ypos -= widget->itemh;
+				ypos += widget->itemh;
 			}
 		}
 		/* fallthrough */
@@ -2544,6 +2559,8 @@ gohome:
 			if (menu->overflow && item == last) {
 				first = first->next;
 				last = last->next;
+			} else if (item->label == NULL) {
+				ypos += widget->separatorh;
 			} else {
 				ypos += widget->itemh;
 			}
