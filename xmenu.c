@@ -2536,9 +2536,9 @@ gohome:
 				last = last->prev;
 				ypos = firstitempos(widget, menu);
 			} else if (item->label == NULL) {
-				ypos += widget->separatorh;
+				ypos -= widget->separatorh;
 			} else {
-				ypos += widget->itemh;
+				ypos -= widget->itemh;
 			}
 		}
 		/* fallthrough */
