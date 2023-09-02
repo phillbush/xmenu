@@ -533,7 +533,7 @@ allocitem(const char *label, const char *output, char *file)
 		item->labellen = strlen(item->label);
 		if (label == output) {
 			item->output = item->label;
-		} else {
+		} else if (output != NULL) {
 			item->output = estrdup(output);
 		}
 	}
@@ -1037,6 +1037,8 @@ parsestdin(void)
 			while (*output == '\t')
 				output++;
 		}
+		if (output != NULL && strcmp(output, ":") == 0)
+			output = NULL;
 
 		if (label != NULL && prev != NULL && prev->label != NULL &&
 		    level == prevlvl && strcmp(label, "''") == 0) {
@@ -1713,32 +1715,87 @@ drawmenu(Widget *widget)
 			textx = rect.x + (menu->geometry.width - textw) / 2;
 		else
 			textx = rect.x;
-		ctrlfnt_draw(
-			widget->fontset,
-			canvas[CANVAS_NORMAL][LAYER_FG].picture,
-			widget->colors[SCHEME_NORMAL][COLOR_FG].pict,
-			(XRectangle){
-				.x = textx,
-				.y = rect.y,
-				.width = rect.width,
-				.height = rect.height,
-			},
-			item->label,
-			item->labellen
-		);
-		ctrlfnt_draw(
-			widget->fontset,
-			canvas[CANVAS_SELECT][LAYER_FG].picture,
-			widget->colors[SCHEME_SELECT][COLOR_FG].pict,
-			(XRectangle){
-				.x = textx,
-				.y = rect.y,
-				.width = rect.width,
-				.height = rect.height,
-			},
-			item->label,
-			item->labellen
-		);
+		if (item->output != NULL) {
+			ctrlfnt_draw(
+				widget->fontset,
+				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				widget->colors[SCHEME_NORMAL][COLOR_FG].pict,
+				(XRectangle){
+					.x = textx,
+					.y = rect.y,
+					.width = rect.width,
+					.height = rect.height,
+				},
+				item->label,
+				item->labellen
+			);
+			ctrlfnt_draw(
+				widget->fontset,
+				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				widget->colors[SCHEME_SELECT][COLOR_FG].pict,
+				(XRectangle){
+					.x = textx,
+					.y = rect.y,
+					.width = rect.width,
+					.height = rect.height,
+				},
+				item->label,
+				item->labellen
+			);
+		} else {
+			ctrlfnt_draw(
+				widget->fontset,
+				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				widget->colors[SCHEME_SHADOW][COLOR_TOP].pict,
+				(XRectangle){
+					.x = textx + 1,
+					.y = rect.y + 1,
+					.width = rect.width,
+					.height = rect.height,
+				},
+				item->label,
+				item->labellen
+			);
+			ctrlfnt_draw(
+				widget->fontset,
+				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				widget->colors[SCHEME_SHADOW][COLOR_BOT].pict,
+				(XRectangle){
+					.x = textx,
+					.y = rect.y,
+					.width = rect.width,
+					.height = rect.height,
+				},
+				item->label,
+				item->labellen
+			);
+			ctrlfnt_draw(
+				widget->fontset,
+				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				widget->colors[SCHEME_SHADOW][COLOR_TOP].pict,
+				(XRectangle){
+					.x = textx + 1,
+					.y = rect.y + 1,
+					.width = rect.width,
+					.height = rect.height,
+				},
+				item->label,
+				item->labellen
+			);
+			ctrlfnt_draw(
+				widget->fontset,
+				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				widget->colors[SCHEME_SHADOW][COLOR_BOT].pict,
+				(XRectangle){
+					.x = textx,
+					.y = rect.y,
+					.width = rect.width,
+					.height = rect.height,
+				},
+				item->label,
+				item->labellen
+			);
+		}
 next:
 		rect.y += rect.height;
 		if (menu->overflow &&
@@ -2131,6 +2188,10 @@ getitem(Widget *widget, Menu *menu, long y, int *ypos)
 	for (item = menu->first; item != NULL; item = item->next) {
 		if (item->label == NULL) {
 			h += widget->separatorh;
+			continue;
+		}
+		if (item->output == NULL) {
+			h += widget->itemh;
 			continue;
 		}
 		if (y >= h && y < (long)h + widget->itemh)
