@@ -215,7 +215,6 @@ typedef struct Widget {
 	int depth;
 	int screen;
 	int fd;
-	jmp_buf jmpenv;
 	Window rootwin;
 	Window window;
 	struct timespec lasttime;
@@ -250,6 +249,7 @@ typedef struct Widget {
 	} application, resources[NRESOURCES];
 } Widget;
 
+static jmp_buf jmpenv;
 static Options options = { 0 };
 static Item tearoff = { .label = "tearoff" };
 static Item scrollup = { .label = "scrollup" };
@@ -2221,7 +2221,7 @@ forkandtearoff(Widget *widget, Menu *menu)
 		options.geometry.width = 0;
 		options.geometry.height = 0;
 		cleanitems(options.items, menu->first);
-		longjmp(widget->jmpenv, 1);
+		longjmp(jmpenv, 1);
 		exit(EXIT_FAILURE);
 	}
 	closepopups(widget);
@@ -2636,9 +2636,9 @@ run(Widget *widget, XRectangle *geometry)
 			return;
 	popupmenu(widget, options.items, geometry);
 	while (!XNextEvent(widget->display, &xev)) {
-		if (xev.type < LASTEvent && xevents[xev.type] != NULL) {
-			(*xevents[xev.type])(widget, &xev);
-		}
+		if (xev.type >= LASTEvent || xevents[xev.type] == NULL)
+			continue;
+		(*xevents[xev.type])(widget, &xev);
 		if (widget->menus == NULL) {
 			break;
 		}
@@ -2698,7 +2698,7 @@ main(int argc, char *argv[])
 		warnx("no menu generated");
 		goto error;
 	}
-	(void)setjmp(widget.jmpenv);
+	(void)setjmp(jmpenv);
 	if (options.userplaced)
 		geometry = options.geometry;
 	for (i = 0; i < LEN(initsteps); i++)
