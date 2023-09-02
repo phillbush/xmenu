@@ -57,9 +57,10 @@
 	X(_NET_WM_WINDOW_TYPE_POPUP_MENU)
 
 #define RESOURCES                                                         \
+	/* ENUM          CLASS                   NAME                  */ \
 	/* deprecated resources                                        */ \
-	X(_SELECT_BG,   "Selbackground",        "selbackground"         ) \
-	X(_SELECT_FG,   "Selforeground",        "selforeground"         ) \
+	X(_SELECT_BG,   "Background",           "selbackground"         ) \
+	X(_SELECT_FG,   "Foreground",           "selforeground"         ) \
 	X(_BORDER,      "Border",               "border"                ) \
 	X(_SEPARAT,     "Separator",            "separator"             ) \
 	X(_TEAROFF,     "TearOffModel",         "tearOffModel"          ) \
@@ -75,8 +76,8 @@
 	X(NORMAL_BG,    "Background",           "background"            ) \
 	X(NORMAL_FG,    "Foreground",           "foreground"            ) \
 	X(OPACITY,      "Opacity",              "opacity"               ) \
-	X(SELECT_BG,    "ActiveBackground",     "activeBackground"      ) \
-	X(SELECT_FG,    "ActiveForeground",     "activeForeground"      ) \
+	X(SELECT_BG,    "Background",           "activeBackground"      ) \
+	X(SELECT_FG,    "Foreground",           "activeForeground"      ) \
 	X(SEPARAT_CLR,  "SeparatorColor",       "separatorColor"        ) \
 	X(SHADOW_BOT,   "BottomShadowColor",    "bottomShadowColor"     ) \
 	X(SHADOW_MID,   "MiddleShadowColor",    "middleShadowColor"     ) \
@@ -214,6 +215,7 @@ typedef struct Widget {
 	int depth;
 	int screen;
 	int fd;
+	jmp_buf jmpenv;
 	Window rootwin;
 	Window window;
 	struct timespec lasttime;
@@ -248,7 +250,6 @@ typedef struct Widget {
 	} application, resources[NRESOURCES];
 } Widget;
 
-static jmp_buf jmpenv;
 static Options options = { 0 };
 static Item tearoff = { .label = "tearoff" };
 static Item scrollup = { .label = "scrollup" };
@@ -257,8 +258,11 @@ static Item scrolldown = { .label = "scrolldown" };
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-fw] [-N name] "
-	              "[-p position] [-t window] [-x button]\n");
+	(void)fprintf(
+		stderr,
+		"usage: xmenu [-fw] [-N name] "
+		"[-p position] [-t window] [-x button]\n"
+	);
 	exit(EXIT_FAILURE);
 }
 
@@ -2217,7 +2221,7 @@ forkandtearoff(Widget *widget, Menu *menu)
 		options.geometry.width = 0;
 		options.geometry.height = 0;
 		cleanitems(options.items, menu->first);
-		longjmp(jmpenv, 1);
+		longjmp(widget->jmpenv, 1);
 		exit(EXIT_FAILURE);
 	}
 	closepopups(widget);
@@ -2694,7 +2698,7 @@ main(int argc, char *argv[])
 		warnx("no menu generated");
 		goto error;
 	}
-	(void)setjmp(jmpenv);
+	(void)setjmp(widget.jmpenv);
 	if (options.userplaced)
 		geometry = options.geometry;
 	for (i = 0; i < LEN(initsteps); i++)
