@@ -36,6 +36,7 @@
 #define MAX(a, b)               ((a)>(b)?(a):(b))
 #define MIN(a, b)               ((a)<(b)?(a):(b))
 #define FLAG(f, b)              (((f) & (b)) == (b))
+#define ACTION_BTNS             (Button1Mask|Button3Mask)
 #define MAXPATHS                32
 #define RETURN_FAILURE          (-1)
 #define RETURN_SUCCESS          0
@@ -2614,19 +2615,18 @@ xmotion(Widget *widget, XEvent *xev)
 	if (menu == NULL)
 		return;
 	item = getitem(widget, menu, xevent->y, &ypos);
-	if (item == &scrollup || item == &scrolldown) {
+	if (item == &scrollup || item == &scrolldown)
 		scroll(widget, item == &scrolldown);
-	}
 	if (item == menu->selected)
 		return;
 	if (item == NULL)
 		ypos = -1;
 	menu->selected = item;
 	drawselection(widget, menu, ypos);
-	if (item != NULL && xevent->state & (Button1Mask|Button3Mask)) {
+	if (item != NULL && xevent->state & ACTION_BTNS) {
 		while (widget->menus != menu)
 			delmenu(widget);
-		if (item->children != NULL) {
+		if (openssubmenu(item)) {
 			openitem(widget, item, ypos, false);
 		}
 	}
