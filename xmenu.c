@@ -640,6 +640,29 @@ getresource(Widget *widget, XrmDatabase xdb, enum Resource resource)
 	return NULL;
 }
 
+static char *
+gettextprop(Display *dpy, Window win, Atom atom)
+{
+	XTextProperty tprop = { .value = NULL };
+	int count;
+	char **list = NULL;
+	char *s = NULL;
+
+	if (!XGetTextProperty(dpy, win, &tprop, atom))
+		goto error;
+	if (tprop.nitems == 0)
+		goto error;
+	if (XmbTextPropertyToTextList(dpy, &tprop, &list, &count) != Success)
+		goto error;
+	if (count < 1 || list == NULL || *list == NULL)
+		goto error;
+	s = strdup(list[0]);
+error:
+	XFreeStringList(list);
+	XFree(tprop.value);
+	return s;
+}
+
 static void
 loadresources(Widget *widget, const char *str)
 {
@@ -854,6 +877,7 @@ initxconn(Widget *widget)
 	XInternAtoms(widget->display, atomnames, NATOMS, False, widget->atoms);
 	widget->screen = DefaultScreen(widget->display);
 	widget->rootwin = DefaultRootWindow(widget->display);
+	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
 	if (options.rootmode) {
 		XGrabButton(
 			widget->display,
@@ -1558,9 +1582,8 @@ openssubmenu(Item *item)
 }
 
 static void
-drawmenu(Widget *widget)
+drawmenu(Widget *widget, Menu *menu)
 {
-	Menu *menu;
 	Item *item;
 	size_t i, j;
 	Imlib_Image image;
@@ -1568,8 +1591,6 @@ drawmenu(Widget *widget)
 	int textx, textw, iconw, iconh, y;
 	struct Canvas canvas[CANVAS_FINAL][LAYER_LAST];
 
-	if ((menu = widget->menus) == NULL)
-		return;
 	for (i = 0; i < CANVAS_LAST; i++) {
 		if (menu->canvas[i].picture != None) {
 			XRenderFreePicture(
@@ -1959,7 +1980,7 @@ selitem(Widget *widget, Menu *menu, Item *from, Item *first, Item *last, int ypo
 			}
 			if (dir != SEL_LAST) {
 				menu->selected = item;
-				drawmenu(widget);
+				drawmenu(widget, menu);
 				commitdraw(widget, menu, ypos);
 				return true;
 			}
@@ -1979,11 +2000,11 @@ selitem(Widget *widget, Menu *menu, Item *from, Item *first, Item *last, int ypo
 	}
 	if (dir == SEL_LAST && prev != NULL) {
 		menu->selected = prev;
-		drawmenu(widget);
+		drawmenu(widget, menu);
 		commitdraw(widget, menu, prevypos);
 		return true;
 	} else {
-		drawmenu(widget);
+		drawmenu(widget, menu);
 		commitdraw(widget, menu, -1);
 		return false;
 	}
@@ -2179,7 +2200,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 	);
 
 	widget->menus = menu;
-	drawmenu(widget);
+	drawmenu(widget, menu);
 	if (caller != NULL)
 		selfirst(widget, menu);
 	else
@@ -2332,7 +2353,7 @@ scroll(Widget *widget, bool down)
 				menu->first = menu->first->prev;
 				menu->last = menu->last->prev;
 			}
-			drawmenu(widget);
+			drawmenu(widget, menu);
 			commitdraw(widget, menu, rect.y);
 			XFlush(widget->display);
 			if (ret == 0)
@@ -2559,7 +2580,7 @@ xconfigurenotify(Widget *widget, XEvent *xev)
 	menu->geometry.height = xevent->height;
 	if (width == menu->geometry.width && height == menu->geometry.height)
 		return;
-	drawmenu(widget);
+	drawmenu(widget, menu);
 	if (menu->selected != NULL) {
 		commitdraw(widget, menu, menu->selposition);
 	}
@@ -2701,18 +2722,48 @@ xmotion(Widget *widget, XEvent *xev)
 }
 
 static void
+xproperty(Widget *widget, XEvent *xev)
+{
+	XPropertyEvent *xevent;
+	Menu *menu;
+	char *str;
+
+	xevent = (XPropertyEvent *)xev;
+	if (xevent->state != PropertyNewValue)
+		return;
+	if (xevent->window != widget->rootwin)
+		return;
+	if (xevent->atom != XA_RESOURCE_MANAGER)
+		return;
+	str = gettextprop(
+		widget->display,
+		widget->rootwin,
+		XA_RESOURCE_MANAGER
+	);
+	if (str == NULL)
+		return;
+	loadresources(widget, str);
+	free(str);
+	for (menu = widget->menus; menu != NULL; menu = menu->next) {
+		drawmenu(widget, menu);
+		commitdraw(widget, menu, menu->selposition);
+	}
+}
+
+static void
 run(Widget *widget, XRectangle *geometry)
 {
 	XEvent xev;
 	static void (*xevents[LASTEvent])(Widget *, XEvent *) = {
-		[LeaveNotify]           = xleave,
 		[ButtonPress]           = xbuttonpress,
 		[ButtonRelease]         = xbuttonrelease,
-		[ConfigureNotify]       = xconfigurenotify,
 		[ClientMessage]         = xclientmessage,
-		[KeyPress]              = xkeypress,
-		[MotionNotify]          = xmotion,
+		[ConfigureNotify]       = xconfigurenotify,
 		[DestroyNotify]         = xdestroy,
+		[KeyPress]              = xkeypress,
+		[LeaveNotify]           = xleave,
+		[MotionNotify]          = xmotion,
+		[PropertyNotify]        = xproperty,
 	};
 
 	getposition(widget, geometry);
