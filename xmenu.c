@@ -2467,6 +2467,7 @@ openitem(Widget *widget, Item *item, int ypos, bool alt)
 			return;
 		popupmenu(widget, items, &rect);
 		widget->menus->directory = true;
+		widget->menus->items = items;
 	} else if (item->output != NULL) {
 		printitem(widget, item->output);
 	}
