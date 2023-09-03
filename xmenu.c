@@ -2719,13 +2719,11 @@ run(Widget *widget, XRectangle *geometry)
 		if (grab(widget) == RETURN_FAILURE)
 			return;
 	popupmenu(widget, options.items, geometry);
-	while (!XNextEvent(widget->display, &xev)) {
+	while (widget->menus != NULL) {
+		(void)XNextEvent(widget->display, &xev);
 		if (xev.type >= LASTEvent || xevents[xev.type] == NULL)
 			continue;
 		(*xevents[xev.type])(widget, &xev);
-		if (widget->menus == NULL) {
-			break;
-		}
 	}
 }
 
