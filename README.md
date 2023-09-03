@@ -15,9 +15,12 @@ spawn xmenu by right clicking on the root window (i.e. on the desktop).
 ## Options
 XMenu understand the following command-line options.
 
+* `-f`:           Enable file system navigation.
 * `-N name`:      Specify a resource/instance name for XMenu.
 * `-p position`:  Specify a position to place XMenu.
+* `-t window`:    Bind XMenu to given window.
 * `-w`:           Initiate XMenu as a regular window.
+* `-x button`:    Run XMenu whenever button is pressed on root window.
 
 ## Environment
 XMenu understands the following environment variable.
