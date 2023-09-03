@@ -100,6 +100,13 @@
 #define DEF_ALIGNMENT   ALIGN_LEFT
 
 enum {
+	SEL_FIRST,
+	SEL_PREV,
+	SEL_NEXT,
+	SEL_LAST,
+};
+
+enum {
 	SCHEME_NORMAL,
 	SCHEME_SELECT,
 	SCHEME_SHADOW,
@@ -1932,6 +1939,68 @@ drawselection(Widget *widget, Menu *menu, int ypos)
 	XClearWindow(widget->display, menu->window);
 }
 
+static bool
+selitem(Widget *widget, Menu *menu, Item *from, Item *first, Item *last, int ypos, int dir)
+{
+	Item *item, *prev;
+	int prevypos;
+
+	prev = NULL;
+	for (item = from;
+	     item != NULL;
+	     item = (dir == SEL_PREV) ? item->prev : item->next) {
+		if (item->label != NULL && item->output != NULL &&
+		    (item != menu->selected || dir == SEL_LAST || dir == SEL_FIRST)) {
+			prev = item;
+			prevypos = ypos;
+			if (menu->first != first) {
+				menu->first = first;
+				menu->last = last;
+			}
+			if (dir != SEL_LAST) {
+				menu->selected = item;
+				drawmenu(widget);
+				drawselection(widget, menu, ypos);
+				return true;
+			}
+		}
+		if ((dir == SEL_PREV) && menu->overflow && item == first) {
+			first = first->prev;
+			last = last->prev;
+				ypos = firstitempos(widget, menu);
+		} else if (menu->overflow && item == last) {
+			first = first->next;
+			last = last->next;
+		} else if (item->label == NULL) {
+			ypos += ((dir == SEL_PREV) ? -1 : 1) * widget->separatorh;
+		} else {
+			ypos += ((dir == SEL_PREV) ? -1 : 1) * widget->itemh;
+		}
+	}
+	if (dir == SEL_LAST && prev != NULL) {
+		menu->selected = prev;
+		drawmenu(widget);
+		drawselection(widget, menu, prevypos);
+		return true;
+	} else {
+		drawmenu(widget);
+		drawselection(widget, menu, -1);
+		return false;
+	}
+}
+
+static void
+selfirst(Widget *widget, Menu *menu)
+{
+	(void)selitem(
+		widget, menu,
+		menu->items, menu->items,
+		menu->lastsave,
+		firstitempos(widget, menu),
+		SEL_FIRST
+	);
+}
+
 static void
 popupmenu(Widget *widget, Item *items, XRectangle *basis)
 {
@@ -2111,6 +2180,10 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 
 	widget->menus = menu;
 	drawmenu(widget);
+	if (caller != NULL)
+		selfirst(widget, menu);
+	else
+		drawselection(widget, menu, -1);
 	XMapRaised(widget->display, menu->window);
 }
 
@@ -2519,9 +2592,8 @@ xkeypress(Widget *widget, XEvent *xev)
 	XKeyEvent *xevent;
 	KeySym ksym;
 	Menu *menu;
-	Item *item, *last, *first, *start, *prev;
-	int ypos, prevpos;
-	bool secondtry = false;
+	Item *last, *first, *start;
+	int ypos;
 
 	if ((menu = widget->menus) == NULL)
 		return;
@@ -2543,95 +2615,29 @@ xkeypress(Widget *widget, XEvent *xev)
 	case XK_Tab:
 		first = menu->first;
 		last = menu->last;
-		start = menu->selected;
+		start = menu->selected->next;
 		ypos = menu->selposition;
-gohome:
-		for (item = start; item != NULL; item = item->next) {
-			if (item->label != NULL && item != menu->selected) {
-				menu->selected = item;
-				if (menu->first != first) {
-					menu->first = first;
-					menu->last = last;
-					drawmenu(widget);
-				}
-				drawselection(widget, menu, ypos);
-				return;
-			}
-			if (menu->overflow && item == last) {
-				first = first->next;
-				last = last->next;
-			} else if (item->label == NULL) {
-				ypos += widget->separatorh;
-			} else {
-				ypos += widget->itemh;
-			}
-		}
+		if (selitem(widget, menu, start, first, last, ypos, SEL_NEXT))
+			break;
 		/* fallthrough */
 	case XK_Home:
-		if (secondtry)
-			break;
-		menu->selected = NULL;
-		first = menu->items;
-		last = menu->lastsave;
-		secondtry = true;
-		start = menu->items;
-		ypos = firstitempos(widget, menu);
-		goto gohome;
+		selfirst(widget, menu);
+		break;
 	case XK_ISO_Left_Tab:
 	case XK_Up:
 		first = menu->first;
 		last = menu->last;
+		start = menu->selected->prev;
 		ypos = menu->selposition;
-		for (item = menu->selected; item != NULL; item = item->prev) {
-			if (item->label != NULL && item != menu->selected) {
-				menu->selected = item;
-				if (menu->first != first) {
-					menu->first = first;
-					menu->last = last;
-					drawmenu(widget);
-				}
-				drawselection(widget, menu, ypos);
-				return;
-			}
-			if (menu->overflow && item == first) {
-				first = first->prev;
-				last = last->prev;
-				ypos = firstitempos(widget, menu);
-			} else if (item->label == NULL) {
-				ypos -= widget->separatorh;
-			} else {
-				ypos -= widget->itemh;
-			}
-		}
+		if (selitem(widget, menu, start, first, last, ypos, SEL_PREV))
+			break;
 		/* fallthrough */
 	case XK_End:
 		first = menu->items;
+		start = menu->items;
 		last = menu->lastsave;
-		prevpos = ypos = firstitempos(widget, menu);
-		prev = NULL;
-		for (item = menu->items; item != NULL; item = item->next) {
-			if (item->label != NULL && item != menu->selected) {
-				prev = item;
-				prevpos = ypos;
-				menu->first = first;
-				menu->last = last;
-			}
-			if (last->next == NULL)
-				break;
-			if (menu->overflow && item == last) {
-				first = first->next;
-				last = last->next;
-			} else if (item->label == NULL) {
-				ypos += widget->separatorh;
-			} else {
-				ypos += widget->itemh;
-			}
-		}
-		if (prev != NULL) {
-			menu->selected = prev;
-			drawmenu(widget);
-			drawselection(widget, menu, prevpos);
-		}
+		ypos = firstitempos(widget, menu);
+		(void)selitem(widget, menu, start, first, last, ypos, SEL_LAST);
 		break;
 	case XK_Left:
 		if (menu->next == NULL)
