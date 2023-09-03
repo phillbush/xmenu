@@ -1884,7 +1884,7 @@ next:
 }
 
 static void
-drawselection(Widget *widget, Menu *menu, int ypos)
+commitdraw(Widget *widget, Menu *menu, int ypos)
 {
 	int height;
 
@@ -1960,7 +1960,7 @@ selitem(Widget *widget, Menu *menu, Item *from, Item *first, Item *last, int ypo
 			if (dir != SEL_LAST) {
 				menu->selected = item;
 				drawmenu(widget);
-				drawselection(widget, menu, ypos);
+				commitdraw(widget, menu, ypos);
 				return true;
 			}
 		}
@@ -1980,11 +1980,11 @@ selitem(Widget *widget, Menu *menu, Item *from, Item *first, Item *last, int ypo
 	if (dir == SEL_LAST && prev != NULL) {
 		menu->selected = prev;
 		drawmenu(widget);
-		drawselection(widget, menu, prevypos);
+		commitdraw(widget, menu, prevypos);
 		return true;
 	} else {
 		drawmenu(widget);
-		drawselection(widget, menu, -1);
+		commitdraw(widget, menu, -1);
 		return false;
 	}
 }
@@ -2183,7 +2183,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 	if (caller != NULL)
 		selfirst(widget, menu);
 	else
-		drawselection(widget, menu, -1);
+		commitdraw(widget, menu, -1);
 	XMapRaised(widget->display, menu->window);
 }
 
@@ -2333,7 +2333,7 @@ scroll(Widget *widget, bool down)
 				menu->last = menu->last->prev;
 			}
 			drawmenu(widget);
-			drawselection(widget, menu, rect.y);
+			commitdraw(widget, menu, rect.y);
 			XFlush(widget->display);
 			if (ret == 0)
 				break;
@@ -2560,7 +2560,7 @@ xconfigurenotify(Widget *widget, XEvent *xev)
 		return;
 	drawmenu(widget);
 	if (menu->selected != NULL) {
-		drawselection(widget, menu, menu->selposition);
+		commitdraw(widget, menu, menu->selposition);
 	}
 }
 
@@ -2666,7 +2666,7 @@ xleave(Widget *widget, XEvent *xev)
 	if (menu != widget->menus)
 		return;
 	menu->selected = NULL;
-	drawselection(widget, menu, -1);
+	commitdraw(widget, menu, -1);
 }
 
 static void
@@ -2689,7 +2689,7 @@ xmotion(Widget *widget, XEvent *xev)
 	if (item == NULL)
 		ypos = -1;
 	menu->selected = item;
-	drawselection(widget, menu, ypos);
+	commitdraw(widget, menu, ypos);
 	if (item != NULL && xevent->state & ACTION_BTNS) {
 		while (widget->menus != menu)
 			delmenu(widget);
