@@ -82,6 +82,14 @@ An example style configurationcanbe found at `./examples/Xresources`.
 Run `make all` to build, and `make install` to install the binary and
 the manual into `${PREFIX}` (`/usr/local`).
 
+### on Debian 12
+```
+sudo apt install libx11-dev libxft-dev libxinerama-dev libimlib2-dev
+make
+make install
+```
+
+
 ## Features
 
 * XMenu reads something in and prints something out, the UNIX way.
