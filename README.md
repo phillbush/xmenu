@@ -58,22 +58,22 @@ An example script can be found at `./examples/xmenu.sh`.
 XMenu can be customized by setting the following X resources before
 invoking XMenu.
 
-* `XMenu.activeBackground`: Background color for selected entry.
-* `XMenu.activeForeground`: Text color for selected enty.
-* `XMenu.alignment`:        Text alignment.
-* `XMenu.background`:       Background color.
-* `XMenu.borderColor`:      Border color.
-* `XMenu.borderWidth`:      Border size.
-* `XMenu.faceName`:         Font for drawing text.
-* `XMenu.faceSize`:         Font size.
-* `XMenu.foreground`:       Text color.
-* `XMenu.gap`:              Gap between windows.
-* `XMenu.maxItems`:         Maximum number of items displayed on a menu.
-* `XMenu.opacity`:          Background opacity (from 0.0 to 1.0).
-* `XMenu.separatorColor`:   Separator color.
-* `XMenu.shadowThickness`:  3D relief size.
-* `XMenu.tearOff`:          Enable menus to be torn off.
-* `XMenu.topShadowColor`, `XMenu.middleShadowColor`, `XMenu.bottomShadowColor`:
+* `xmenu.activeBackground`: Background color for selected entry.
+* `xmenu.activeForeground`: Text color for selected enty.
+* `xmenu.alignment`:        Text alignment.
+* `xmenu.background`:       Background color.
+* `xmenu.borderColor`:      Border color.
+* `xmenu.borderWidth`:      Border size.
+* `xmenu.faceName`:         Font for drawing text.
+* `xmenu.faceSize`:         Font size.
+* `xmenu.foreground`:       Text color.
+* `xmenu.gap`:              Gap between windows.
+* `xmenu.maxItems`:         Maximum number of items displayed on a menu.
+* `xmenu.opacity`:          Background opacity (from 0.0 to 1.0).
+* `xmenu.separatorColor`:   Separator color.
+* `xmenu.shadowThickness`:  3D relief size.
+* `xmenu.tearOff`:          Enable menus to be torn off.
+* `xmenu.topShadowColor`, `xmenu.middleShadowColor`, `xmenu.bottomShadowColor`:
   Colors of the 3D relief.
 
 An example style configurationcanbe found at `./examples/Xresources`.
