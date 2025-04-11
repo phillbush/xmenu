@@ -2848,13 +2848,13 @@ run(Widget *widget, XRectangle *geometry)
 		[PropertyNotify]        = xproperty,
 	};
 
-	getposition(widget, geometry);
 	if (!options.windowed) {
 		if (grabpointer(widget) == RETURN_FAILURE)
 			return RETURN_FAILURE;
 		if (grabkeyboard(widget) == RETURN_FAILURE)
 			return RETURN_FAILURE;
 	}
+	getposition(widget, geometry);
 	popupmenu(widget, options.items, geometry, true);
 	while (widget->menus != NULL) {
 		(void)XNextEvent(widget->display, &xev);
