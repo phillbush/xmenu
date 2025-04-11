@@ -1,9 +1,9 @@
-.Dd July 9, 2023
+.Dd April 11, 2025
 .Dt XMENU 1
 .Os
 .Sh NAME
 .Nm xmenu
-.Nd menu utility for X
+.Nd desktop menu for X11
 .Sh SYNOPSIS
 .Nm xmenu
 .Op Fl fw
@@ -14,8 +14,8 @@
 .Op Ar title
 .Sh DESCRIPTION
 .Nm
-is a menu for X.
-It reads a list of newline-separateditems from standard input;
+is a desktop menu for X11.
+It reads a list of newline-separated items from standard input;
 shows a menu for the user to select one of the items;
 and writes the selected item into standard output.
 .Pp
@@ -28,65 +28,98 @@ any menu item whose output begins with a slash is interpreted as the path to a d
 Entering this item will open a menu containing the entries of that directory,
 so the user can navigate the contents of the directory with
 .Nm .
-When an item is selected, its absolute path is output prefixed with
+If an item is selected, its absolute path is output prefixed with
 .Qq Ic "file:" .
 A directory's path can be output by selecting it with the middle mouse button.
-.It Fl N Ar name
-Specifiy the
-.Ic res_name
-member of the
-.Xr XClassHint 3
-property.
-Ar name
-is used to retrieve resources.
-If not specified, defaults to the command that
-.Nm
-was invoked as
-(that is, the
-.Xr basename 3
-of its
-.Ic "argv[0]" ) .
-.It Fl p Ar position
+.It Fl N Ar NAME
+Specifiy the application name under which resources are to be obtained,
+rather than the execultable file name.
+.Ar NAME
+should not contain
+.Dq ".\&"
+or
+.Dq "*\&"
+characters.
+.It Fl p Ar POSITION
 Set the position to spawn
 .Nm .
 Without this option,
 .Nm
 spawns next to the cursor.
-Position is a string of the form
-.Cm "GEOMETRY[:MONITOR]" ,
-where
-.Cm GEOMETRY
-is a geometry parsed by
-.Xr XParseGeometry 3 .
-.Cm MONITOR
-is the number of the monitor the geometry is relative to (counting from 0);
-it can instead be a string like
+.Ar POSITION
+is a string of the form
+.Cm "±" Ns Ar "X" Ns Oo Cm "%" Oc Ns Cm "±" Ns Ar "Y" Ns Oo Cm "%" Oc Ns Oo Cm "@" Ns Ar MONITOR Oc .
+The
+.Ar X
+and
+.Ar Y
+arguments, and the plus or minus sign preceding them, are obligatory.
+The percent signs, and the part from the at-sign to the end are optional.
+.Bl -bullet -compact -width ""
+.It
+If
+.Ar X
+.Po
+or
+.Ar Y
+.Pc
+is preceded by a plus sign
+.Ar "+\&" ,
+position is from the left (or top) edge of the screen.
+.It
+If
+.Ar X
+.Po
+or
+.Ar Y
+.Pc
+is preceded by a minus sign
+.Ar "-\&" ,
+position is from the right (or bottom) edge.
+.It
+If
+.Ar X
+.Po
+or
+.Ar Y
+.Pc
+is followed by a percent sign
+.Pq Qq Cm "%" ,
+position of the center of the root menu is relative to the width (or height) of the screen.
+With no percent sign,
+position of the left (or top) corner of the menu is relative to the left (or top) corner of the screen.
+.It
+If
+.Ar MONITOR
+is specified and is a number, position is relative to the given monitor number (counting from 0),
+rather than relative to the entire X screen.
+.Ar MONITOR
+can instead be
 .Qq Cm current
 or
 .Qq Cm cursor ,
-specifyingthe monitor where the cursor is on.
-.It Fl t Ar window
+specifying the monitor where the cursor is on.
+.El
+.It Fl t Ar WINDOW
 Make the menu windows transient for the given
-.Ar window .
+.Ar WINDOW .
 That is, notify the window manager that the menus are bound to the given
-.Ar window .
+.Ar WINDOW .
 This also makes
 .Nm
 close when the
-.Ar window
+.Ar WINDOW
 is destroyed.
 .It Fl w
 Asks the window manager to draw a border around the menu.
 This makes
 .Nm
 start torn off.
-.It Fl x Ar modifier-button
+.It Fl x Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON
 This option requires an argument of the form
-.Ar modifier-button
-or
-.Ar button ;
+.Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON ;
 where
-.Ar modifier
+.Ar MODIFIER
 is
 .Cm Mod1
 to
@@ -100,7 +133,7 @@ or
 (equivalent to
 .Cm Mod4 ) ;
 and
-.Ar button
+.Ar BUTTON
 is the number of a mouse button.
 When this option is used,
 .Nm
@@ -127,24 +160,23 @@ If the argument
 .Ar title
 is given, the title of the menu window is set to it.
 .Sh SYNTAX
-Each item read from standard input has the following format
+Each item read from standard input has the following tab-separated format
 (bracket groups optional elements):
-.Bd -literal -offset indent
-[TABS] [IMAGE TABS] LABEL [TABS OUTPUT] NEWLINE
-.Ed
+.D1 Oo Ar TABS Oc Oo Ar IMAGE Ar TABS Oc Ar LABEL Oo Ar TABS Ar OUTPUT Oc Cm "\en"
 or
-.Bd -literal -offset indent
-[TABS] [:] NEWLINE
-.Ed
+.D1 Oo Ar TABS Oc Oo Ar IMAGE Ar TABS Oc Cm "\(aq\(aq" Oo Ar TABS Ar OUTPUT Oc Cm "\en"
+or
+.D1 Oo Ar TABS Oc Oo Cm ":\)" Oc Cm "\en"
 .Pp
 The components are as follows:
-.Bl -bullet
-.It
+.Bl -tag -width "XXXXXX"
+.It Ar TABS
 The initial tabs indicate the menu hierarchy:
 items indented with a tab are placed in a submenu of the preceding item not indented.
 An item without initial tabs is a top-level item.
-.It
-The image is a string of the form
+Tabs after elements are used to separate them.
+.It Ar IMAGE
+Sing of the form
 .Qq Ic "IMG:/path/to/image.png" .
 It specifies the path to an image file to be shown as icon at the left of the entry.
 If the path does not begin with
@@ -155,23 +187,23 @@ or
 the file is searched on the paths specified in the
 .Ev ICONPATH
 environment variable.
-.It
-The label is the string that will be shown as an item in the menu.
+.It Ar LABEL
+Sing that will be shown as an item in the menu.
 An item without label or with a single colon
 .Pq Ic \&:
 as label is considered a separator and is drawn as a thin line in the menu
 separating the item above from the item below.
 An item whose label is equal to two apostrophes
 .Qq Ic "''"
-does not appear on the menu, it's output provides an alternative output for the previous item
+does not appear on the menu, it's an alternative version for the previous item
 when the user clicks with the middle mouse button.
-.It
-The output is the string that will be output after selecting the item.
+.It Ar OUTPUT
+String that will be output after selecting the item.
 If an item does not have tabs after the label, its label is used as its output.
 If the output is empty or is a colon
 .Pq Ic \&: ,
 the item cannot be selected.
-.It
+.It Cm "\en"
 The newline terminates the item specification.
 .El
 .Sh USAGE
@@ -195,13 +227,11 @@ Some items output an "alternative string" when activated with the second mouse b
 .Sx SYNTAX ) .
 .El
 .Pp
-but can also be controlled by the keyboard.
+.Nm
+can also be controlled by the keyboard.
 Items can be selected using the arrow keys.
 Tab (with and without Shift), Home, End, Enter and Esc, and 1-9 keys.
-Items can also be selected by typing the first several characters in it.
 .Bl -tag -width Ds
-.It Ic Down
-Cycle through the items in the regular direction.
 .It Ic End
 Selects the last item in the menu.
 .It Ic Esc
@@ -213,27 +243,23 @@ Selects the first item in the menu.
 Go to the menu above in the hierarchy.
 .It Ic Right , Enter
 Select the highlighted item.
-.It Ic Shift-Tab
+.It Ic Shift-Tab , Down
 Cycle through the items in the reverse direction.
-When the type-to-select feature is active, cycle through matching items instead.
-.It Ic Tab
+.It Ic Tab , Up
 Cycle through the items in the regular direction.
-When the type-to-select feature is active, cycle through matching items instead.
-.It Ic Up
-Cycle through the items in the reverse direction.
 .El
-.Pp
-Additional key bindings can be set at compile time by changing the
-.Pa config.h
-file.
 .Sh RESOURCES
 .Nm
 understands the following X resources.
 They must be prefixed with either the
 .Qq Ic "XMenu"
-class, or the name given with the
+class, or the application name
+.Po
+the executable file name, or the string given with the
 .Fl N
-command-line option, followed by a period.
+command-line option
+.Pc ,
+followed by a period.
 .Bl -tag -width Ds
 .It Ic activeBackground
 The backround color of selected items in the menu.

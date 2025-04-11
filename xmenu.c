@@ -188,15 +188,16 @@ typedef struct Menu {
 	bool directory;
 } Menu;
 
-typedef struct Options {
+struct Options {
 	Item *items;
 	bool windowed;
 	bool rootmode;
 	bool userplaced;
-	bool xneg, yneg;
+	bool xneg, yneg, xpercent, ypercent;
 	bool monplaced;
 	bool filebrowse;
 	bool freetitle;
+	bool use_monitor;
 	int monitor;
 	int argc;
 	char **argv;
@@ -213,7 +214,7 @@ typedef struct Options {
 	size_t niconpaths;
 
 	XRectangle geometry;
-} Options;
+};
 
 typedef struct Widget {
 	Display *display;
@@ -258,7 +259,7 @@ typedef struct Widget {
 } Widget;
 
 static jmp_buf jmpenv;
-static Options options = { 0 };
+static struct Options options = { 0 };
 static Item tearoff = { .label = "tearoff" };
 static Item scrollup = { .label = "scrollup" };
 static Item scrolldown = { .label = "scrolldown" };
@@ -341,36 +342,72 @@ setatof(double *x, const char *s)
 }
 
 static void
-parsegeometry(const char *str)
+parsegeometry(char *geomspec)
 {
-	char *geometry, *monitor;
+	char *str;
 	size_t span;
 	unsigned int width, height;
 	int flags, x, y;
 
-	geometry = estrdup(str);
-	span = strcspn(geometry, ":");
-	monitor = &geometry[span];
-	if (geometry[span] == ':')
-		monitor++;
-	geometry[span] = '\0';
-	flags = XParseGeometry(geometry, &x, &y, &width, &height);
-	options.monitor = -1;
-	if (FLAG(flags, WidthValue|HeightValue)) {
-		options.geometry.width = width;
-		options.geometry.height = height;
+	str = geomspec;
+	if (str == NULL || *str == '\0') return;
+	if (*str == '=') str++;
+
+	if (*str >= '0' && *str <= '9') {
+		options.geometry.width = strtoul(str, &str, 10);
+		if (*str != 'X' && *str != 'x')
+			goto error;
+		if (options.geometry.width == 0 || options.geometry.width > USHRT_MAX)
+			goto error;
+		str++;
+		if (*str < '0' || *str > '9')
+			goto error;
+		options.geometry.height = strtoul(str, &str, 10);
+		if (options.geometry.height == 0 || options.geometry.height > USHRT_MAX)
+			goto error;
 	}
-	if (FLAG(flags, XValue|YValue)) {
-		if (FLAG(flags, XNegative))
-			options.xneg = true;
-		if (FLAG(flags, YNegative))
-			options.yneg = true;
-		options.geometry.x = x;
-		options.geometry.y = y;
+	if (*str == '-' || *str == '+') {
+		options.xneg = *(str++) == '-';
+		if (*str < '0' || *str > '9')
+			goto error;
+		options.geometry.x = strtoul(str, &str, 10);
+		if (*str == '%')
+			options.xpercent = *(str++);
+		if (options.xpercent && options.geometry.x > 100)
+			goto error;
+		if (!options.xpercent && options.geometry.x > SHRT_MAX)
+			goto error;
+
+		if (*str != '-' && *str != '+')
+			goto error;
+		options.yneg = *(str++) == '-';
+		if (*str < '0' || *str > '9')
+			goto error;
+		options.geometry.y = strtoul(str, &str, 10);
+		if (*str == '%')
+			options.ypercent = *(str++);
+		if (options.ypercent && options.geometry.y > 100)
+			goto error;
+		if (!options.ypercent && options.geometry.y > SHRT_MAX)
+			goto error;
 		options.userplaced = true;
 	}
-	setatoi(&options.monitor, monitor);
-	free(geometry);
+	if (*str == '@' || *str == ':') {
+		str++;
+		if (*str >= '0' && *str <= '9') {
+			options.monitor = strtoul(str, &str, 10);
+		} else if (*str == 'c') {
+			options.monitor = -1;
+			return;
+		} else {
+			goto error;
+		}
+		options.use_monitor = true;
+	}
+	if (*str == '\0')
+		return;
+error:
+	errx(EXIT_FAILURE, "%s: invalid geometry specification", geomspec);
 }
 
 static void
@@ -1177,7 +1214,6 @@ getposition(Widget *widget, XRectangle *geometry)
 	int di;             /* dummy variable */
 	unsigned du;        /* dummy variable */
 	int nmons;
-	int i;
 	int x, y;
 
 	if (!options.userplaced) {
@@ -1189,7 +1225,6 @@ getposition(Widget *widget, XRectangle *geometry)
 			&di, &di,
 			&du
 		);
-		geometry->width = geometry->height = 0;
 		geometry->x = x;
 		geometry->y = y;
 	}
@@ -1199,7 +1234,12 @@ getposition(Widget *widget, XRectangle *geometry)
 	info = XineramaQueryScreens(widget->display, &nmons);
 	if (info == NULL)
 		return;
-	for (i = 0; i < nmons; i++) {
+	if (options.use_monitor && options.monitor >= 0 && options.monitor < nmons) {
+		widget->monitor.x = info[options.monitor].x_org;
+		widget->monitor.y = info[options.monitor].y_org;
+		widget->monitor.width = info[options.monitor].width;
+		widget->monitor.height = info[options.monitor].height;
+	} else for (int i = 0; i < nmons; i++) {
 		if (geometry->x < info[i].x_org)
 			continue;
 		if (geometry->y < info[i].x_org)
@@ -2023,7 +2063,7 @@ selfirst(Widget *widget, Menu *menu)
 }
 
 static void
-popupmenu(Widget *widget, Item *items, XRectangle *basis)
+popupmenu(Widget *widget, Item *items, XRectangle *basis, bool isroot)
 {
 	XRectangle *monitor = &widget->monitor;
 	Menu *menu;
@@ -2139,6 +2179,32 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis)
 	} else if (monitor->y + monitor->height > menu->geometry.height + ygap) {
 		menu->geometry.y = monitor->y + monitor->height;
 		menu->geometry.y -= menu->geometry.height;
+	}
+
+	if (isroot && options.userplaced) {
+		XRectangle screen = *monitor;
+		int x = options.geometry.x;
+		int y = options.geometry.y;
+
+		if (!options.use_monitor) {
+			screen.x = screen.y = 0;
+			screen.width = DisplayWidth(widget->display, widget->screen);
+			screen.height = DisplayHeight(widget->display, widget->screen);
+		}
+		if (options.xpercent) {
+			if (options.xneg) x = 100 - x;
+			menu->geometry.x = screen.x + screen.width * options.geometry.x / 100;
+			menu->geometry.x -= menu->geometry.width / 2;
+		} else if (options.xneg) {
+			menu->geometry.x = screen.width - x - menu->geometry.width;
+		}
+		if (options.ypercent) {
+			if (options.yneg) y = 100 - y;
+			menu->geometry.y = screen.y + screen.height * options.geometry.y / 100;
+			menu->geometry.y -= menu->geometry.height / 2;
+		} else if (options.yneg) {
+			menu->geometry.y = screen.height - y - menu->geometry.height;
+		}
 	}
 
 	menu->window = createwindow(
@@ -2377,16 +2443,18 @@ forkandtearoff(Widget *widget, Menu *menu)
 		}
 		*widget = (Widget){ 0 };
 		widget->display = NULL;
-		options.items = menu->first;
-		options.userplaced = true;
-		options.windowed = true;
-		options.rootmode = false;
-		options.title = estrdup(menu->title);
-		options.freetitle = true;
-		options.geometry.x = menu->geometry.x;
-		options.geometry.y = menu->geometry.y;
-		options.geometry.width = 0;
-		options.geometry.height = 0;
+		options.items = menu->first,
+		options.monitor = -1,
+		options.userplaced = true,
+		options.xpercent = options.ypercent = false;
+		options.windowed = true,
+		options.rootmode = false,
+		options.title = estrdup(menu->title),
+		options.freetitle = true,
+		options.geometry.x = menu->geometry.x,
+		options.geometry.y = menu->geometry.y,
+		options.geometry.width = 0,
+		options.geometry.height = 0,
 		cleanitems(options.items, menu->first);
 		longjmp(jmpenv, 1);
 		exit(EXIT_FAILURE);
@@ -2473,7 +2541,7 @@ openitem(Widget *widget, Item *item, int ypos, bool alt)
 	if (item == &scrollup || item == &scrolldown)
 		return;
 	if (item->children != NULL) {
-		popupmenu(widget, item->children, &rect);
+		popupmenu(widget, item->children, &rect, false);
 	} else if (alt && item->altoutput != NULL) {
 		printitem(widget, item->altoutput);
 	} else if (options.filebrowse && item->output != NULL &&
@@ -2486,7 +2554,7 @@ openitem(Widget *widget, Item *item, int ypos, bool alt)
 		items = listdirentries(item->output);
 		if (items == NULL)
 			return;
-		popupmenu(widget, items, &rect);
+		popupmenu(widget, items, &rect, false);
 		widget->menus->directory = true;
 		widget->menus->items = items;
 	} else if (item->output != NULL) {
@@ -2770,7 +2838,7 @@ run(Widget *widget, XRectangle *geometry)
 	if (!options.windowed)
 		if (grab(widget) == RETURN_FAILURE)
 			return;
-	popupmenu(widget, options.items, geometry);
+	popupmenu(widget, options.items, geometry, true);
 	while (widget->menus != NULL) {
 		(void)XNextEvent(widget->display, &xev);
 		if (xev.type >= LASTEvent || xevents[xev.type] == NULL)
