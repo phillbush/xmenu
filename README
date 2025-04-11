@@ -1,0 +1,107 @@
+                      XMenu: desktop menu for X11
+                 <https://github.com/phillbush/xfiles>
+
+               ┌────────────────────┐┌─────────────────┐
+               │     Applications ► ││ 🌐 Web Browser  │
+               │                    ││                 │
+               │ Terminal (xterm)   ││ ✍ Image editor │
+               │                    ││                 │
+               │ Terminal (urxvt)   │└─────────────────┘
+               │                    │
+               │    Terminal (st)   │
+               │                    │
+               │╶──────────────────╴│
+               │                    │
+               │         Shutdown   │
+               │                    │
+               │           Reboot   │
+               │                    │
+               └────────────────────┘
+
+XMenu is a desktop menu utility for the X11 window system.
+XMenu receives a menu specification in stdin, shows a menu for the user
+to select one of the options, and outputs the selected option to stdout.
+
+Features:
+• Reads something in and prints something out, the UNIX way.
+• Menu hierarchies (submenus).
+• Icons and separators.
+• Optional alternate activation (click a menu entry with middle-button).
+• Customization via X resources.
+• Multi-monitor support (via Xinerama).
+• File navigation via menus (see “-f”)
+• Torn-off (detachable) menus (see “-w”).
+• Fine window management hints (see “-p” and “-t”).
+• Use as a standalone desktop start-menu (see “-x”).
+
+
+§ USAGE
+
+Each line read from standard input is made of tab-separated fields
+describing a menu entry.  Lines can be indented to make submenus.
+
+For example, the following input generates the menu in <./demo.png>:
+
+“
+	Applications
+		IMG:./icons/web.png	Web Browser	firefox
+		IMG:./icons/gimp.png	Image editor	gimp
+	Terminal (xterm)	xterm
+	Terminal (urxvt)	urxvt
+	Terminal (st)		st
+
+	Shutdown		poweroff
+	Reboot			reboot
+”
+
+An example script can be found at <./examples/xmenu.sh>.
+
+Read the manual for more information on using XMenu.
+
+In order to generate a menu of applications based on .desktop entries,
+as specified by XDG, checkout <https://github.com/xlucn/xdg-xmenu>.
+
+
+§ INSTALLATION
+
+To build, run “make”.
+That generates the ./xmenu binary.
+
+To install, run “make install”
+That copies the ./xmenu and ./xmenu.1 files into /usr/local/.
+
+Dependencies:
+• C99 compiler, for building.
+• POSIX make, for building.
+• Mandoc, for the manual.
+• POSIX C standard library and headers (libc).
+• X11 libraries and headers (libX11, libXft, libXinerama, libXrender).
+• Imlib2 libraries and headers (libImlib2).
+• Fontconfig library and headers (libfontconfig).
+
+
+§ CONTRIBUTING
+
+If possible, send feedback (positive or negative) via email or issue tracker.
+If possible, report bugs (possibly with a fix) via email or issue tracker.
+
+Feature requests and patches adding new features are welcome.
+But it is ultimately up to author's discretion to approve them or not.
+
+Keep in mind that this is a personal project.
+
+
+§ AUTHOR
+
+By Lucas de Sena <lucas at seninha dot org> © 2021-2025.
+
+Acknowledgements:
+• Christoph Lohmann's thingmenu(1), for being the base for xmenu's code.
+  However, xmenu evolved enough that it no longer resembles thingmenu at all.
+  <https://r-36.net/scm/thingmenu/log.html>
+• Suckless' dmenu(1), for inspiring the interactive filter graphical interface,
+  and being the base for some code, like the drawing routines and input grabbing.
+  <https://tools.suckless.org/dmenu/>
+
+Code and manual distributed under the MIT/X license.
+See ./LICENSE for more information.
