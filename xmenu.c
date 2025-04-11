@@ -1258,34 +1258,41 @@ getposition(Widget *widget, XRectangle *geometry)
 }
 
 static int
-grab(Widget *widget)
+grabpointer(Widget *widget)
 {
-	int status;
+	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000  };
+	int i;
 
-	status = XGrabPointer(
-		widget->display,
-		widget->rootwin,
-		True,
-		ButtonPressMask,
-		GrabModeAsync,
-		GrabModeAsync,
-		None,
-		widget->cursor,
-		CurrentTime
-	);
-	if (status != GrabSuccess)
-		return RETURN_FAILURE;
-	status = XGrabKeyboard(
-		widget->display,
-		widget->rootwin,
-		True,
-		GrabModeAsync,
-		GrabModeAsync,
-		CurrentTime
-	);
-	if (status != GrabSuccess)
-		return RETURN_FAILURE;
-	return RETURN_SUCCESS;
+	/* we may have to wait for another process to ungrab */
+	for (i = 0; i < 1000; i++) {
+		if (XGrabPointer(
+			widget->display, widget->rootwin, True,
+			ButtonPressMask, GrabModeAsync, GrabModeAsync,
+			None, widget->cursor, CurrentTime
+		) == GrabSuccess) return RETURN_SUCCESS;
+		nanosleep(&ts, NULL);
+	}
+	warnx("cannot grab pointer");
+	return RETURN_FAILURE;
+}
+
+static int
+grabkeyboard(Widget *widget)
+{
+	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000  };
+	int i;
+
+	/* we may have to wait for another process to ungrab */
+	for (i = 0; i < 1000; i++) {
+		if (XGrabKeyboard(
+			widget->display, widget->rootwin, True,
+			GrabModeAsync, GrabModeAsync,
+			CurrentTime
+		) == GrabSuccess) return RETURN_SUCCESS;
+		nanosleep(&ts, NULL);
+	}
+	warnx("cannot grab keyboard");
+	return RETURN_FAILURE;
 }
 
 static void
@@ -2090,7 +2097,8 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis, bool isroot)
 		ygap = -widget->shadowwid;
 		if (tearoff)
 			ygap -= widget->separatorh;
-		(void)grab(widget);
+		(void)grabpointer(widget);
+		(void)grabkeyboard(widget);
 	} else {
 		caller = NULL;
 		name = options.title;
@@ -2824,7 +2832,7 @@ xproperty(Widget *widget, XEvent *xev)
 	}
 }
 
-static void
+static int
 run(Widget *widget, XRectangle *geometry)
 {
 	XEvent xev;
@@ -2841,9 +2849,12 @@ run(Widget *widget, XRectangle *geometry)
 	};
 
 	getposition(widget, geometry);
-	if (!options.windowed)
-		if (grab(widget) == RETURN_FAILURE)
-			return;
+	if (!options.windowed) {
+		if (grabpointer(widget) == RETURN_FAILURE)
+			return RETURN_FAILURE;
+		if (grabkeyboard(widget) == RETURN_FAILURE)
+			return RETURN_FAILURE;
+	}
 	popupmenu(widget, options.items, geometry, true);
 	while (widget->menus != NULL) {
 		(void)XNextEvent(widget->display, &xev);
@@ -2851,6 +2862,7 @@ run(Widget *widget, XRectangle *geometry)
 			continue;
 		(*xevents[xev.type])(widget, &xev);
 	}
+	return RETURN_SUCCESS;
 }
 
 static void
@@ -2887,13 +2899,13 @@ main(int argc, char *argv[])
 	struct sigaction sa;
 	Widget widget = { 0 };
 	XRectangle geometry = { 0 };
+	int exitval = RETURN_FAILURE;
 	int (*initsteps[])(Widget *) = {
 		initxconn,
 		initvisual,
 		initresources,
 		inittheme,
 	};
-	size_t i;
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
@@ -2909,12 +2921,12 @@ main(int argc, char *argv[])
 	(void)setjmp(jmpenv);
 	if (options.userplaced)
 		geometry = options.geometry;
-	for (i = 0; i < LEN(initsteps); i++)
+	for (size_t i = 0; i < LEN(initsteps); i++)
 		if ((*initsteps[i])(&widget) == RETURN_FAILURE)
 			goto error;
 	do {
 		waitrootclick(&widget);
-		run(&widget, &geometry);
+		exitval = run(&widget, &geometry);
 		ungrab(&widget);
 	} while (options.rootmode);
 error:
@@ -2923,5 +2935,5 @@ error:
 	if (options.freetitle)
 		free(options.title);
 	cleanitems(options.items, NULL);
-	return EXIT_SUCCESS;
+	return exitval;
 }
