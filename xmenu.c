@@ -394,6 +394,7 @@ parsegeometry(char *geomspec)
 	}
 	if (*str == '@' || *str == ':') {
 		str++;
+		options.use_monitor = true;
 		if (*str >= '0' && *str <= '9') {
 			options.monitor = strtoul(str, &str, 10);
 		} else if (*str == 'c') {
@@ -402,7 +403,6 @@ parsegeometry(char *geomspec)
 		} else {
 			goto error;
 		}
-		options.use_monitor = true;
 	}
 	if (*str == '\0')
 		return;
@@ -1216,15 +1216,15 @@ getposition(Widget *widget, XRectangle *geometry)
 	int nmons;
 	int x, y;
 
+	XQueryPointer(
+		widget->display,
+		widget->rootwin,
+		&dw, &dw,
+		&x, &y,
+		&di, &di,
+		&du
+	);
 	if (!options.userplaced) {
-		XQueryPointer(
-			widget->display,
-			widget->rootwin,
-			&dw, &dw,
-			&x, &y,
-			&di, &di,
-			&du
-		);
 		geometry->x = x;
 		geometry->y = y;
 	}
@@ -1240,13 +1240,13 @@ getposition(Widget *widget, XRectangle *geometry)
 		widget->monitor.width = info[options.monitor].width;
 		widget->monitor.height = info[options.monitor].height;
 	} else for (int i = 0; i < nmons; i++) {
-		if (geometry->x < info[i].x_org)
+		if (x < info[i].x_org)
 			continue;
-		if (geometry->y < info[i].x_org)
+		if (y < info[i].y_org)
 			continue;
-		if (geometry->x >= info[i].x_org + info[i].width)
+		if (x >= info[i].x_org + info[i].width)
 			continue;
-		if (geometry->y >= info[i].x_org + info[i].width)
+		if (y >= info[i].y_org + info[i].height)
 			continue;
 		widget->monitor.x = info[i].x_org;
 		widget->monitor.y = info[i].y_org;
@@ -2191,19 +2191,25 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis, bool isroot)
 			screen.width = DisplayWidth(widget->display, widget->screen);
 			screen.height = DisplayHeight(widget->display, widget->screen);
 		}
+
 		if (options.xpercent) {
 			if (options.xneg) x = 100 - x;
-			menu->geometry.x = screen.x + screen.width * options.geometry.x / 100;
+			menu->geometry.x = screen.x + screen.width * x / 100;
 			menu->geometry.x -= menu->geometry.width / 2;
 		} else if (options.xneg) {
-			menu->geometry.x = screen.width - x - menu->geometry.width;
+			menu->geometry.x = screen.x + screen.width - x - menu->geometry.width;
+		} else {
+			menu->geometry.x = screen.x + x;
 		}
+
 		if (options.ypercent) {
 			if (options.yneg) y = 100 - y;
-			menu->geometry.y = screen.y + screen.height * options.geometry.y / 100;
+			menu->geometry.y = screen.y + screen.height * y / 100;
 			menu->geometry.y -= menu->geometry.height / 2;
 		} else if (options.yneg) {
-			menu->geometry.y = screen.height - y - menu->geometry.height;
+			menu->geometry.y = screen.y + screen.height - y - menu->geometry.height;
+		} else {
+			menu->geometry.y = screen.y + y;
 		}
 	}
 
