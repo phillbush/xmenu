@@ -3,8 +3,8 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <err.h>
-#include <fcntl.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <locale.h>
 #include <poll.h>
@@ -30,24 +30,19 @@
 
 #include "control/font.h"
 
-#define CLASS                   "XMenu"
-#define NAME                    "xmenu"
 #define LEN(a)                  (sizeof(a) / sizeof((a)[0]))
 #define MAX(a, b)               ((a)>(b)?(a):(b))
 #define MIN(a, b)               ((a)<(b)?(a):(b))
 #define FLAG(f, b)              (((f) & (b)) == (b))
-#define ACTION_BTNS             (Button1Mask|Button3Mask)
-#define MAXPATHS                32
 #define RETURN_FAILURE          (-1)
 #define RETURN_SUCCESS          0
+#define MAXPATHS                32
 #define PADDING                 4
 #define INITIAL_DISPLACEMENT    2
 #define MIN_HEIGHT              (16 + PADDING * 2)
 #define TRIANGLE_HEIGHT         8
 #define TRIANGLE_WIDTH          3
 #define TRIANGLE_PAD            8
-#define SCROLL_TIME             32
-#define DASH_SIZE               8
 
 #define ATOMS                                   \
 	X(UTF8_STRING)                          \
@@ -85,19 +80,6 @@
 	X(SHADOW_TOP,   "TopShadowColor",       "topShadowColor"        ) \
 	X(SHADOW_WID,   "ShadowThickness",      "shadowThickness"       ) \
 	X(TEAROFF,      "TearOff",              "tearOff"               )
-
-#define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
-#define DEF_COLOR_BG     COLOR(0x3100, 0x3100, 0x3100)
-#define DEF_COLOR_FG     COLOR(0xFFFF, 0xFFFF, 0xFFFF)
-#define DEF_COLOR_SELBG  COLOR(0x3400, 0x6500, 0xA400)
-#define DEF_COLOR_SELFG  COLOR(0xFFFF, 0xFFFF, 0xFFFF)
-#define DEF_COLOR_BRD    COLOR(0x0000, 0x0000, 0x0000)
-#define DEF_COLOR_SHDTOP COLOR(0x7300, 0x7300, 0x7300)
-#define DEF_COLOR_SHDBOT COLOR(0x1000, 0x1000, 0x1000)
-#define DEF_BORDER      1
-#define DEF_ICONSIZE    16
-#define DEF_GAP         0
-#define DEF_ALIGNMENT   ALIGN_LEFT
 
 enum {
 	SEL_FIRST,
@@ -214,6 +196,9 @@ struct Options {
 	size_t niconpaths;
 
 	XRectangle geometry;
+} options = {
+	.name = "xmenu",
+	.class = "XMenu",
 };
 
 typedef struct Widget {
@@ -259,7 +244,6 @@ typedef struct Widget {
 } Widget;
 
 static jmp_buf jmpenv;
-static struct Options options = { 0 };
 static Item tearoff = { .label = "tearoff" };
 static Item scrollup = { .label = "scrollup" };
 static Item scrolldown = { .label = "scrolldown" };
@@ -467,7 +451,6 @@ parseoptions(int argc, char *argv[])
 
 	options.argc = argc;
 	options.argv = argv;
-	options.class = CLASS;
 	if (argv[0] != NULL && argv[0][0] != '\0') {
 		options.name = strchr(argv[0], '/');
 		if (options.name != NULL) {
@@ -475,8 +458,6 @@ parseoptions(int argc, char *argv[])
 		} else {
 			options.name = argv[0];
 		}
-	} else {
-		options.name = NAME;
 	}
 	while ((ch = getopt(argc, argv, "ifN:p:rt:wx:X:")) != -1) switch (ch) {
 	case 'N':
@@ -522,7 +503,7 @@ parseoptions(int argc, char *argv[])
 		options.title = argv[0];
 		break;
 	case 0:
-		options.title = CLASS;
+		options.title = options.class;
 		break;
 	default:
 		usage();
@@ -1010,21 +991,24 @@ initresources(Widget *widget)
 static int
 inittheme(Widget *widget)
 {
+#define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
 	size_t i, j;
 	char *resourcesdb;
 	int retval;
 
-	widget->colors[SCHEME_NORMAL][COLOR_BG].chans = DEF_COLOR_BG;
-	widget->colors[SCHEME_NORMAL][COLOR_FG].chans = DEF_COLOR_FG;
-	widget->colors[SCHEME_SELECT][COLOR_BG].chans = DEF_COLOR_SELBG;
-	widget->colors[SCHEME_SELECT][COLOR_FG].chans = DEF_COLOR_SELFG;
-	widget->colors[SCHEME_SHADOW][COLOR_TOP].chans = DEF_COLOR_SHDTOP;
-	widget->colors[SCHEME_SHADOW][COLOR_BOT].chans = DEF_COLOR_SHDBOT;
-	widget->border.chans = DEF_COLOR_BRD;
-	widget->borderwid = DEF_BORDER;
-	widget->iconsize = DEF_ICONSIZE;
-	widget->gap = DEF_GAP;
-	widget->alignment = DEF_ALIGNMENT;
+	/* default hardcoded values (overriddable at runtime) */
+	widget->colors[SCHEME_NORMAL][COLOR_BG].chans = COLOR(0x3100, 0x3100, 0x3100);
+	widget->colors[SCHEME_NORMAL][COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
+	widget->colors[SCHEME_SELECT][COLOR_BG].chans = COLOR(0x3400, 0x6500, 0xA400);
+	widget->colors[SCHEME_SELECT][COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
+	widget->colors[SCHEME_SHADOW][COLOR_TOP].chans = COLOR(0x7300, 0x7300, 0x7300);
+	widget->colors[SCHEME_SHADOW][COLOR_BOT].chans = COLOR(0x1000, 0x1000, 0x1000);
+	widget->border.chans = COLOR(0x0000, 0x0000, 0x0000);
+	widget->borderwid = 1;
+	widget->iconsize = 16;
+	widget->gap = 0;
+	widget->alignment = ALIGN_LEFT;
+
 	for (i = 0; i < SCHEME_LAST; i++) {
 		for (j = 0; j < COLOR_LAST; j++) {
 			retval = createpicture(
@@ -1352,6 +1336,7 @@ drawdashline(Widget *widget, Picture picture, int width, int y)
 	while (w < maxw) {
 		nrects = 0;
 		for (i = 0; i < LEN(toprects); i++) {
+			static int const DASH_SIZE = 8;
 			if (w >= maxw)
 				break;
 			toprects[i].x = x + w;
@@ -2402,6 +2387,7 @@ scroll(Widget *widget, bool down)
 	rect.width = menu->geometry.width;
 	rect.height = widget->separatorh;
 	for (;;) {
+		static int const SCROLL_TIME = 32;
 		if (XPending(widget->display) > 0)
 			break;
 		switch ((ret = poll(&pfd, 1, SCROLL_TIME))) {
@@ -2790,7 +2776,7 @@ xmotion(Widget *widget, XEvent *xev)
 		ypos = -1;
 	menu->selected = item;
 	commitdraw(widget, menu, ypos);
-	if (item != NULL && xevent->state & ACTION_BTNS) {
+	if (item != NULL && xevent->state & (Button1Mask|Button3Mask)) {
 		while (widget->menus != menu)
 			delmenu(widget);
 		if (openssubmenu(item)) {
