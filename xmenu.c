@@ -861,33 +861,40 @@ createpicture(Widget *widget, Picture *picture, Pixmap *pixmap,
 	return RETURN_SUCCESS;
 }
 
-static int
-initxconn(Widget *widget)
+static void
+setup(Widget *widget)
 {
 	static char *atomnames[NATOMS] = {
 #define X(atom) [atom] = #atom,
 		ATOMS
 #undef  X
 	};
+	static struct {
+		const char *class, *name;
+	} resourceids[NRESOURCES] = {
+#define X(res, s1, s2) [res] = { .class = s1, .name = s2 },
+		RESOURCES
+#undef  X
+	};
+	char const *dpyname;
+	XVisualInfo vinfo;
+	Colormap cmap = None;
+	char *resourcesdb;
 
 	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
-		warnx("could not set locale");
-	if ((widget->display = XOpenDisplay(NULL)) == NULL) {
-		warnx("could not connect to X server");
-		return RETURN_FAILURE;
-	}
-	widget->cursor = XCreateFontCursor(widget->display, XC_left_ptr);
-	if (widget->cursor == None) {
-		warnx("could create font cursor");
-		return RETURN_FAILURE;
-	}
+		warnx("warning: no locale support for X11");
+	if ((dpyname = XDisplayName(NULL)) == NULL || dpyname[0] == '\0')
+		errx(EXIT_FAILURE, "DISPLAY is not set");
+	if ((widget->display = XOpenDisplay(NULL)) == NULL)
+		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
 	widget->fd = XConnectionNumber(widget->display);
 	while (fcntl(widget->fd, F_SETFD, FD_CLOEXEC) == RETURN_FAILURE) {
 		if (errno == EINTR)
 			continue;
-		warn("fcntl");
-		return RETURN_FAILURE;
+		XCloseDisplay(widget->display);
+		err(EXIT_FAILURE, "connection to display \"%s\"", dpyname);
 	}
+	widget->cursor = XCreateFontCursor(widget->display, XC_left_ptr);
 	XInternAtoms(widget->display, atomnames, NATOMS, False, widget->atoms);
 	widget->screen = DefaultScreen(widget->display);
 	widget->rootwin = DefaultRootWindow(widget->display);
@@ -906,24 +913,8 @@ initxconn(Widget *widget)
 			None
 		);
 	}
-	return RETURN_SUCCESS;
-}
 
-static int
-initvisual(Widget *widget)
-{
-	XVisualInfo vinfo;
-	Colormap cmap = None;
-	int success;
-
-	success = XMatchVisualInfo(
-		widget->display,
-		widget->screen,
-		32,
-		TrueColor,
-		&vinfo
-	);
-	if (success) {
+	if (XMatchVisualInfo(widget->display, widget->screen, 32, TrueColor, &vinfo)) {
 		cmap = XCreateColormap(
 			widget->display,
 			widget->rootwin,
@@ -931,70 +922,50 @@ initvisual(Widget *widget)
 			AllocNone
 		);
 	}
-	widget->colormap = DefaultColormap(widget->display, widget->screen);
-	widget->visual = DefaultVisual(widget->display, widget->screen);
-	widget->depth = DefaultDepth(widget->display, widget->screen);
-	if (success && cmap != None) {
+	if (cmap != None) {
 		widget->colormap = cmap;
 		widget->visual = vinfo.visual;
 		widget->depth = vinfo.depth;
+	} else {
+		widget->colormap = DefaultColormap(widget->display, widget->screen);
+		widget->visual = DefaultVisual(widget->display, widget->screen);
+		widget->depth = DefaultDepth(widget->display, widget->screen);
 	}
 	widget->xformat = XRenderFindVisualFormat(
 		widget->display,
 		widget->visual
 	);
-	if (widget->xformat == NULL)
-		goto error;
+	if (widget->xformat == NULL) {
+		XCloseDisplay(widget->display);
+		errx(EXIT_FAILURE, "cannot find XRender visual format");
+	}
 	widget->alphaformat = XRenderFindStandardFormat(
 		widget->display,
 		PictStandardA8
 	);
-	if (widget->alphaformat == NULL)
-		goto error;
+	if (widget->alphaformat == NULL) {
+		XCloseDisplay(widget->display);
+		errx(EXIT_FAILURE, "cannot find XRender visual format");
+	}
 	widget->window = createwindow(widget, NULL, 0, True);
 	if (widget->window == None) {
-		warnx("could not create window");
-		return RETURN_FAILURE;
+		XCloseDisplay(widget->display);
+		errx(EXIT_FAILURE, "cannot create window");
 	}
-	return RETURN_SUCCESS;
-error:
-	warnx("could not find XRender visual format");
-	return RETURN_FAILURE;
-}
-
-static int
-initresources(Widget *widget)
-{
-	static struct {
-		const char *class, *name;
-	} resourceids[NRESOURCES] = {
-#define X(res, s1, s2) [res] = { .class = s1, .name = s2 },
-		RESOURCES
-#undef  X
-	};
-	size_t i;
 
 	XrmInitialize();
 	widget->application = (struct ResourcePair){
 		.class = XrmPermStringToQuark(options.class),
 		.name = XrmPermStringToQuark(options.name),
 	};
-	for (i = 0; i < NRESOURCES; i++) {
+	for (size_t i = 0; i < NRESOURCES; i++) {
 		widget->resources[i] = (struct ResourcePair){
 			.class = XrmPermStringToQuark(resourceids[i].class),
 			.name = XrmPermStringToQuark(resourceids[i].name),
 		};
 	};
-	return RETURN_SUCCESS;
-}
 
-static int
-inittheme(Widget *widget)
-{
 #define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
-	size_t i, j;
-	char *resourcesdb;
-	int retval;
 
 	/* default hardcoded values (overriddable at runtime) */
 	widget->colors[SCHEME_NORMAL][COLOR_BG].chans = COLOR(0x3100, 0x3100, 0x3100);
@@ -1009,8 +980,9 @@ inittheme(Widget *widget)
 	widget->gap = 0;
 	widget->alignment = ALIGN_LEFT;
 
-	for (i = 0; i < SCHEME_LAST; i++) {
-		for (j = 0; j < COLOR_LAST; j++) {
+	for (size_t i = 0; i < SCHEME_LAST; i++) {
+		for (size_t j = 0; j < COLOR_LAST; j++) {
+			int retval;
 			retval = createpicture(
 				widget,
 				&widget->colors[i][j].pict,
@@ -1019,7 +991,9 @@ inittheme(Widget *widget)
 				false
 			);
 			if (retval == RETURN_FAILURE) {
-				return RETURN_FAILURE;
+				XDestroyWindow(widget->display, widget->window);
+				XCloseDisplay(widget->display);
+				errx(EXIT_FAILURE, "cannot create picture");
 			}
 		}
 	}
@@ -1042,10 +1016,10 @@ inittheme(Widget *widget)
 	if (widget->fontset == NULL)
 		setfont(widget, NULL, 0.0);
 	if (widget->fontset == NULL) {
-		warnx("could not load any font");
-		return RETURN_FAILURE;
+		XDestroyWindow(widget->display, widget->window);
+		XCloseDisplay(widget->display);
+		errx(EXIT_FAILURE, "cannot load any font");
 	}
-	return RETURN_SUCCESS;
 }
 
 static Item *
@@ -2882,12 +2856,6 @@ main(int argc, char *argv[])
 	Widget widget = { 0 };
 	XRectangle geometry = { 0 };
 	int exitval = RETURN_FAILURE;
-	int (*initsteps[])(Widget *) = {
-		initxconn,
-		initvisual,
-		initresources,
-		inittheme,
-	};
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
@@ -2903,9 +2871,7 @@ main(int argc, char *argv[])
 	(void)setjmp(jmpenv);
 	if (options.userplaced)
 		geometry = options.geometry;
-	for (size_t i = 0; i < LEN(initsteps); i++)
-		if ((*initsteps[i])(&widget) == RETURN_FAILURE)
-			goto error;
+	setup(&widget);
 	do {
 		waitrootclick(&widget);
 		exitval = run(&widget, &geometry);
