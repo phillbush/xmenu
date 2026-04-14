@@ -6,17 +6,15 @@
 .Nm ctrlfnt_draw ,
 .Nm ctrlfnt_width ,
 .Nm ctrlfnt_height ,
+.Nm ctrlfnt_ascent ,
+.Nm ctrlfnt_descent ,
 .Nm ctrlfnt_free
 .Nd Xft selection ownership and requesting helper functions
 .Sh SYNOPSIS
 .In X11/Xlib.h
 .In X11/Xft/Xft.h
 .In control/ctrlfnt.h
-.Ft void
-.Fo ctrlfnt_init
-.Ft "void"
-.Fc
-.Ft "CtrlFontSet *"
+.Ft "ctrlfnt *"
 .Fo ctrlfnt_open
 .Fa "Display display"
 .Fa "int screen"
@@ -27,7 +25,7 @@
 .Fc
 .Ft int
 .Fo ctrlfnt_draw
-.Fa "CtrlFontSet *fontset"
+.Fa "ctrlfnt *fontset"
 .Fa "Picture picture"
 .Fa "Picture src"
 .Fa "XRectangle rectangle"
@@ -36,21 +34,25 @@
 .Fc
 .Ft int
 .Fo ctrlfnt_width
-.Fa "CtrlFontSet *fontset"
+.Fa "ctrlfnt *fontset"
 .Fa "cont char *text"
 .Fa "int nbytes"
 .Fc
 .Ft int
 .Fo ctrlfnt_height
-.Fa "CtrlFontSet *fontset"
+.Fa "ctrlfnt *fontset"
+.Fc
+.Ft int
+.Fo ctrlfnt_ascent
+.Fa "ctrlfnt *fontset"
+.Fc
+.Ft int
+.Fo ctrlfnt_descent
+.Fa "ctrlfnt *fontset"
 .Fc
 .Ft void
 .Fo ctrlfnt_free
-.Fa "CtrlFontSet *fontset"
-.Fc
-.Ft void
-.Fo ctrlfnt_term
-.Ft "void"
+.Fa "ctrlfnt *fontset"
 .Fc
 .Sh ARGUMENTS
 .Bl -tag -width Ds
@@ -88,10 +90,6 @@ Specifies the string to draw.
 Specifies the visual to draw the string with.
 .El
 .Sh DESCRIPTION
-The
-.Fn ctrlfnt_init
-function initializes the fontconfig library.
-.Pp
 The
 .Fn ctrlfnt_open
 function opens the fonts specified in
@@ -148,18 +146,17 @@ if the width could not be computed.
 without drawing anything).
 .Pp
 The
-.Fn ctrlfnt_height
-returns the height of the fonts in
+.Fn ctrlfnt_height ,
+.Fn ctrlfnt_ascent ,
+and
+.Fn ctrlfnt_descent
+functions return the height of the fonts in
 .Fa fontset .
 .Pp
-the
-.Fn ctrlfnt_free
-frees the fonts open in
-.Ft fontset .
-.Pp
 The
-.Fn ctrlfnt_term
-function terminates the fontconfig library.
+.Fn ctrlfnt_free
+function frees the fonts open in
+.Ft fontset .
 .Sh RETURN VALUES
 The
 .Fn ctrlfnt_open
@@ -167,8 +164,10 @@ function returns NULL on error.
 The
 .Fn ctrlfnt_draw ,
 .Fn ctrlfnt_width ,
-and
 .Fn ctrlfnt_height ,
+.Fn ctrlfnt_ascent ,
+and
+.Fn ctrlfnt_descent
 functions return a value less than zero on error.
 .Pp
 If an error occurs, the functions write a string describing the error into standard output with

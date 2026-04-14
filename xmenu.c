@@ -28,7 +28,7 @@
 #include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
 
-#include "ctrlfnt.h"
+#include "control/font.h"
 
 #define CLASS                   "XMenu"
 #define NAME                    "xmenu"
@@ -230,7 +230,7 @@ typedef struct Widget {
 	XRectangle monitor;
 	XRenderPictFormat *xformat;
 	XRenderPictFormat *alphaformat;
-	CtrlFontSet *fontset;
+	ctrlfnt *fontset;
 	Cursor cursor;
 	Menu *menus;
 	unsigned int fonth;
@@ -345,9 +345,6 @@ static void
 parsegeometry(char *geomspec)
 {
 	char *str;
-	size_t span;
-	unsigned int width, height;
-	int flags, x, y;
 
 	str = geomspec;
 	if (str == NULL || *str == '\0') return;
@@ -613,7 +610,7 @@ setcolor(Widget *widget, Picture picture, XRenderColor *chans, const char *color
 static void
 setfont(Widget *widget, const char *facename, double facesize)
 {
-	CtrlFontSet *fontset;
+	ctrlfnt *fontset;
 
 	if (facename == NULL)
 		facename = "xft:";
@@ -892,7 +889,6 @@ initxconn(Widget *widget)
 #undef  X
 	};
 
-	ctrlfnt_init();
 	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
 		warnx("could not set locale");
 	if ((widget->display = XOpenDisplay(NULL)) == NULL) {
@@ -2449,7 +2445,7 @@ forkandtearoff(Widget *widget, Menu *menu)
 {
 	if (efork() == 0) {
 		/* child */
-		ctrlfnt__free(widget->fontset);
+		ctrlfnt_free(widget->fontset);
 		while (close(widget->fd) == -1) {
 			if (errno == EINTR)
 				continue;
