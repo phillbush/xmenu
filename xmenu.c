@@ -23,7 +23,6 @@
 #include <X11/Xutil.h>
 #include <X11/Xresource.h>
 #include <X11/XKBlib.h>
-#include <X11/cursorfont.h>
 #include <X11/Xft/Xft.h>
 #include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
@@ -216,7 +215,6 @@ typedef struct Widget {
 	XRenderPictFormat *xformat;
 	XRenderPictFormat *alphaformat;
 	ctrlfnt *fontset;
-	Cursor cursor;
 	Menu *menus;
 	unsigned int fonth;
 	unsigned int itemh, separatorh;
@@ -894,7 +892,6 @@ setup(Widget *widget)
 		XCloseDisplay(widget->display);
 		err(EXIT_FAILURE, "connection to display \"%s\"", dpyname);
 	}
-	widget->cursor = XCreateFontCursor(widget->display, XC_left_ptr);
 	XInternAtoms(widget->display, atomnames, NATOMS, False, widget->atoms);
 	widget->screen = DefaultScreen(widget->display);
 	widget->rootwin = DefaultRootWindow(widget->display);
@@ -1150,8 +1147,6 @@ cleanup(Widget *widget)
 			widget->opacity.pix
 		);
 	}
-	if (widget->cursor != None)
-		XFreeCursor(widget->display, widget->cursor);
 	if (widget->colormap != None)
 		XFreeColormap(widget->display, widget->colormap);
 	if (widget->window != None)
@@ -1222,7 +1217,7 @@ grabpointer(Widget *widget)
 		if (XGrabPointer(
 			widget->display, widget->rootwin, True,
 			ButtonPressMask, GrabModeAsync, GrabModeAsync,
-			None, widget->cursor, CurrentTime
+			None, None, CurrentTime
 		) == GrabSuccess) return RETURN_SUCCESS;
 		nanosleep(&ts, NULL);
 	}
