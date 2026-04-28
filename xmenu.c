@@ -2539,122 +2539,14 @@ getmenu(struct widget *widget, Window window)
 }
 
 static void
-xbuttonrelease(struct widget *widget, XEvent *xev)
+keypress(struct widget *widget, struct menu *menu, unsigned int state, KeySym ksym)
 {
-	XButtonEvent *xevent;
-	struct item *item;
-	struct menu *menu;
-	int ypos;
-	bool alt = false;
-
-	xevent = (XButtonEvent *)xev;
-	if (xevent->button != Button1 && xevent->button != Button2 &&
-	    xevent->button != Button3)
-		return;
-	alt = (xevent->button == Button2);
-	menu = getmenu(widget, xevent->window);
-	if (menu == NULL)
-		return;
-	item = getitem(widget, menu, xevent->y, &ypos);
-	if (item == NULL)
-		return;
-	if (item->children != NULL)
-		return;
-	while (widget->menus != menu)
-		delmenu(widget);
-	if (item == &tearoff) {
-		forkandtearoff(widget, menu);
-	} else {
-		openitem(widget, item, ypos, alt);
-	}
-}
-
-static void
-xbuttonpress(struct widget *widget, XEvent *xev)
-{
-	XButtonEvent *xevent;
-	struct menu *menu;
-	struct item *item;
-	int ypos;
-
-	xevent = (XButtonEvent *)xev;
-	menu = getmenu(widget, xevent->window);
-	if (menu == NULL) {
-		closepopups(widget);
-		return;
-	}
-	while (widget->menus != menu)
-		delmenu(widget);
-	if ((item = getitem(widget, menu, xevent->y, &ypos)) != NULL) {
-		if (item->children != NULL) {
-			openitem(widget, item, ypos, false);
-		}
-	}
-}
-
-static void
-xconfigurenotify(struct widget *widget, XEvent *xev)
-{
-	XConfigureEvent *xevent;
-	struct menu *menu;
-	int width, height;
-
-	xevent = (XConfigureEvent *)xev;
-	for (menu = widget->menus; menu != NULL; menu = menu->next)
-		if (menu->window == xevent->window)
-			break;
-	if (menu == NULL)
-		return;
-	width = menu->geometry.width;
-	height = menu->geometry.height;
-	menu->geometry.x = xevent->x;
-	menu->geometry.y = xevent->y;
-	menu->geometry.width = xevent->width;
-	menu->geometry.height = xevent->height;
-	if (width == menu->geometry.width && height == menu->geometry.height)
-		return;
-	drawmenu(widget, menu);
-	if (menu->selected != NULL) {
-		commitdraw(widget, menu, menu->selposition);
-	}
-}
-
-static void
-xclientmessage(struct widget *widget, XEvent *xev)
-{
-	XClientMessageEvent *xevent;
-
-	xevent = (XClientMessageEvent *)xev;
-	if ((Atom)(xevent->data.l[0]) != widget->atoms[WM_DELETE_WINDOW])
-		return;
-	closewidget(widget);
-}
-
-static void
-xdestroy(struct widget *widget, XEvent *xev)
-{
-	XDestroyWindowEvent *xevent;
-
-	xevent = (XDestroyWindowEvent *)xev;
-	if (options.client == None || xevent->window != options.client)
-		return;
-	closewidget(widget);
-}
-
-static void
-xkeypress(struct widget *widget, XEvent *xev)
-{
-	XKeyEvent *xevent;
-	KeySym ksym;
-	struct menu *menu;
 	struct item *last, *first, *start;
 	int ypos;
 
-	if ((menu = widget->menus) == NULL)
+	if (menu == NULL)
 		return;
-	xevent = (XKeyEvent *)xev;
-	ksym = XkbKeycodeToKeysym(widget->display, xevent->keycode, 0, 0);
-	if (ksym == XK_Tab && FLAG(xevent->state, ShiftMask))
+	if (ksym == XK_Tab && FLAG(state, ShiftMask))
 		ksym = XK_ISO_Left_Tab;
 	switch (ksym) {
 	case XK_KP_Enter:       ksym = XK_Return;       break;
@@ -2710,94 +2602,13 @@ xkeypress(struct widget *widget, XEvent *xev)
 	}
 }
 
-static void
-xleave(struct widget *widget, XEvent *xev)
-{
-	XCrossingEvent *xevent;
-	struct menu *menu;
-
-	xevent = (XCrossingEvent *)xev;
-	menu = getmenu(widget, xevent->window);
-	if (menu != widget->menus)
-		return;
-	menu->selected = NULL;
-	commitdraw(widget, menu, -1);
-}
-
-static void
-xmotion(struct widget *widget, XEvent *xev)
-{
-	XMotionEvent *xevent;
-	struct menu *menu;
-	struct item *item;
-	int ypos;
-
-	xevent = (XMotionEvent *)xev;
-	menu = getmenu(widget, xevent->window);
-	if (menu == NULL)
-		return;
-	item = getitem(widget, menu, xevent->y, &ypos);
-	if (item == &scrollup || item == &scrolldown)
-		scroll(widget, item == &scrolldown);
-	if (item == menu->selected)
-		return;
-	if (item == NULL)
-		ypos = -1;
-	menu->selected = item;
-	commitdraw(widget, menu, ypos);
-	if (item != NULL && xevent->state & (Button1Mask|Button3Mask)) {
-		while (widget->menus != menu)
-			delmenu(widget);
-		if (openssubmenu(item)) {
-			openitem(widget, item, ypos, false);
-		}
-	}
-}
-
-static void
-xproperty(struct widget *widget, XEvent *xev)
-{
-	XPropertyEvent *xevent;
-	struct menu *menu;
-	char *str;
-
-	xevent = (XPropertyEvent *)xev;
-	if (xevent->state != PropertyNewValue)
-		return;
-	if (xevent->window != widget->rootwin)
-		return;
-	if (xevent->atom != XA_RESOURCE_MANAGER)
-		return;
-	str = gettextprop(
-		widget->display,
-		widget->rootwin,
-		XA_RESOURCE_MANAGER
-	);
-	if (str == NULL)
-		return;
-	loadresources(widget, str);
-	free(str);
-	for (menu = widget->menus; menu != NULL; menu = menu->next) {
-		drawmenu(widget, menu);
-		commitdraw(widget, menu, menu->selposition);
-	}
-}
-
 static int
 run(struct widget *widget, XRectangle *geometry)
 {
 	XEvent xev;
-	static void (*xevents[LASTEvent])(struct widget *, XEvent *) = {
-		[ButtonPress]           = xbuttonpress,
-		[ButtonRelease]         = xbuttonrelease,
-		[ClientMessage]         = xclientmessage,
-		[ConfigureNotify]       = xconfigurenotify,
-		[DestroyNotify]         = xdestroy,
-		[KeyPress]              = xkeypress,
-		[LeaveNotify]           = xleave,
-		[MotionNotify]          = xmotion,
-		[PropertyNotify]        = xproperty,
-	};
+	struct menu *menu;
+	struct item *item;
+	int ypos;
 
 	if (!options.windowed) {
 		if (grabpointer(widget) == RETURN_FAILURE)
@@ -2807,11 +2618,119 @@ run(struct widget *widget, XRectangle *geometry)
 	}
 	getposition(widget, geometry);
 	popupmenu(widget, options.items, geometry, true);
-	while (widget->menus != NULL) {
-		(void)XNextEvent(widget->display, &xev);
-		if (xev.type >= LASTEvent || xevents[xev.type] == NULL)
+#define XNextEvent(dpy, xev) (XNextEvent((dpy),(xev)),(xev)->type)
+	while (widget->menus != NULL) switch (XNextEvent(widget->display, &xev)) {
+	case ButtonPress:
+		menu = getmenu(widget, xev.xbutton.window);
+		if (menu == NULL) {
+			closepopups(widget);
 			continue;
-		(*xevents[xev.type])(widget, &xev);
+		}
+		while (widget->menus != menu)
+			delmenu(widget);
+		if ((item = getitem(widget, menu, xev.xbutton.y, &ypos)) != NULL) {
+			if (item->children != NULL) {
+				openitem(widget, item, ypos, false);
+			}
+		}
+		continue;
+	case ButtonRelease:
+		if (xev.xbutton.button != Button1 &&
+		    xev.xbutton.button != Button2 &&
+		    xev.xbutton.button != Button3)
+			continue;
+		menu = getmenu(widget, xev.xbutton.window);
+		if (menu == NULL)
+			continue;
+		item = getitem(widget, menu, xev.xbutton.y, &ypos);
+		if (item == NULL)
+			continue;
+		if (item->children != NULL)
+			continue;
+		while (widget->menus != menu)
+			delmenu(widget);
+		if (item == &tearoff)
+			forkandtearoff(widget, menu);
+		else
+			openitem(widget, item, ypos, xev.xbutton.button == Button2);
+		continue;
+	case ClientMessage:
+		if ((Atom)xev.xclient.data.l[0] == widget->atoms[WM_DELETE_WINDOW])
+			closewidget(widget);
+		continue;
+	case ConfigureNotify:
+		for (menu = widget->menus; menu != NULL; menu = menu->next)
+			if (menu->window == xev.xconfigure.window)
+				break;
+		if (menu == NULL)
+			continue;
+		menu->geometry.x = xev.xconfigure.x;
+		menu->geometry.y = xev.xconfigure.y;
+		if (menu->geometry.width  == xev.xconfigure.width &&
+		    menu->geometry.height == xev.xconfigure.height)
+			continue;       /* size not changed */
+		menu->geometry.width = xev.xconfigure.width;
+		menu->geometry.height = xev.xconfigure.height;
+		drawmenu(widget, menu);
+		if (menu->selected != NULL)
+			commitdraw(widget, menu, menu->selposition);
+		continue;
+	case DestroyNotify:
+		if (options.client != None && xev.xdestroywindow.window == options.client)
+			closewidget(widget);
+		continue;
+	case KeyPress:
+		keypress(
+			widget, widget->menus, xev.xkey.state,
+			XkbKeycodeToKeysym(widget->display, xev.xkey.keycode, 0, 0)
+		);
+		continue;
+	case LeaveNotify:
+		if (getmenu(widget, xev.xcrossing.window) == widget->menus) {
+			widget->menus->selected = NULL;
+			commitdraw(widget, widget->menus, -1);
+		}
+		continue;
+	case MotionNotify:
+		menu = getmenu(widget, xev.xmotion.window);
+		if (menu == NULL)
+			continue;
+		item = getitem(widget, menu, xev.xmotion.y, &ypos);
+		if (item == &scrollup || item == &scrolldown)
+			scroll(widget, item == &scrolldown);
+		if (item == menu->selected)
+			continue;
+		if (item == NULL)
+			ypos = -1;
+		menu->selected = item;
+		commitdraw(widget, menu, ypos);
+		if (item != NULL && xev.xmotion.state & (Button1Mask|Button3Mask)) {
+			while (widget->menus != menu)
+				delmenu(widget);
+			if (openssubmenu(item)) {
+				openitem(widget, item, ypos, false);
+			}
+		}
+		continue;
+	case PropertyNotify:
+		if (xev.xproperty.state == PropertyNewValue &&
+		    xev.xproperty.window == widget->rootwin &&
+		    xev.xproperty.atom == XA_RESOURCE_MANAGER) {
+			char *str = gettextprop(
+				widget->display,
+				widget->rootwin,
+				XA_RESOURCE_MANAGER
+			);
+			if (str == NULL)
+				continue;
+			loadresources(widget, str);
+			free(str);
+			for (menu = widget->menus; menu != NULL; menu = menu->next) {
+				drawmenu(widget, menu);
+				commitdraw(widget, menu, menu->selposition);
+			}
+		}
+		continue;
 	}
 	return RETURN_SUCCESS;
 }
