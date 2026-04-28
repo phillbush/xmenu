@@ -138,22 +138,22 @@ enum Resource {
 #undef  X
 };
 
-typedef struct Item {
+struct item {
 	char *label;            /* string to be drawed on menu */
 	char *output;           /* string to be outputed when item is clicked */
 	char *altoutput;        /* string to be outputed when item is clicked with alt button */
 	char *file;             /* filename of the icon */
 	size_t labellen;
-	struct Item *prev;
-	struct Item *next;
-	struct Item *parent;
-	struct Item *children;
-} Item;
+	struct item *prev;
+	struct item *next;
+	struct item *parent;
+	struct item *children;
+};
 
-typedef struct Menu {
-	struct Menu *next;
-	struct Item *items, *selected;
-	struct Item *first, *last, *lastsave;
+struct menu {
+	struct menu *next;
+	struct item *items, *selected;
+	struct item *first, *last, *lastsave;
 	char *title;
 	XRectangle geometry;
 	int selposition;
@@ -167,10 +167,10 @@ typedef struct Menu {
 	bool hasicon;
 	bool hassubmenu;
 	bool directory;
-} Menu;
+};
 
 struct Options {
-	Item *items;
+	struct item *items;
 	bool windowed;
 	bool rootmode;
 	bool userplaced;
@@ -200,7 +200,7 @@ struct Options {
 	.class = "XMenu",
 };
 
-typedef struct Widget {
+struct widget {
 	Display *display;
 	Visual *visual;
 	Atom atoms[NATOMS];
@@ -215,7 +215,7 @@ typedef struct Widget {
 	XRenderPictFormat *xformat;
 	XRenderPictFormat *alphaformat;
 	ctrlfnt *fontset;
-	Menu *menus;
+	struct menu *menus;
 	unsigned int fonth;
 	unsigned int itemh, separatorh;
 	int shadowwid, borderwid, iconsize, gap;
@@ -239,12 +239,12 @@ typedef struct Widget {
 		XrmClass class;
 		XrmName name;
 	} application, resources[NRESOURCES];
-} Widget;
+};
 
 static jmp_buf jmpenv;
-static Item tearoff = { .label = "tearoff" };
-static Item scrollup = { .label = "scrollup" };
-static Item scrolldown = { .label = "scrolldown" };
+static struct item tearoff = { .label = "tearoff" };
+static struct item scrollup = { .label = "scrollup" };
+static struct item scrolldown = { .label = "scrolldown" };
 
 static void
 usage(void)
@@ -511,7 +511,7 @@ parseoptions(int argc, char *argv[])
 }
 
 static Window
-createwindow(Widget *widget, XRectangle *geometry, long eventmask, bool override)
+createwindow(struct widget *widget, XRectangle *geometry, long eventmask, bool override)
 {
 	return XCreateWindow(
 		widget->display,
@@ -537,13 +537,13 @@ createwindow(Widget *widget, XRectangle *geometry, long eventmask, bool override
 	);
 }
 
-static Item *
+static struct item *
 allocitem(const char *label, const char *output, char *file)
 {
-	Item *item;
+	struct item *item;
 
 	item = emalloc(sizeof *item);
-	*item = (Item){ 0 };
+	*item = (struct item){ 0 };
 	if (label == NULL) {
 		item->label = NULL;
 		item->output = NULL;
@@ -563,7 +563,7 @@ allocitem(const char *label, const char *output, char *file)
 }
 
 static void
-setcolor(Widget *widget, Picture picture, XRenderColor *chans, const char *colorname)
+setcolor(struct widget *widget, Picture picture, XRenderColor *chans, const char *colorname)
 {
 	XColor color;
 
@@ -587,7 +587,7 @@ setcolor(Widget *widget, Picture picture, XRenderColor *chans, const char *color
 }
 
 static void
-setfont(Widget *widget, const char *facename, double facesize)
+setfont(struct widget *widget, const char *facename, double facesize)
 {
 	ctrlfnt *fontset;
 
@@ -611,7 +611,7 @@ setfont(Widget *widget, const char *facename, double facesize)
 }
 
 static void
-setopacity(Widget *widget, const char *value)
+setopacity(struct widget *widget, const char *value)
 {
 	char *endp;
 	double d;
@@ -633,7 +633,7 @@ setopacity(Widget *widget, const char *value)
 }
 
 static char *
-getresource(Widget *widget, XrmDatabase xdb, enum Resource resource)
+getresource(struct widget *widget, XrmDatabase xdb, enum Resource resource)
 {
 	XrmQuark name[] = {
 		widget->application.name,
@@ -677,7 +677,7 @@ error:
 }
 
 static void
-loadresources(Widget *widget, const char *str)
+loadresources(struct widget *widget, const char *str)
 {
 	XrmDatabase xdb;
 	char *value;
@@ -823,7 +823,7 @@ loadresources(Widget *widget, const char *str)
 }
 
 static int
-createpicture(Widget *widget, Picture *picture, Pixmap *pixmap,
+createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
               XRenderColor *color, bool isalpha)
 {
 	*pixmap = XCreatePixmap(
@@ -860,7 +860,7 @@ createpicture(Widget *widget, Picture *picture, Pixmap *pixmap,
 }
 
 static void
-setup(Widget *widget)
+setup(struct widget *widget)
 {
 	static char *atomnames[NATOMS] = {
 #define X(atom) [atom] = #atom,
@@ -1019,12 +1019,12 @@ setup(Widget *widget)
 	}
 }
 
-static Item *
+static struct item *
 parsestdin(void)
 {
-	Item *root = NULL;
-	Item *prev = NULL;
-	Item *item;
+	struct item *root = NULL;
+	struct item *prev = NULL;
+	struct item *item;
 	char *s, buf[BUFSIZ];
 	char *file, *label, *output;
 	size_t level = 0;
@@ -1093,9 +1093,9 @@ parsestdin(void)
 }
 
 static void
-cleanitems(Item *item, Item *skip)
+cleanitems(struct item *item, struct item *skip)
 {
-	Item *tmp;
+	struct item *tmp;
 
 	if (item == NULL)
 		return;
@@ -1115,7 +1115,7 @@ cleanitems(Item *item, Item *skip)
 }
 
 static void
-cleanup(Widget *widget)
+cleanup(struct widget *widget)
 {
 	size_t i, j;
 
@@ -1156,7 +1156,7 @@ cleanup(Widget *widget)
 }
 
 static void
-getposition(Widget *widget, XRectangle *geometry)
+getposition(struct widget *widget, XRectangle *geometry)
 {
 	XineramaScreenInfo *info = NULL;
 	Window dw;          /* dummy variable */
@@ -1207,7 +1207,7 @@ getposition(Widget *widget, XRectangle *geometry)
 }
 
 static int
-grabpointer(Widget *widget)
+grabpointer(struct widget *widget)
 {
 	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000  };
 	int i;
@@ -1226,7 +1226,7 @@ grabpointer(Widget *widget)
 }
 
 static int
-grabkeyboard(Widget *widget)
+grabkeyboard(struct widget *widget)
 {
 	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000  };
 	int i;
@@ -1245,7 +1245,7 @@ grabkeyboard(Widget *widget)
 }
 
 static void
-drawshadows(Widget *widget, Picture picture, XRectangle *geometry)
+drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 {
 	int i;
 
@@ -1289,7 +1289,7 @@ drawshadows(Widget *widget, Picture picture, XRectangle *geometry)
 }
 
 static void
-drawdashline(Widget *widget, Picture picture, int width, int y)
+drawdashline(struct widget *widget, Picture picture, int width, int y)
 {
 	XRectangle toprects[32];
 	XRectangle botrects[32];
@@ -1341,7 +1341,7 @@ drawdashline(Widget *widget, Picture picture, int width, int y)
 }
 
 static void
-drawseparator(Widget *widget, Picture picture, XRectangle *rect)
+drawseparator(struct widget *widget, Picture picture, XRectangle *rect)
 {
 	XRenderFillRectangle(
 		widget->display,
@@ -1366,7 +1366,7 @@ drawseparator(Widget *widget, Picture picture, XRectangle *rect)
 }
 
 static void
-drawtriangle(Widget *widget, Picture picture, Picture src, int x, int y, int direction)
+drawtriangle(struct widget *widget, Picture picture, Picture src, int x, int y, int direction)
 {
 	XTriangle triangle;
 
@@ -1436,13 +1436,13 @@ drawtriangle(Widget *widget, Picture picture, Picture src, int x, int y, int dir
 }
 
 static bool
-cantearoff(Widget *widget, Menu *menu)
+cantearoff(struct widget *widget, struct menu *menu)
 {
 	return (menu->next != NULL || !options.windowed) && widget->tearoff;
 }
 
 static int
-firstitempos(Widget *widget, Menu *menu)
+firstitempos(struct widget *widget, struct menu *menu)
 {
 	int y;
 
@@ -1455,7 +1455,7 @@ firstitempos(Widget *widget, Menu *menu)
 }
 
 static void
-initimlib(Widget *widget)
+initimlib(struct widget *widget)
 {
 	if (widget->initimlib)
 		return;
@@ -1479,7 +1479,7 @@ isabsolute(const char *s)
 }
 
 static Imlib_Image
-loadicon(Widget *widget, const char *file, int size, int *width_ret, int *height_ret)
+loadicon(struct widget *widget, const char *file, int size, int *width_ret, int *height_ret)
 {
 	Imlib_Image icon = NULL;
 	Imlib_Load_Error errcode;
@@ -1569,7 +1569,7 @@ loadicon(Widget *widget, const char *file, int size, int *width_ret, int *height
 }
 
 static bool
-openssubmenu(Item *item)
+openssubmenu(struct item *item)
 {
 	if (item->children != NULL)
 		return true;
@@ -1579,9 +1579,9 @@ openssubmenu(Item *item)
 }
 
 static void
-drawmenu(Widget *widget, Menu *menu)
+drawmenu(struct widget *widget, struct menu *menu)
 {
-	Item *item;
+	struct item *item;
 	size_t i, j;
 	Imlib_Image image;
 	XRectangle rect;
@@ -1902,7 +1902,7 @@ next:
 }
 
 static void
-commitdraw(Widget *widget, Menu *menu, int ypos)
+commitdraw(struct widget *widget, struct menu *menu, int ypos)
 {
 	int height;
 
@@ -1958,9 +1958,9 @@ commitdraw(Widget *widget, Menu *menu, int ypos)
 }
 
 static bool
-selitem(Widget *widget, Menu *menu, Item *from, Item *first, Item *last, int ypos, int dir)
+selitem(struct widget *widget, struct menu *menu, struct item *from, struct item *first, struct item *last, int ypos, int dir)
 {
-	Item *item, *prev;
+	struct item *item, *prev;
 	int prevypos;
 
 	prev = NULL;
@@ -2008,7 +2008,7 @@ selitem(Widget *widget, Menu *menu, Item *from, Item *first, Item *last, int ypo
 }
 
 static void
-selfirst(Widget *widget, Menu *menu)
+selfirst(struct widget *widget, struct menu *menu)
 {
 	(void)selitem(
 		widget, menu,
@@ -2020,13 +2020,13 @@ selfirst(Widget *widget, Menu *menu)
 }
 
 static void
-popupmenu(Widget *widget, Item *items, XRectangle *basis, bool isroot)
+popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isroot)
 {
 	XRectangle *monitor = &widget->monitor;
-	Menu *menu;
-	Item *caller;
+	struct menu *menu;
+	struct item *caller;
 	Atom type;
-	Item *item;
+	struct item *item;
 	size_t nitems;
 	unsigned int textw, menuh;
 	int xgap, ygap;
@@ -2063,7 +2063,7 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis, bool isroot)
 		}
 	}
 	menu = emalloc(sizeof(*menu));
-	*menu = (Menu){
+	*menu = (struct menu){
 		.items = items,
 		.first = items,
 		.title = name,
@@ -2239,9 +2239,9 @@ popupmenu(Widget *widget, Item *items, XRectangle *basis, bool isroot)
 }
 
 static void
-delmenu(Widget *widget)
+delmenu(struct widget *widget)
 {
-	Menu *menu;
+	struct menu *menu;
 	size_t i;
 
 	if ((menu = widget->menus) == NULL)
@@ -2257,14 +2257,14 @@ delmenu(Widget *widget)
 }
 
 static void
-ungrab(Widget *widget)
+ungrab(struct widget *widget)
 {
 	XUngrabPointer(widget->display, CurrentTime);
 	XUngrabKeyboard(widget->display, CurrentTime);
 }
 
 static void
-closewidget(Widget *widget)
+closewidget(struct widget *widget)
 {
 	while (widget->menus != NULL)
 		delmenu(widget);
@@ -2272,7 +2272,7 @@ closewidget(Widget *widget)
 }
 
 static void
-closepopups(Widget *widget)
+closepopups(struct widget *widget)
 {
 	while (widget->menus != NULL) {
 		if (options.windowed && widget->menus->next == NULL) {
@@ -2283,11 +2283,11 @@ closepopups(Widget *widget)
 	}
 }
 
-static Item *
-getitem(Widget *widget, Menu *menu, long y, int *ypos)
+static struct item *
+getitem(struct widget *widget, struct menu *menu, long y, int *ypos)
 {
 	long h;
-	Item *item;
+	struct item *item;
 
 	h = widget->shadowwid;
 	if (cantearoff(widget, menu)) {
@@ -2334,10 +2334,10 @@ done:
 }
 
 static void
-scroll(Widget *widget, bool down)
+scroll(struct widget *widget, bool down)
 {
 	XRectangle rect;
-	Menu *menu;
+	struct menu *menu;
 	time_t elapsed;
 	struct timespec ts;
 	int ret;
@@ -2396,7 +2396,7 @@ scroll(Widget *widget, bool down)
 }
 
 static void
-forkandtearoff(Widget *widget, Menu *menu)
+forkandtearoff(struct widget *widget, struct menu *menu)
 {
 	if (efork() == 0) {
 		/* child */
@@ -2406,7 +2406,7 @@ forkandtearoff(Widget *widget, Menu *menu)
 				continue;
 			err(EXIT_FAILURE, "close");
 		}
-		*widget = (Widget){ 0 };
+		*widget = (struct widget){ 0 };
 		widget->display = NULL;
 		options.items = menu->first,
 		options.monitor = -1,
@@ -2446,11 +2446,11 @@ direntcmp(const struct dirent **ap, const struct dirent **bp)
 	return strcoll(a->d_name, b->d_name);
 }
 
-static Item *
+static struct item *
 listdirentries(const char *dirname)
 {
 	struct dirent **namelist;
-	Item *items, *item, *prev;
+	struct item *items, *item, *prev;
 	int nents, i;
 	char buf[PATH_MAX + 8];
 
@@ -2482,7 +2482,7 @@ listdirentries(const char *dirname)
 }
 
 static void
-printitem(Widget *widget, const char *str)
+printitem(struct widget *widget, const char *str)
 {
 	(void)printf("%s\n", str);
 	(void)fflush(stdout);
@@ -2490,11 +2490,11 @@ printitem(Widget *widget, const char *str)
 }
 
 static void
-openitem(Widget *widget, Item *item, int ypos, bool alt)
+openitem(struct widget *widget, struct item *item, int ypos, bool alt)
 {
 	XRectangle rect;
-	Menu *menu;
-	Item *items;
+	struct menu *menu;
+	struct item *items;
 	char buf[PATH_MAX + 8];
 
 	if (item == NULL || item == &tearoff)
@@ -2527,10 +2527,10 @@ openitem(Widget *widget, Item *item, int ypos, bool alt)
 	}
 }
 
-static Menu *
-getmenu(Widget *widget, Window window)
+static struct menu *
+getmenu(struct widget *widget, Window window)
 {
-	Menu *menu;
+	struct menu *menu;
 
 	for (menu = widget->menus; menu != NULL; menu = menu->next)
 		if (window == menu->window)
@@ -2539,11 +2539,11 @@ getmenu(Widget *widget, Window window)
 }
 
 static void
-xbuttonrelease(Widget *widget, XEvent *xev)
+xbuttonrelease(struct widget *widget, XEvent *xev)
 {
 	XButtonEvent *xevent;
-	Item *item;
-	Menu *menu;
+	struct item *item;
+	struct menu *menu;
 	int ypos;
 	bool alt = false;
 
@@ -2570,11 +2570,11 @@ xbuttonrelease(Widget *widget, XEvent *xev)
 }
 
 static void
-xbuttonpress(Widget *widget, XEvent *xev)
+xbuttonpress(struct widget *widget, XEvent *xev)
 {
 	XButtonEvent *xevent;
-	Menu *menu;
-	Item *item;
+	struct menu *menu;
+	struct item *item;
 	int ypos;
 
 	xevent = (XButtonEvent *)xev;
@@ -2593,10 +2593,10 @@ xbuttonpress(Widget *widget, XEvent *xev)
 }
 
 static void
-xconfigurenotify(Widget *widget, XEvent *xev)
+xconfigurenotify(struct widget *widget, XEvent *xev)
 {
 	XConfigureEvent *xevent;
-	Menu *menu;
+	struct menu *menu;
 	int width, height;
 
 	xevent = (XConfigureEvent *)xev;
@@ -2620,7 +2620,7 @@ xconfigurenotify(Widget *widget, XEvent *xev)
 }
 
 static void
-xclientmessage(Widget *widget, XEvent *xev)
+xclientmessage(struct widget *widget, XEvent *xev)
 {
 	XClientMessageEvent *xevent;
 
@@ -2631,7 +2631,7 @@ xclientmessage(Widget *widget, XEvent *xev)
 }
 
 static void
-xdestroy(Widget *widget, XEvent *xev)
+xdestroy(struct widget *widget, XEvent *xev)
 {
 	XDestroyWindowEvent *xevent;
 
@@ -2642,12 +2642,12 @@ xdestroy(Widget *widget, XEvent *xev)
 }
 
 static void
-xkeypress(Widget *widget, XEvent *xev)
+xkeypress(struct widget *widget, XEvent *xev)
 {
 	XKeyEvent *xevent;
 	KeySym ksym;
-	Menu *menu;
-	Item *last, *first, *start;
+	struct menu *menu;
+	struct item *last, *first, *start;
 	int ypos;
 
 	if ((menu = widget->menus) == NULL)
@@ -2711,10 +2711,10 @@ xkeypress(Widget *widget, XEvent *xev)
 }
 
 static void
-xleave(Widget *widget, XEvent *xev)
+xleave(struct widget *widget, XEvent *xev)
 {
 	XCrossingEvent *xevent;
-	Menu *menu;
+	struct menu *menu;
 
 	xevent = (XCrossingEvent *)xev;
 	menu = getmenu(widget, xevent->window);
@@ -2725,11 +2725,11 @@ xleave(Widget *widget, XEvent *xev)
 }
 
 static void
-xmotion(Widget *widget, XEvent *xev)
+xmotion(struct widget *widget, XEvent *xev)
 {
 	XMotionEvent *xevent;
-	Menu *menu;
-	Item *item;
+	struct menu *menu;
+	struct item *item;
 	int ypos;
 
 	xevent = (XMotionEvent *)xev;
@@ -2755,10 +2755,10 @@ xmotion(Widget *widget, XEvent *xev)
 }
 
 static void
-xproperty(Widget *widget, XEvent *xev)
+xproperty(struct widget *widget, XEvent *xev)
 {
 	XPropertyEvent *xevent;
-	Menu *menu;
+	struct menu *menu;
 	char *str;
 
 	xevent = (XPropertyEvent *)xev;
@@ -2784,10 +2784,10 @@ xproperty(Widget *widget, XEvent *xev)
 }
 
 static int
-run(Widget *widget, XRectangle *geometry)
+run(struct widget *widget, XRectangle *geometry)
 {
 	XEvent xev;
-	static void (*xevents[LASTEvent])(Widget *, XEvent *) = {
+	static void (*xevents[LASTEvent])(struct widget *, XEvent *) = {
 		[ButtonPress]           = xbuttonpress,
 		[ButtonRelease]         = xbuttonrelease,
 		[ClientMessage]         = xclientmessage,
@@ -2817,7 +2817,7 @@ run(Widget *widget, XRectangle *geometry)
 }
 
 static void
-waitrootclick(Widget *widget)
+waitrootclick(struct widget *widget)
 {
 	XEvent xev;
 
@@ -2848,7 +2848,7 @@ int
 main(int argc, char *argv[])
 {
 	struct sigaction sa;
-	Widget widget = { 0 };
+	struct widget widget = { 0 };
 	XRectangle geometry = { 0 };
 	int exitval = RETURN_FAILURE;
 
