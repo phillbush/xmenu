@@ -207,7 +207,6 @@ struct widget {
 	Colormap colormap;
 	int depth;
 	int screen;
-	int fd;
 	Window rootwin;
 	Window window;
 	struct timespec lasttime;
@@ -885,8 +884,7 @@ setup(struct widget *widget)
 		errx(EXIT_FAILURE, "DISPLAY is not set");
 	if ((widget->display = XOpenDisplay(NULL)) == NULL)
 		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
-	widget->fd = XConnectionNumber(widget->display);
-	while (fcntl(widget->fd, F_SETFD, FD_CLOEXEC) == RETURN_FAILURE) {
+	while (fcntl(XConnectionNumber(widget->display), F_SETFD, FD_CLOEXEC) == RETURN_FAILURE) {
 		if (errno == EINTR)
 			continue;
 		XCloseDisplay(widget->display);
@@ -2342,7 +2340,7 @@ scroll(struct widget *widget, bool down)
 	struct timespec ts;
 	int ret;
 	struct pollfd pfd = {
-		.fd = widget->fd,
+		.fd = XConnectionNumber(widget->display),
 		.events = POLLIN,
 	};
 
@@ -2401,7 +2399,7 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 	if (efork() == 0) {
 		/* child */
 		ctrlfnt_free(widget->fontset);
-		while (close(widget->fd) == -1) {
+		while (close(XConnectionNumber(widget->display)) == -1) {
 			if (errno == EINTR)
 				continue;
 			err(EXIT_FAILURE, "close");
@@ -2610,12 +2608,6 @@ run(struct widget *widget, XRectangle *geometry)
 	struct item *item;
 	int ypos;
 
-	if (!options.windowed) {
-		if (grabpointer(widget) == RETURN_FAILURE)
-			return RETURN_FAILURE;
-		if (grabkeyboard(widget) == RETURN_FAILURE)
-			return RETURN_FAILURE;
-	}
 	getposition(widget, geometry);
 	popupmenu(widget, options.items, geometry, true);
 #define XNextEvent(dpy, xev) (XNextEvent((dpy),(xev)),(xev)->type)
@@ -2769,7 +2761,6 @@ main(int argc, char *argv[])
 	struct sigaction sa;
 	struct widget widget = { 0 };
 	XRectangle geometry = { 0 };
-	int exitval = RETURN_FAILURE;
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
@@ -2788,7 +2779,13 @@ main(int argc, char *argv[])
 	setup(&widget);
 	do {
 		waitrootclick(&widget);
-		exitval = run(&widget, &geometry);
+		if (!options.windowed) {
+			if (grabpointer(&widget) == RETURN_FAILURE)
+				return EXIT_FAILURE;
+			if (grabkeyboard(&widget) == RETURN_FAILURE)
+				return EXIT_FAILURE;
+		}
+		run(&widget, &geometry);
 		ungrab(&widget);
 	} while (options.rootmode);
 error:
@@ -2797,5 +2794,5 @@ error:
 	if (options.freetitle)
 		free(options.title);
 	cleanitems(options.items, NULL);
-	return exitval;
+	return EXIT_SUCCESS;
 }
