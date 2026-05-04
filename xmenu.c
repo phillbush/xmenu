@@ -28,6 +28,9 @@
 #include <Imlib2.h>
 
 #include "control/font.h"
+#include "control/resources.h"
+
+#include "color.h"
 
 #define LEN(a)                  (sizeof(a) / sizeof((a)[0]))
 #define MAX(a, b)               ((a)>(b)?(a):(b))
@@ -51,35 +54,6 @@
 	X(_NET_WM_WINDOW_TYPE_MENU)             \
 	X(_NET_WM_WINDOW_TYPE_POPUP_MENU)
 
-#define RESOURCES                                                         \
-	/* ENUM          CLASS                   NAME                  */ \
-	/* deprecated resources                                        */ \
-	X(_SELECT_BG,   "Background",           "selbackground"         ) \
-	X(_SELECT_FG,   "Foreground",           "selforeground"         ) \
-	X(_BORDER,      "Border",               "border"                ) \
-	X(_SEPARAT,     "Separator",            "separator"             ) \
-	X(_TEAROFF,     "TearOffModel",         "tearOffModel"          ) \
-	/* current resources                                           */ \
-	X(ALIGNMENT,    "Alignment",            "alignment"             ) \
-	X(BORDER_CLR,   "BorderColor",          "borderColor"           ) \
-	X(BORDER_WID,   "BorderWidth",          "borderWidth"           ) \
-	X(FACE_NAME,    "FaceName",             "faceName"              ) \
-	X(FACE_SIZE,    "FaceSize",             "faceSize"              ) \
-	X(GAP_WID,      "Gap",                  "gap"                   ) \
-	X(ICON_SIZE,    "IconSize",             "iconSize"              ) \
-	X(MAX_ITEMS,    "MaxItems",             "maxItems"              ) \
-	X(NORMAL_BG,    "Background",           "background"            ) \
-	X(NORMAL_FG,    "Foreground",           "foreground"            ) \
-	X(OPACITY,      "Opacity",              "opacity"               ) \
-	X(SELECT_BG,    "Background",           "activeBackground"      ) \
-	X(SELECT_FG,    "Foreground",           "activeForeground"      ) \
-	X(SEPARAT_CLR,  "SeparatorColor",       "separatorColor"        ) \
-	X(SHADOW_BOT,   "BottomShadowColor",    "bottomShadowColor"     ) \
-	X(SHADOW_MID,   "MiddleShadowColor",    "middleShadowColor"     ) \
-	X(SHADOW_TOP,   "TopShadowColor",       "topShadowColor"        ) \
-	X(SHADOW_WID,   "ShadowThickness",      "shadowThickness"       ) \
-	X(TEAROFF,      "TearOff",              "tearOff"               )
-
 enum {
 	SEL_FIRST,
 	SEL_PREV,
@@ -88,20 +62,13 @@ enum {
 };
 
 enum {
-	SCHEME_NORMAL,
-	SCHEME_SELECT,
-	SCHEME_SHADOW,
-	SCHEME_LAST,
-};
-
-enum {
-	COLOR_BG = 0,
-	COLOR_FG = 1,
-
-	COLOR_TOP = 0,
-	COLOR_BOT = 1,
-
-	COLOR_LAST = 2,
+	COLOR_BG,
+	COLOR_FG,
+	COLOR_TOP,
+	COLOR_BOT,
+	COLOR_SELBG,
+	COLOR_SELFG,
+	COLOR_LAST,
 };
 
 enum {
@@ -128,13 +95,6 @@ enum Atom {
 #define X(atom) atom,
 	ATOMS
 	NATOMS
-#undef  X
-};
-
-enum Resource {
-#define X(res, s1, s2) res,
-	RESOURCES
-	NRESOURCES
 #undef  X
 };
 
@@ -217,27 +177,21 @@ struct widget {
 	struct menu *menus;
 	unsigned int fonth;
 	unsigned int itemh, separatorh;
-	int shadowwid, borderwid, iconsize, gap;
+	int shadowwid, iconsize, borderwid, gap;
 	int maxitems;
 	bool initimlib;
 	bool tearoff;
-	enum {
+	enum alignment {
 		ALIGN_LEFT,
 		ALIGN_CENTER,
 		ALIGN_RIGHT,
 	} alignment;
 
-	struct Color {
+	struct color {
 		XRenderColor chans;
 		Pixmap pix;
 		Picture pict;
-	} opacity, border, colors[SCHEME_LAST][COLOR_LAST];
-
-
-	struct ResourcePair {
-		XrmClass class;
-		XrmName name;
-	} application, resources[NRESOURCES];
+	} opacity, border, colors[COLOR_LAST];
 };
 
 static jmp_buf jmpenv;
@@ -292,34 +246,6 @@ efork(void)
 	if ((pid = fork()) == -1)
 		err(EXIT_FAILURE, "fork");
 	return pid;
-}
-
-static void
-setatoi(int *n, const char *s)
-{
-	char *endp;
-	long l;
-
-	if (s == NULL)
-		return;
-	l = strtol(s, &endp, 10);
-	if (s[0] != '\0' && *endp == '\0' && l >= 0 && l < 100) {
-		*n = l;
-	}
-}
-
-static void
-setatof(double *x, const char *s)
-{
-	char *endp;
-	double d;
-
-	if (s == NULL)
-		return;
-	d = strtod(s, &endp);
-	if (s[0] != '\0' && *endp == '\0' && d >= 0.0 && d < 100.0) {
-		*x = d;
-	}
 }
 
 static void
@@ -561,28 +487,42 @@ allocitem(const char *label, const char *output, char *file)
 	return item;
 }
 
-static void
-setcolor(struct widget *widget, Picture picture, XRenderColor *chans, const char *colorname)
+static char *
+gettextprop(Display *dpy, Window win, Atom atom)
 {
-	XColor color;
+	XTextProperty tprop = { .value = NULL };
+	int count;
+	char **list = NULL;
+	char *s = NULL;
 
-	if (colorname == NULL)
-		return;
-	if (!XParseColor(widget->display, widget->colormap, colorname, &color)) {
-		warnx("%s: unknown color name", colorname);
-		return;
-	}
-	chans->red   = FLAG(color.flags, DoRed)   ? color.red   : 0x0000;
-	chans->green = FLAG(color.flags, DoGreen) ? color.green : 0x0000;
-	chans->blue  = FLAG(color.flags, DoBlue)  ? color.blue  : 0x0000;
-	chans->alpha = 0xFFFF;
-	XRenderFillRectangle(
-		widget->display,
-		PictOpSrc,
-		picture,
-		chans,
-		0, 0, 1, 1
-	);
+	if (!XGetTextProperty(dpy, win, &tprop, atom))
+		goto error;
+	if (tprop.nitems == 0)
+		goto error;
+	if (XmbTextPropertyToTextList(dpy, &tprop, &list, &count) != Success)
+		goto error;
+	if (count < 1 || list == NULL || *list == NULL)
+		goto error;
+	s = strdup(list[0]);
+error:
+	XFreeStringList(list);
+	XFree(tprop.value);
+	return s;
+}
+
+static Bool
+parse_alignment(void *, void *addr, const char *value)
+{
+	enum alignment *dst = addr;
+	if (strcasecmp(value, "center") == 0)
+		*dst = ALIGN_CENTER;
+	else if (strcasecmp(value, "left") == 0)
+		*dst = ALIGN_LEFT;
+	else if (strcasecmp(value, "right") == 0)
+		*dst = ALIGN_RIGHT;
+	else
+		return false;
+	return true;
 }
 
 static void
@@ -609,215 +549,166 @@ setfont(struct widget *widget, const char *facename, double facesize)
 	widget->separatorh = widget->itemh / 2;
 }
 
-static void
-setopacity(struct widget *widget, const char *value)
+static Bool
+parse_width(void *, void *addr, char const *value)
 {
-	char *endp;
-	double d;
-	unsigned short opacity;
+	int *dst = addr;
+	long n;
 
-	d = strtod(value, &endp);
-	if (endp == value || *endp != '\0' || d < 0.0 || d > 1.0) {
-		warnx("%s: invalid opacity value", value);
-		return;
-	}
-	opacity = d * 0xFFFF;
+	n = strtol(value, NULL, 10);
+	if (n < 0 || n > 1024)
+		return false;
+	*dst = n;
+	return true;
+}
+
+static void
+setcolor(Display *display, struct color *color, struct rgb rgb)
+{
+	color->chans = (XRenderColor){
+		.red   = rgb.red,
+		.green = rgb.green,
+		.blue  = rgb.blue,
+		.alpha = 0xFFFF,
+	};
 	XRenderFillRectangle(
-		widget->display,
+		display,
 		PictOpSrc,
-		widget->opacity.pict,
-		&(XRenderColor){ .alpha = opacity },
+		color->pict,
+		&color->chans,
 		0, 0, 1, 1
 	);
 }
 
-static char *
-getresource(struct widget *widget, XrmDatabase xdb, enum Resource resource)
+static Bool
+parse_bg(void *ctx, void *, char const *value)
 {
-	XrmQuark name[] = {
-		widget->application.name,
-		widget->resources[resource].name,
-		NULLQUARK,
-	};
-	XrmQuark class[] = {
-		widget->application.class,
-		widget->resources[resource].class,
-		NULLQUARK,
-	};
-	XrmRepresentation tmp;
-	XrmValue xval;
+	struct widget *widget = ctx;
+	struct rgb rgb;
+	struct hsy hsy;
+	XColor xcolor;
 
-	if (XrmQGetResource(xdb, name, class, &tmp, &xval))
-		return xval.addr;
-	return NULL;
+	if (value == NULL)
+		return false;
+	if (!XParseColor(widget->display, widget->colormap, value, &xcolor)) {
+		warnx("%s: unkwnown color name", value);
+		return false;
+	}
+	hsy = to_hsy(rgb = (struct rgb){
+		.red = xcolor.red,
+		.green = xcolor.green,
+		.blue = xcolor.blue,
+	});
+
+	setcolor(widget->display, &widget->colors[COLOR_BG], rgb);
+	if (hsy.luma < 0.5) {
+		/* dark background; make text white */
+		setcolor(widget->display, &widget->colors[COLOR_FG], (struct rgb){1,1,1});
+	} else {
+		/* light background; make text black */
+		setcolor(widget->display, &widget->colors[COLOR_FG], (struct rgb){0,0,0});
+	}
+	setcolor(widget->display, &widget->colors[COLOR_TOP], to_rgb((struct hsy){
+		hsy.hue, hsy.saturation, hsy.luma*0.5 + 0.5
+	}));
+	setcolor(widget->display, &widget->colors[COLOR_BOT], to_rgb((struct hsy){
+		hsy.hue, hsy.saturation, hsy.luma*0.5
+	}));
+	return true;
 }
 
-static char *
-gettextprop(Display *dpy, Window win, Atom atom)
+static Bool
+parse_color(void *ctx, void *addr, char const *value)
 {
-	XTextProperty tprop = { .value = NULL };
-	int count;
-	char **list = NULL;
-	char *s = NULL;
+	struct widget *widget = ctx;
+	struct color *color = addr;
+	XColor xcolor;
 
-	if (!XGetTextProperty(dpy, win, &tprop, atom))
-		goto error;
-	if (tprop.nitems == 0)
-		goto error;
-	if (XmbTextPropertyToTextList(dpy, &tprop, &list, &count) != Success)
-		goto error;
-	if (count < 1 || list == NULL || *list == NULL)
-		goto error;
-	s = strdup(list[0]);
-error:
-	XFreeStringList(list);
-	XFree(tprop.value);
-	return s;
+	if (value == NULL)
+		return false;
+	if (!XParseColor(widget->display, widget->colormap, value, &xcolor))
+		return false;
+	setcolor(widget->display, color, (struct rgb){
+		.red = xcolor.red,
+		.green = xcolor.green,
+		.blue = xcolor.blue,
+	});
+	return true;
+}
+
+static Bool
+parse_double(void *, void *addr, char const *value)
+{
+	char *endp;
+	double *dst = addr;
+	double d;
+
+	d = strtod(value, &endp);
+	if (endp == value || *endp != '\0')
+		return false;
+	*dst = d;
+	return true;
+}
+
+static Bool
+parse_opacity(void *ctx, void *, const char *value)
+{
+	struct widget *widget = ctx;
+	double d;
+
+	if (!parse_double(NULL, &d, value) || d < 0.0 || d > 1.0)
+		return false;
+	XRenderFillRectangle(
+		widget->display,
+		PictOpSrc,
+		widget->opacity.pict,
+		&(XRenderColor){ .alpha = d * 0xFFFF},
+		0, 0, 1, 1
+	);
+	return true;
+}
+
+static Bool
+parse_tearoff(void *, void *addr, char const *value)
+{
+	bool *dst = addr;
+	if (dst != NULL && value != NULL)
+		*dst = ctrlres_istrue(value) || strcasestr(value, "ENABLED");
+	return true;
 }
 
 static void
 loadresources(struct widget *widget, const char *str)
 {
-	XrmDatabase xdb;
-	char *value;
-	char *fontname = NULL;
-	enum Resource resource;
+	XrmDatabase xdb = NULL;
+	char const *fontspec = NULL;
 	double fontsize = 0.0;
-	bool changefont = false;
 
-	if (str == NULL)
-		return;
-	xdb = XrmGetStringDatabase(str);
-	if (xdb == NULL)
-		return;
-	for (resource = 0; resource < NRESOURCES; resource++) {
-		value = getresource(widget, xdb, resource);
-		if (value == NULL)
-			continue;
-		switch (resource) {
-		case NORMAL_BG:
-		case SHADOW_MID:
-			setcolor(
-				widget,
-				widget->colors[SCHEME_NORMAL][COLOR_BG].pict,
-				&widget->colors[SCHEME_NORMAL][COLOR_BG].chans,
-				value
-			);
-			break;
-		case NORMAL_FG:
-			setcolor(
-				widget,
-				widget->colors[SCHEME_NORMAL][COLOR_FG].pict,
-				&widget->colors[SCHEME_NORMAL][COLOR_FG].chans,
-				value
-			);
-			break;
-		case _SELECT_BG:
-		case SELECT_BG:
-			setcolor(
-				widget,
-				widget->colors[SCHEME_SELECT][COLOR_BG].pict,
-				&widget->colors[SCHEME_SELECT][COLOR_BG].chans,
-				value
-			);
-			break;
-		case _SELECT_FG:
-		case SELECT_FG:
-			setcolor(
-				widget,
-				widget->colors[SCHEME_SELECT][COLOR_FG].pict,
-				&widget->colors[SCHEME_SELECT][COLOR_FG].chans,
-				value
-			);
-			break;
-		case _BORDER:
-		case BORDER_CLR:
-			setcolor(
-				widget,
-				widget->border.pict,
-				&widget->border.chans,
-				value
-			);
-			break;
-		case _SEPARAT:
-		case SEPARAT_CLR:
-			setcolor(
-				widget,
-				widget->colors[SCHEME_SHADOW][COLOR_BG].pict,
-				&widget->colors[SCHEME_SHADOW][COLOR_BG].chans,
-				value
-			);
-			setcolor(
-				widget,
-				widget->colors[SCHEME_SHADOW][COLOR_FG].pict,
-				&widget->colors[SCHEME_SHADOW][COLOR_FG].chans,
-				value
-			);
-			break;
-		case SHADOW_TOP:
-			setcolor(
-				widget,
-				widget->colors[SCHEME_SHADOW][COLOR_TOP].pict,
-				&widget->colors[SCHEME_SHADOW][COLOR_TOP].chans,
-				value
-			);
-			break;
-		case SHADOW_BOT:
-			setcolor(
-				widget,
-				widget->colors[SCHEME_SHADOW][COLOR_BOT].pict,
-				&widget->colors[SCHEME_SHADOW][COLOR_BOT].chans,
-				value
-			);
-			break;
-		case ALIGNMENT:
-			if (strcasecmp(value, "center") == 0)
-				widget->alignment = ALIGN_CENTER;
-			else if (strcasecmp(value, "left") == 0)
-				widget->alignment = ALIGN_LEFT;
-			else if (strcasecmp(value, "right") == 0)
-				widget->alignment = ALIGN_RIGHT;
-			break;
-		case ICON_SIZE:
-			setatoi(&widget->iconsize, value);
-			break;
-		case BORDER_WID:
-			setatoi(&widget->borderwid, value);
-			break;
-		case FACE_NAME:
-			fontname = value;
-			changefont = true;
-			break;
-		case FACE_SIZE:
-			setatof(&fontsize, value);
-			changefont = true;
-			break;
-		case GAP_WID:
-			setatoi(&widget->gap, value);
-			break;
-		case MAX_ITEMS:
-			setatoi(&widget->maxitems, value);
-			break;
-		case OPACITY:
-			setopacity(widget, value);
-			break;
-		case SHADOW_WID:
-			setatoi(&widget->shadowwid, value);
-			break;
-		case _TEAROFF:
-		case TEAROFF:
-			widget->tearoff = (
-				strcasecmp(value, "ON") == 0 ||
-				strcasecmp(value, "TRUE") == 0 ||
-				strcasecmp(value, "1") == 0 ||
-				strcasestr(value, "ENABLED") != NULL
-			);
-		case NRESOURCES:
-			break;
-		}
-	}
-	if (changefont)
-		setfont(widget, fontname, fontsize);
+	if (str != NULL)
+		xdb = XrmGetStringDatabase(str);
+#define MK_RES(n, c, p, fun) (struct ctrlres){\
+	.name_path  = (char *[]){options.name, n},\
+	.class_path = (char *[]){options.class, c},\
+	.nnodes = 2, .addr = p, .setter = fun}
+	ctrlres_parsexrdb(widget, (XrmDatabase[]){xdb}, 1, (struct ctrlres[]){
+		MK_RES("alignment", "Alignment", &widget->alignment, parse_alignment),
+		MK_RES("font", "Font", &fontspec, CTRLRES_SETSTR),
+		MK_RES("faceName", "FaceName", &fontspec, CTRLRES_SETSTR),
+		MK_RES("fontSize", "FontSize", &fontsize, parse_double),
+		MK_RES("gap", "Gap", &widget->gap, parse_width),
+		MK_RES("maxItems", "MaxItems", &widget->maxitems, parse_width),
+		MK_RES("background", "Background", NULL, parse_bg),
+		MK_RES("foreground", "Foreground", &widget->colors[COLOR_FG], parse_color),
+		MK_RES("activeBackground", "ActiveBackground", &widget->colors[COLOR_SELBG], parse_color),
+		MK_RES("activeForeground", "ActiveForeground", &widget->colors[COLOR_SELFG], parse_color),
+		MK_RES("opacity", "Opacity", NULL, parse_opacity),
+		MK_RES("tearOff", "TearOff", &widget->tearoff, CTRLRES_SETBOOL),
+
+		/* undocumented; for compatibility with X11/Motif's TearOffModel */
+		MK_RES("tearOffModel", "TearOffModel", &widget->tearoff, parse_tearoff),
+	}, 13);
+	if (fontspec != NULL)
+		setfont(widget, fontspec, fontsize);
 	XrmDestroyDatabase(xdb);
 }
 
@@ -866,17 +757,9 @@ setup(struct widget *widget)
 		ATOMS
 #undef  X
 	};
-	static struct {
-		const char *class, *name;
-	} resourceids[NRESOURCES] = {
-#define X(res, s1, s2) [res] = { .class = s1, .name = s2 },
-		RESOURCES
-#undef  X
-	};
 	char const *dpyname;
 	XVisualInfo vinfo;
 	Colormap cmap = None;
-	char *resourcesdb;
 
 	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
 		warnx("warning: no locale support for X11");
@@ -948,48 +831,34 @@ setup(struct widget *widget)
 		errx(EXIT_FAILURE, "cannot create window");
 	}
 
-	XrmInitialize();
-	widget->application = (struct ResourcePair){
-		.class = XrmPermStringToQuark(options.class),
-		.name = XrmPermStringToQuark(options.name),
-	};
-	for (size_t i = 0; i < NRESOURCES; i++) {
-		widget->resources[i] = (struct ResourcePair){
-			.class = XrmPermStringToQuark(resourceids[i].class),
-			.name = XrmPermStringToQuark(resourceids[i].name),
-		};
-	};
-
 #define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
 
 	/* default hardcoded values (overriddable at runtime) */
-	widget->colors[SCHEME_NORMAL][COLOR_BG].chans = COLOR(0x3100, 0x3100, 0x3100);
-	widget->colors[SCHEME_NORMAL][COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
-	widget->colors[SCHEME_SELECT][COLOR_BG].chans = COLOR(0x3400, 0x6500, 0xA400);
-	widget->colors[SCHEME_SELECT][COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
-	widget->colors[SCHEME_SHADOW][COLOR_TOP].chans = COLOR(0x7300, 0x7300, 0x7300);
-	widget->colors[SCHEME_SHADOW][COLOR_BOT].chans = COLOR(0x1000, 0x1000, 0x1000);
+	widget->colors[COLOR_BG].chans = COLOR(0x3100, 0x3100, 0x3100);
+	widget->colors[COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
+	widget->colors[COLOR_SELBG].chans = COLOR(0x3400, 0x6500, 0xA400);
+	widget->colors[COLOR_SELFG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
+	widget->colors[COLOR_TOP].chans = COLOR(0x7300, 0x7300, 0x7300);
+	widget->colors[COLOR_BOT].chans = COLOR(0x1000, 0x1000, 0x1000);
 	widget->border.chans = COLOR(0x0000, 0x0000, 0x0000);
 	widget->borderwid = 1;
 	widget->iconsize = 16;
 	widget->gap = 0;
 	widget->alignment = ALIGN_LEFT;
 
-	for (size_t i = 0; i < SCHEME_LAST; i++) {
-		for (size_t j = 0; j < COLOR_LAST; j++) {
-			int retval;
-			retval = createpicture(
-				widget,
-				&widget->colors[i][j].pict,
-				&widget->colors[i][j].pix,
-				&widget->colors[i][j].chans,
-				false
-			);
-			if (retval == RETURN_FAILURE) {
-				XDestroyWindow(widget->display, widget->window);
-				XCloseDisplay(widget->display);
-				errx(EXIT_FAILURE, "cannot create picture");
-			}
+	for (size_t color = 0; color < COLOR_LAST; color++) {
+		int retval;
+		retval = createpicture(
+			widget,
+			&widget->colors[color].pict,
+			&widget->colors[color].pix,
+			&widget->colors[color].chans,
+			false
+		);
+		if (retval == RETURN_FAILURE) {
+			XDestroyWindow(widget->display, widget->window);
+			XCloseDisplay(widget->display);
+			errx(EXIT_FAILURE, "cannot create picture");
 		}
 	}
 	createpicture(
@@ -1006,8 +875,7 @@ setup(struct widget *widget)
 		&(XRenderColor){ .alpha = 0xFFFF },
 		true
 	);
-	resourcesdb = XResourceManagerString(widget->display);
-	loadresources(widget, resourcesdb);
+	loadresources(widget, XResourceManagerString(widget->display));
 	if (widget->fontset == NULL)
 		setfont(widget, NULL, 0.0);
 	if (widget->fontset == NULL) {
@@ -1027,7 +895,6 @@ parsestdin(void)
 	char *file, *label, *output;
 	size_t level = 0;
 	size_t prevlvl = 0;
-	size_t i;
 
 	while (fgets(buf, BUFSIZ, stdin) != NULL) {
 		/* get the indentation level */
@@ -1068,7 +935,7 @@ parsestdin(void)
 		if (prev == NULL) {
 			root = item;
 		} else if (level < prevlvl) {
-			for (i = level; i < prevlvl; i++){
+			for (size_t i = level; i < prevlvl; i++){
 				if (prev->parent == NULL)
 					break;
 				prev = prev->parent;
@@ -1115,21 +982,19 @@ cleanitems(struct item *item, struct item *skip)
 static void
 cleanup(struct widget *widget)
 {
-	size_t i, j;
-
 	if (widget->fontset != NULL)
 		ctrlfnt_free(widget->fontset);
-	for (i = 0; i < SCHEME_LAST; i++) for (j = 0; j < COLOR_LAST; j++) {
-		if (widget->colors[i][j].pict != None) {
+	for (int color = 0; color < COLOR_LAST; color++) {
+		if (widget->colors[color].pict != None) {
 			XRenderFreePicture(
 				widget->display,
-				widget->colors[i][j].pict
+				widget->colors[color].pict
 			);
 		}
-		if (widget->colors[i][j].pix != None) {
+		if (widget->colors[color].pix != None) {
 			XFreePixmap(
 				widget->display,
-				widget->colors[i][j].pix
+				widget->colors[color].pix
 			);
 		}
 	}
@@ -1208,10 +1073,9 @@ static int
 grabpointer(struct widget *widget)
 {
 	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000  };
-	int i;
 
 	/* we may have to wait for another process to ungrab */
-	for (i = 0; i < 1000; i++) {
+	for (int i = 0; i < 1000; i++) {
 		if (XGrabPointer(
 			widget->display, widget->rootwin, True,
 			ButtonPressMask, GrabModeAsync, GrabModeAsync,
@@ -1227,10 +1091,9 @@ static int
 grabkeyboard(struct widget *widget)
 {
 	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000  };
-	int i;
 
 	/* we may have to wait for another process to ungrab */
-	for (i = 0; i < 1000; i++) {
+	for (int i = 0; i < 1000; i++) {
 		if (XGrabKeyboard(
 			widget->display, widget->rootwin, True,
 			GrabModeAsync, GrabModeAsync,
@@ -1253,7 +1116,7 @@ drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 			widget->display,
 			PictOpSrc,
 			picture,
-			&widget->colors[SCHEME_SHADOW][COLOR_TOP].chans,
+			&widget->colors[COLOR_TOP].chans,
 			i, i,
 			1, geometry->height - (i * 2 + 1)
 		);
@@ -1261,7 +1124,7 @@ drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 			widget->display,
 			PictOpSrc,
 			picture,
-			&widget->colors[SCHEME_SHADOW][COLOR_TOP].chans,
+			&widget->colors[COLOR_TOP].chans,
 			i, i,
 			geometry->width - (i * 2 + 1), 1
 		);
@@ -1271,7 +1134,7 @@ drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 			widget->display,
 			PictOpSrc,
 			picture,
-			&widget->colors[SCHEME_SHADOW][COLOR_BOT].chans,
+			&widget->colors[COLOR_BOT].chans,
 			geometry->width - 1 - i, i,
 			1, geometry->height - i * 2
 		);
@@ -1279,7 +1142,7 @@ drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 			widget->display,
 			PictOpSrc,
 			picture,
-			&widget->colors[SCHEME_SHADOW][COLOR_BOT].chans,
+			&widget->colors[COLOR_BOT].chans,
 			i, geometry->height - 1 - i,
 			geometry->width - i * 2, 1
 		);
@@ -1291,7 +1154,7 @@ drawdashline(struct widget *widget, Picture picture, int width, int y)
 {
 	XRectangle toprects[32];
 	XRectangle botrects[32];
-	size_t i, nrects;
+	size_t nrects;
 	int x;
 	int w;
 	int maxw;
@@ -1302,7 +1165,7 @@ drawdashline(struct widget *widget, Picture picture, int width, int y)
 	maxw = width - widget->shadowwid * 2 - PADDING * 2;
 	while (w < maxw) {
 		nrects = 0;
-		for (i = 0; i < LEN(toprects); i++) {
+		for (size_t i = 0; i < LEN(toprects); i++) {
 			static int const DASH_SIZE = 8;
 			if (w >= maxw)
 				break;
@@ -1317,12 +1180,12 @@ drawdashline(struct widget *widget, Picture picture, int width, int y)
 			w += DASH_SIZE * 2;
 			nrects++;
 		}
-		for (i = 0; i < nrects; i++) {
+		for (size_t i = 0; i < nrects; i++) {
 			XRenderFillRectangles(
 				widget->display,
 				PictOpSrc,
 				picture,
-				&widget->colors[SCHEME_SHADOW][COLOR_TOP].chans,
+				&widget->colors[COLOR_TOP].chans,
 				toprects,
 				nrects
 			);
@@ -1330,7 +1193,7 @@ drawdashline(struct widget *widget, Picture picture, int width, int y)
 				widget->display,
 				PictOpSrc,
 				picture,
-				&widget->colors[SCHEME_SHADOW][COLOR_BOT].chans,
+				&widget->colors[COLOR_BOT].chans,
 				botrects,
 				nrects
 			);
@@ -1345,7 +1208,7 @@ drawseparator(struct widget *widget, Picture picture, XRectangle *rect)
 		widget->display,
 		PictOpSrc,
 		picture,
-		&widget->colors[SCHEME_SHADOW][COLOR_BOT].chans,
+		&widget->colors[COLOR_BOT].chans,
 		widget->shadowwid + PADDING,
 		rect->y + widget->separatorh / 2 - 1,
 		rect->width - widget->shadowwid * 2 - PADDING * 2,
@@ -1355,7 +1218,7 @@ drawseparator(struct widget *widget, Picture picture, XRectangle *rect)
 		widget->display,
 		PictOpSrc,
 		picture,
-		&widget->colors[SCHEME_SHADOW][COLOR_TOP].chans,
+		&widget->colors[COLOR_TOP].chans,
 		widget->shadowwid + PADDING,
 		rect->y + widget->separatorh / 2,
 		rect->width - widget->shadowwid * 2 - PADDING * 2,
@@ -1485,7 +1348,6 @@ loadicon(struct widget *widget, const char *file, int size, int *width_ret, int 
 	const char *errstr;
 	int width;
 	int height;
-	size_t i;
 
 	if (file == NULL)
 		return NULL;
@@ -1497,7 +1359,7 @@ loadicon(struct widget *widget, const char *file, int size, int *width_ret, int 
 	if (isabsolute(file))
 		icon = imlib_load_image_with_error_return(file, &errcode);
 	else {
-		for (i = 0; i < options.niconpaths; i++) {
+		for (size_t i = 0; i < options.niconpaths; i++) {
 			snprintf(path, sizeof(path), "%s/%s", options.iconpaths[i], file);
 			icon = imlib_load_image_with_error_return(path, &errcode);
 			if (icon != NULL || errcode != IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST) {
@@ -1580,13 +1442,12 @@ static void
 drawmenu(struct widget *widget, struct menu *menu)
 {
 	struct item *item;
-	size_t i, j;
 	Imlib_Image image;
 	XRectangle rect;
 	int textx, textw, iconw, iconh, y;
 	struct Canvas canvas[CANVAS_FINAL][LAYER_LAST];
 
-	for (i = 0; i < CANVAS_LAST; i++) {
+	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		if (menu->canvas[i].picture != None) {
 			XRenderFreePicture(
 				widget->display,
@@ -1619,7 +1480,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			menu->geometry.height
 		);
 	}
-	for (i = 0; i < CANVAS_FINAL; i++) for (j = 0; j < LAYER_LAST; j++) {
+	for (size_t i = 0; i < CANVAS_FINAL; i++) for (size_t j = 0; j < LAYER_LAST; j++) {
 		canvas[i][j].pixmap = XCreatePixmap(
 			widget->display,
 			menu->window,
@@ -1644,12 +1505,12 @@ drawmenu(struct widget *widget, struct menu *menu)
 			menu->geometry.height
 		);
 	}
-	for (i = 0; i < CANVAS_FINAL; i++) {
+	for (size_t i = 0; i < CANVAS_FINAL; i++) {
 		drawshadows(widget, canvas[i][LAYER_BG].picture, &menu->geometry);
 		XRenderComposite(
 			widget->display,
 			PictOpSrc,
-			widget->colors[i][COLOR_BG].pict,
+			widget->colors[i==CANVAS_SELECT ?  COLOR_SELBG : COLOR_BG].pict,
 			widget->opacity.pict,
 			canvas[i][LAYER_BG].picture,
 			0, 0,
@@ -1711,7 +1572,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			drawtriangle(
 				widget,
 				canvas[CANVAS_NORMAL][LAYER_FG].picture,
-				widget->colors[SCHEME_NORMAL][COLOR_FG].pict,
+				widget->colors[COLOR_FG].pict,
 				rect.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
 				rect.y + widget->itemh/2 - TRIANGLE_HEIGHT/2,
 				DIR_RIGHT
@@ -1719,7 +1580,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			drawtriangle(
 				widget,
 				canvas[CANVAS_SELECT][LAYER_FG].picture,
-				widget->colors[SCHEME_SELECT][COLOR_FG].pict,
+				widget->colors[COLOR_SELFG].pict,
 				rect.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
 				rect.y + widget->itemh/2 - TRIANGLE_HEIGHT/2,
 				DIR_RIGHT
@@ -1742,7 +1603,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			ctrlfnt_draw(
 				widget->fontset,
 				canvas[CANVAS_NORMAL][LAYER_FG].picture,
-				widget->colors[SCHEME_NORMAL][COLOR_FG].pict,
+				widget->colors[COLOR_FG].pict,
 				(XRectangle){
 					.x = textx,
 					.y = rect.y,
@@ -1755,7 +1616,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			ctrlfnt_draw(
 				widget->fontset,
 				canvas[CANVAS_SELECT][LAYER_FG].picture,
-				widget->colors[SCHEME_SELECT][COLOR_FG].pict,
+				widget->colors[COLOR_SELFG].pict,
 				(XRectangle){
 					.x = textx,
 					.y = rect.y,
@@ -1769,7 +1630,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			ctrlfnt_draw(
 				widget->fontset,
 				canvas[CANVAS_NORMAL][LAYER_FG].picture,
-				widget->colors[SCHEME_SHADOW][COLOR_TOP].pict,
+				widget->colors[COLOR_TOP].pict,
 				(XRectangle){
 					.x = textx + 1,
 					.y = rect.y + 1,
@@ -1782,7 +1643,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			ctrlfnt_draw(
 				widget->fontset,
 				canvas[CANVAS_NORMAL][LAYER_FG].picture,
-				widget->colors[SCHEME_SHADOW][COLOR_BOT].pict,
+				widget->colors[COLOR_BOT].pict,
 				(XRectangle){
 					.x = textx,
 					.y = rect.y,
@@ -1795,7 +1656,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			ctrlfnt_draw(
 				widget->fontset,
 				canvas[CANVAS_SELECT][LAYER_FG].picture,
-				widget->colors[SCHEME_SHADOW][COLOR_TOP].pict,
+				widget->colors[COLOR_TOP].pict,
 				(XRectangle){
 					.x = textx + 1,
 					.y = rect.y + 1,
@@ -1808,7 +1669,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			ctrlfnt_draw(
 				widget->fontset,
 				canvas[CANVAS_SELECT][LAYER_FG].picture,
-				widget->colors[SCHEME_SHADOW][COLOR_BOT].pict,
+				widget->colors[COLOR_BOT].pict,
 				(XRectangle){
 					.x = textx,
 					.y = rect.y,
@@ -1827,7 +1688,7 @@ next:
 			break;
 		}
 	}
-	for (i = 0; i < CANVAS_FINAL; i++) {
+	for (size_t i = 0; i < CANVAS_FINAL; i++) {
 		y = widget->shadowwid;
 		if (cantearoff(widget, menu)) {
 			drawdashline(
@@ -1846,7 +1707,7 @@ next:
 			drawtriangle(
 				widget,
 				canvas[i][LAYER_FG].picture,
-				widget->colors[i][COLOR_FG].pict,
+				widget->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
 				menu->geometry.width / 2 - TRIANGLE_HEIGHT / 2,
 				y + widget->separatorh /2 - TRIANGLE_WIDTH / 2,
 				DIR_UP
@@ -1854,7 +1715,7 @@ next:
 			drawtriangle(
 				widget,
 				canvas[i][LAYER_FG].picture,
-				widget->colors[i][COLOR_FG].pict,
+				widget->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
 				menu->geometry.width / 2 - TRIANGLE_HEIGHT / 2,
 				menu->geometry.height - widget->separatorh /2
 				- TRIANGLE_WIDTH / 2,
@@ -1893,7 +1754,7 @@ next:
 	);
 	XSetWindowBorderPixmap(widget->display, menu->window, widget->border.pix);
 	XClearWindow(widget->display, menu->window);
-	for (i = 0; i < CANVAS_FINAL; i++) for (j = 0; j < LAYER_LAST; j++) {
+	for (size_t i = 0; i < CANVAS_FINAL; i++) for (size_t j = 0; j < LAYER_LAST; j++) {
 		XRenderFreePicture(widget->display, canvas[i][j].picture);
 		XFreePixmap(widget->display, canvas[i][j].pixmap);
 	}
@@ -2240,7 +2101,6 @@ static void
 delmenu(struct widget *widget)
 {
 	struct menu *menu;
-	size_t i;
 
 	if ((menu = widget->menus) == NULL)
 		return;
@@ -2248,7 +2108,7 @@ delmenu(struct widget *widget)
 		cleanitems(menu->items, NULL);
 	widget->menus = menu->next;
 	XDestroyWindow(widget->display, menu->window);
-	for (i = 0; i < CANVAS_LAST; i++) {
+	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		XRenderFreePicture(widget->display, menu->canvas[i].picture);
 		XFreePixmap(widget->display, menu->canvas[i].pixmap);
 	}
@@ -2449,7 +2309,7 @@ listdirentries(const char *dirname)
 {
 	struct dirent **namelist;
 	struct item *items, *item, *prev;
-	int nents, i;
+	int nents;
 	char buf[PATH_MAX + 8];
 
 	nents = scandir(dirname, &namelist, &direntsel, &direntcmp);
@@ -2457,7 +2317,7 @@ listdirentries(const char *dirname)
 		return NULL;
 	items = NULL;
 	prev = NULL;
-	for (i = 0; i < nents; i++) {
+	for (int i = 0; i < nents; i++) {
 		snprintf(
 			buf,
 			sizeof(buf),

@@ -1,5 +1,5 @@
 PROG = xmenu
-OBJS = ${PROG:=.o} control/font.o
+OBJS = ${PROG:=.o} color.o control/font.o control/resources.o
 SRCS = ${OBJS:.o=.c}
 MAN = ${PROG:=.1}
 DOC = README.md
@@ -24,7 +24,7 @@ debug:
 	${PROG}
 
 .c.o:
-	${CC} -std=c99 -D_XOPEN_SOURCE=800 -D_BSD_SOURCE -D_GNU_SOURCE \
+	${CC} -std=c2x -D_XOPEN_SOURCE=800 -D_BSD_SOURCE -D_GNU_SOURCE \
 	-I./ -I/usr{,/local,/X11R6}/include{,/freetype2} \
 	${CPPFLAGS} ${CFLAGS} -o $@ -c $<
 

@@ -1,0 +1,350 @@
+.Dd April 14, 2026
+.Dt CTRLSEL 3
+.Os libcontrol
+.Sh NAME
+.Nm ctrlres ,
+.Nm ctrlres_parsexrdb ,
+.Nm ctrlres_lookup ,
+.Nm ctrlres_istrue ,
+.Nm CTRLRES_SETBOOL ,
+.Nm CTRLRES_SETSTR
+.Nd acquire selection ownership, and answer/request selection conversion
+.Sh SYNOPSIS
+.In X11/Xlib.h
+.In ctrlres.h
+.Bd -literal
+struct ctrlres {
+	char **name_path, **class_path;
+	size_t nnodes;
+	void *addr;
+	int (*setter)(void *ctx, void *addr, const char *value);
+};
+.Ed
+.Pp
+.Ft void
+.Fo ctrlres_parsexrdb
+.Fa "void *ctx"
+.Fa "XrmDatabase *dbs"
+.Fa "size_t ndbs"
+.Fa "struct ctrlres resources[]"
+.Fa "size_t nresources"
+.Fc
+.Ft char const *
+.Fo ctrlres_lookup
+.Fa "XrmDatabase *dbs"
+.Fa "size_t ndbs"
+.Fa "char *name_path[]"
+.Fa "char *class_path[]"
+.Fa "size_t nnodes"
+.Fc
+.Ft int
+.Fo ctrlres_istrue
+.Fa "char const *value"
+.Fc
+.Ft int
+.Fo CTRLRES_SETBOOL
+.Fa "void *ctx"
+.Fa "void *addr"
+.Fa "const char *value"
+.Fc
+.Ft int
+.Fo CTRLRES_SETSTR
+.Fa "void *ctx"
+.Fa "void *addr"
+.Fa "const char *value"
+.Fc
+.Sh DESCRIPTION
+The ctrlres library implements routines to automate reading values from resource databases.
+.Pp
+The
+.Fn ctrlres_parsexrdb
+function reads resources from a sequence of resource databases,
+and call the corresponding setter function for each resource
+to parse/convert it into relevant values
+(integers, color, boolean, etc).
+.Pp
+The
+.Fn ctrlres_lookup
+function reads a single resource from a sequence of resource databases,
+and returns its (unparsed/unconverted) string value.
+.Pp
+The
+.Fn ctrlres_istrue
+function conveniently checks whether a string (likely read from a resource) is
+.Dq true , "1" , "on" ,
+or other values accepted as truth.
+.Pp
+The
+.Fa setter
+function is called by
+.Fn ctrlres_parsexrdb
+to convert the read resource into a useful value
+(integer, color, file path, etc).
+Two setter functions are provided by
+.Lb ctrlres :
+.Fn CTRLRES_SETBOOL
+and
+.Fn CTRLRES_SETSTR ,
+for boolean and string values, respectively.
+.Pp
+The
+.Ft "struct ctrlres"
+structure identifies a resource and how to parse it.
+.Ss Parameters
+.Bl -tag -width Ds
+.It Fa ctx
+Points to the object given to the
+.Fa setter
+function.
+.It Fa name_path , class_path
+The sequence of nodes forming the resource's instance path and class path.
+.It Fa nnodes
+The number of nodes in both
+.Fa name_path
+and
+.Fa class_path
+arrays (both have the same length).
+.It Fa ndbs
+The number of resource databases in the
+.Fa dbs
+array.
+.It Fa value
+The raw/unconverted resource read from the resource database.
+.It Fa dbs
+The array of X resource databases to read resources from.
+.El
+.Ss Data structure
+The
+.Ft "struct ctrlres"
+structure contains the paths for a resource,
+how to convert it into a relevant value,
+and where to store the converted value at.
+.Pp
+Its members are as follows:
+.Bl -tag -width Ds
+.It Fa addr
+The address where the
+.Fa setter
+function will store the converted resource value.
+.It Fa setter
+The pointer to a function called by
+.Fn ctrlres_parsexrdb
+to convert resources into a relevant value.
+If it is
+.Dv NULL ,
+the resource is ignored, even if found in any database, and is not parsed.
+The setter function must return nonzero if it could successfully parse the resource
+and store the converted value into
+.Fa addr ,
+or return zero otherwise.
+.It Fa name_path , class_path
+The sequence of nodes forming the resource's instance path and class path.
+.It Fa nnodes
+The number of nodes in both
+.Fa name_path
+and
+.Fa class_path
+arrays (both have the same length).
+.El
+.Ss Callback function
+The
+.Fa setter
+member is a pointer to a function called by
+.Fn ctrlres_parsexrdb
+to
+(a) convert the read resource into a value, and
+(b) store the converted value at the address pointed to by
+.Fa addr .
+.Pp
+The opaque pointer
+.Fa ctx
+is passed to the setter function, and can contain anything.
+.Pp
+The opaque pointer
+.Fa addr ,
+passed to the setter function,
+contains the address where to store the converted resource value at.
+This allows the same setter function to be reused for different,
+but same-typed, resources.
+.Ss Lookup functions
+The
+.Fn ctrlres_parsexrdb
+and
+.Fn ctrlres_lookup
+read resources from a sequence of resource databases.
+.Pp
+For each resource,
+databases in the
+.Fa dbs
+array are checked in sequence until the resource is defined.
+If it is found in a database, its value defined there is used,
+and the remaining databases are ignored.
+.Pp
+The
+.Fn ctrlres_parsexrdb
+function looks various resources up, as specified in the
+.Fa resources
+table.
+For each resource found in the databases,
+this function calls the resource's respective
+.Fa setter
+callback function to convert the resource's value,
+and stores it into the respective address pointed to by
+.Fa addr .
+If
+.Fa setter
+allocates memory (and assign its address into
+.Fa addr ) ,
+it is up to the caller procedure to free it.
+.Pp
+The
+.Fn ctrlres_lookup
+function looks a single resource up, and returns its string value
+(or
+.Dv NULL ,
+if the resource was not found in any database);
+but do not convert it nor stores it anywhere.
+The returning string resides in the database where the resource was read from,
+and should not be freed,
+nor should be used after the database is destroyed.
+.Pp
+Each resource is specified by a pair of same-length paths:
+.Fa name_path
+and
+.Fa class_path ,
+both made of
+.Fa nnodes
+nodes.
+See
+.Xr X 7 ,
+at the section
+.Sx RESOURCES
+for a description on resource paths.
+.Ss Setter functions
+The
+.Fn CTRLRES_SETBOOL
+and
+.Fn CTRLRES_SETSTR
+functions are setters that can be used by
+.Fn ctrlres_parsexrdb
+for boolean and string resources.
+.Pp
+.Fn CTRLRES_SETBOOL
+stores 1 into
+.Fa addr ,
+if
+.Fa value
+is either
+.Dq true ,
+.Dq on ,
+.Dq yes ,
+or
+.Dq 1 .
+And stores 0 otherwise.
+.Pp
+.Fn CTRLRES_SETSTR
+stores the address of the resource's value (a character string)
+read from the database into
+.Fa addr .
+That string resides in the database, and should not be freed.
+.Pp
+The
+.Fn ctrlres_istrue
+function is used by the
+.Fn CTRLRES_SETBOOL
+setter to check whether a character string represents a truth value.
+.Sh RETURN VALUES
+The
+.Fn ctrlres_lookup
+function returns a pointer to the resource value string,
+or
+.Dv NULL
+if the resource was not found.
+.Pp
+The
+.Fn ctrlres_istrue
+function returns 1 if
+.Fa value
+is either
+.Dq true ,
+.Dq on ,
+.Dq yes ,
+or
+.Dq 1 ;
+and returns 0 otherwise.
+.Pp
+The
+.Fn CTRLRES_SETBOOL
+and
+.Fn CTRLRES_SETSTR
+functions always return 1, indicating successfull parsing and storing.
+.Sh EXAMPLES
+The following code illustrates the parsing of resources for an application called
+.Em XSample :
+.Bd -literal -offset indent
+int (*parse_color)(void *ctx, void *addr, const char *value);
+widget *widget;
+XColor start_bg, start_fg, close_bg, close_fg;
+Bool spellcheck;
+char const *motd;
+
+statc char const *APP_NAME  = "xsample"
+statc char const *APP_CLASS = "XSample"
+static struct ctrlres resources[] = {
+	{
+		.name_path  = (char *[]){APP_NAME,  "startButton", "background"},
+		.class_path = (char *[]){APP_CLASS, "Button",      "Background"},
+		.nnodes = 3,
+		.addr = &start_bg,
+		.setter = parse_color,
+	},
+	{
+		.name_path  = (char *[]){APP_NAME,  "startButton", "foreground"},
+		.class_path = (char *[]){APP_CLASS, "Button",      "Foreground"},
+		.nnodes = 3,
+		.addr = &start_fg,
+		.setter = parse_color,
+	},
+	{
+		.name_path  = (char *[]){APP_NAME,  "closeButton", "background"},
+		.class_path = (char *[]){APP_CLASS, "Button",      "Background"},
+		.nnodes = 3,
+		.addr = &close_bg,
+		.setter = parse_color,
+	},
+	{
+		.name_path  = (char *[]){APP_NAME,  "closeButton", "foreground"},
+		.class_path = (char *[]){APP_CLASS, "Button",      "Foreground"},
+		.nnodes = 3,
+		.addr = &close_fg,
+		.setter = parse_color,
+	},
+	{
+		.name_path  = (char *[]){APP_NAME,  "enableSpelcheck"},
+		.class_path = (char *[]){APP_CLASS, "EnableSpelcheck"},
+		.nnodes = 2,
+		.addr = &spellcheck,
+		.setter = CTRLRES_SETBOOL,
+	},
+	{
+		.name_path  = (char *[]){APP_NAME,  "welcomeMessage"},
+		.class_path = (char *[]){APP_CLASS, "WelcomeMessage"},
+		.nnodes = 2,
+		.addr = &motd,
+		.setter = CTRLRES_SETSTR,
+	},
+};
+
+ctrlres_parsexrdb(
+	widget,
+	(XrmDatabase[]){cli_db, runtime_db}, 2,
+	resources, sizeof(resources)/sizeof(*resources)
+);
+.Ed
+.Sh SEE ALSO
+.Xr X 7
+.Rs
+.%T Xlib - C Language X Interface
+.%U https://www.x.org/releases/current/doc/libX11/libX11/libX11.html
+.%Q X Consortium Standard
+.Re
