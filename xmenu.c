@@ -45,14 +45,6 @@
 #define TRIANGLE_WIDTH          3
 #define TRIANGLE_PAD            8
 
-#define ATOMS                                   \
-	X(UTF8_STRING)                          \
-	X(WM_DELETE_WINDOW)                     \
-	X(_NET_WM_NAME)                         \
-	X(_NET_WM_WINDOW_TYPE)                  \
-	X(_NET_WM_WINDOW_TYPE_MENU)             \
-	X(_NET_WM_WINDOW_TYPE_POPUP_MENU)
-
 enum {
 	SEL_FIRST,
 	SEL_PREV,
@@ -88,13 +80,6 @@ enum {
 	DIR_DOWN,
 	DIR_LEFT,
 	DIR_RIGHT
-};
-
-enum Atom {
-#define X(atom) atom,
-	ATOMS
-	NATOMS
-#undef  X
 };
 
 struct item {
@@ -162,7 +147,6 @@ struct Options {
 struct widget {
 	Display *display;
 	Visual *visual;
-	Atom atoms[NATOMS];
 	Colormap colormap;
 	int depth;
 	int screen;
@@ -752,11 +736,6 @@ static struct widget *
 setup(Display *display)
 {
 	struct widget *widget;
-	static char *atomnames[NATOMS] = {
-#define X(atom) [atom] = #atom,
-		ATOMS
-#undef  X
-	};
 	XVisualInfo vinfo;
 	Colormap cmap = None;
 
@@ -765,7 +744,6 @@ setup(Display *display)
 	*widget = (struct widget){
 		.display = display,
 	};
-	XInternAtoms(widget->display, atomnames, NATOMS, False, widget->atoms);
 	widget->screen = DefaultScreen(widget->display);
 	widget->rootwin = DefaultRootWindow(widget->display);
 	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
@@ -1887,7 +1865,7 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 	char *name;
 	bool override_redirect, tearoff;
 
-	type = widget->atoms[_NET_WM_WINDOW_TYPE_POPUP_MENU];
+	type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
 	override_redirect = true;
 	tearoff = widget->tearoff;
 	if (widget->menus != NULL) {
@@ -1913,7 +1891,7 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 		if (options.windowed) {
 			tearoff = false;
 			override_redirect = false;
-			type = widget->atoms[_NET_WM_WINDOW_TYPE_MENU];
+			type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_MENU", False);
 		}
 	}
 	menu = emalloc(sizeof(*menu));
@@ -2046,7 +2024,7 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 	(void)XSetWMProtocols(
 		widget->display,
 		menu->window,
-		&widget->atoms[WM_DELETE_WINDOW],
+		(Atom[]){XInternAtom(widget->display, "WM_DELETE_WINDOW", False)},
 		1
 	);
 	(void)XmbSetWMProperties(
@@ -2065,8 +2043,8 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 	(void)XChangeProperty(
 		widget->display,
 		menu->window,
-		widget->atoms[_NET_WM_NAME],
-		widget->atoms[UTF8_STRING],
+		XInternAtom(widget->display, "_NET_WM_NAME", False),
+		XInternAtom(widget->display, "UTF8_STRING", False),
 		8,
 		PropModeReplace,
 		(unsigned char *)name,
@@ -2075,7 +2053,7 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 	(void)XChangeProperty(
 		widget->display,
 		menu->window,
-		widget->atoms[_NET_WM_WINDOW_TYPE],
+		XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE", False),
 		XA_ATOM,
 		32,
 		PropModeReplace,
@@ -2502,7 +2480,7 @@ run(struct widget *widget, XRectangle *geometry)
 			openitem(widget, item, ypos, xev.xbutton.button == Button2);
 		continue;
 	case ClientMessage:
-		if ((Atom)xev.xclient.data.l[0] == widget->atoms[WM_DELETE_WINDOW])
+		if ((Atom)xev.xclient.data.l[0] == XInternAtom(widget->display, "WM_DELETE_WINDOW", False))
 			closewidget(widget);
 		continue;
 	case ConfigureNotify:
