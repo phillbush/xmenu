@@ -748,30 +748,23 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 	return RETURN_SUCCESS;
 }
 
-static void
-setup(struct widget *widget)
+static struct widget *
+setup(Display *display)
 {
+	struct widget *widget;
 	static char *atomnames[NATOMS] = {
 #define X(atom) [atom] = #atom,
 		ATOMS
 #undef  X
 	};
-	char const *dpyname;
 	XVisualInfo vinfo;
 	Colormap cmap = None;
 
-	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
-		warnx("warning: no locale support for X11");
-	if ((dpyname = XDisplayName(NULL)) == NULL || dpyname[0] == '\0')
-		errx(EXIT_FAILURE, "DISPLAY is not set");
-	if ((widget->display = XOpenDisplay(NULL)) == NULL)
-		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
-	while (fcntl(XConnectionNumber(widget->display), F_SETFD, FD_CLOEXEC) == RETURN_FAILURE) {
-		if (errno == EINTR)
-			continue;
-		XCloseDisplay(widget->display);
-		err(EXIT_FAILURE, "connection to display \"%s\"", dpyname);
-	}
+	if ((widget = malloc(sizeof(*widget))) == NULL)
+		return NULL;
+	*widget = (struct widget){
+		.display = display,
+	};
 	XInternAtoms(widget->display, atomnames, NATOMS, False, widget->atoms);
 	widget->screen = DefaultScreen(widget->display);
 	widget->rootwin = DefaultRootWindow(widget->display);
@@ -882,6 +875,7 @@ setup(struct widget *widget)
 		XCloseDisplay(widget->display);
 		errx(EXIT_FAILURE, "cannot load any font");
 	}
+	return widget;
 }
 
 static struct item *
@@ -981,6 +975,8 @@ cleanitems(struct item *item, struct item *skip)
 static void
 cleanup(struct widget *widget)
 {
+	if (widget == NULL)
+		return;
 	if (widget->fontset != NULL)
 		ctrlfnt_free(widget->fontset);
 	for (int color = 0; color < COLOR_LAST; color++) {
@@ -2617,8 +2613,10 @@ waitrootclick(struct widget *widget)
 int
 main(int argc, char *argv[])
 {
+	char const *dpyname;
 	struct sigaction sa;
-	struct widget widget = { 0 };
+	struct widget *widget = NULL;
+	Display *display;
 	XRectangle geometry = { 0 };
 
 	sa.sa_handler = SIG_IGN;
@@ -2635,20 +2633,30 @@ main(int argc, char *argv[])
 	(void)setjmp(jmpenv);
 	if (options.userplaced)
 		geometry = options.geometry;
-	setup(&widget);
+
+	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
+		warnx("warning: no locale support for X11");
+	if ((dpyname = XDisplayName(NULL)) == NULL || dpyname[0] == '\0')
+		errx(EXIT_FAILURE, "DISPLAY is not set");
+	if ((display = XOpenDisplay(dpyname)) == NULL)
+		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
+	if (fcntl(XConnectionNumber(display), F_SETFD, FD_CLOEXEC) == -1)
+		err(EXIT_FAILURE, "connection to display \"%s\"", dpyname);
+	if ((widget = setup(display)) == NULL)
+		errx(EXIT_FAILURE, "cannot create widget");
 	do {
-		waitrootclick(&widget);
+		waitrootclick(widget);
 		if (!options.windowed) {
-			if (grabpointer(&widget) == RETURN_FAILURE)
+			if (grabpointer(widget) == RETURN_FAILURE)
 				return EXIT_FAILURE;
-			if (grabkeyboard(&widget) == RETURN_FAILURE)
+			if (grabkeyboard(widget) == RETURN_FAILURE)
 				return EXIT_FAILURE;
 		}
-		run(&widget, &geometry);
-		ungrab(&widget);
+		run(widget, &geometry);
+		ungrab(widget);
 	} while (options.rootmode);
 error:
-	cleanup(&widget);
+	cleanup(widget);
 	free(options.iconstring);
 	if (options.freetitle)
 		free(options.title);
