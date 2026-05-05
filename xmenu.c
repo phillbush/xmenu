@@ -733,7 +733,7 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 }
 
 static struct widget *
-setup(Display *display)
+setup(Display *display, int screen)
 {
 	struct widget *widget;
 	XVisualInfo vinfo;
@@ -743,9 +743,9 @@ setup(Display *display)
 		return NULL;
 	*widget = (struct widget){
 		.display = display,
+		.screen = screen,
 	};
-	widget->screen = DefaultScreen(widget->display);
-	widget->rootwin = DefaultRootWindow(widget->display);
+	widget->rootwin = RootWindow(widget->display, widget->screen);
 	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
 	if (options.rootmode) {
 		XGrabButton(
@@ -987,8 +987,6 @@ cleanup(struct widget *widget)
 		XFreeColormap(widget->display, widget->colormap);
 	if (widget->window != None)
 		XDestroyWindow(widget->display, widget->window);
-	if (widget->display != NULL)
-		XCloseDisplay(widget->display);
 }
 
 static void
@@ -2620,7 +2618,7 @@ main(int argc, char *argv[])
 		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
 	if (fcntl(XConnectionNumber(display), F_SETFD, FD_CLOEXEC) == -1)
 		err(EXIT_FAILURE, "connection to display \"%s\"", dpyname);
-	if ((widget = setup(display)) == NULL)
+	if ((widget = setup(display, DefaultScreen(widget->display))) == NULL)
 		errx(EXIT_FAILURE, "cannot create widget");
 	do {
 		waitrootclick(widget);
@@ -2639,5 +2637,7 @@ error:
 	if (options.freetitle)
 		free(options.title);
 	cleanitems(options.items, NULL);
+	if (display != NULL)
+		XCloseDisplay(display);
 	return EXIT_SUCCESS;
 }
