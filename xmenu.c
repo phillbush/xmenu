@@ -59,6 +59,8 @@ enum {
 	COLOR_BOT,
 	COLOR_SELBG,
 	COLOR_SELFG,
+	COLOR_BORDER,
+	COLOR_OPACITY,
 	COLOR_LAST,
 };
 
@@ -172,7 +174,7 @@ struct widget {
 		XRenderColor chans;
 		Pixmap pix;
 		Picture pict;
-	} opacity, border, colors[COLOR_LAST];
+	} colors[COLOR_LAST];
 };
 
 static jmp_buf jmpenv;
@@ -639,11 +641,12 @@ parse_opacity(void *ctx, void *, const char *value)
 
 	if (!parse_double(NULL, &d, value) || d < 0.0 || d > 1.0)
 		return false;
+	widget->colors[COLOR_OPACITY].chans = (XRenderColor){ .alpha = d * 0xFFFF};
 	XRenderFillRectangle(
 		widget->display,
 		PictOpSrc,
-		widget->opacity.pict,
-		&(XRenderColor){ .alpha = d * 0xFFFF},
+		widget->colors[COLOR_OPACITY].pict,
+		&widget->colors[COLOR_OPACITY].chans,
 		0, 0, 1, 1
 	);
 	return true;
@@ -1319,7 +1322,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			widget->display,
 			PictOpSrc,
 			widget->colors[i==CANVAS_SELECT ?  COLOR_SELBG : COLOR_BG].pict,
-			widget->opacity.pict,
+			widget->colors[COLOR_OPACITY].pict,
 			canvas[i][LAYER_BG].picture,
 			0, 0,
 			0, 0,
@@ -1560,7 +1563,7 @@ next:
 		menu->window,
 		menu->canvas[LAYER_BG].pixmap
 	);
-	XSetWindowBorderPixmap(widget->display, menu->window, widget->border.pix);
+	XSetWindowBorderPixmap(widget->display, menu->window, widget->colors[COLOR_BORDER].pix);
 	XClearWindow(widget->display, menu->window);
 	for (size_t i = 0; i < CANVAS_FINAL; i++) for (size_t j = 0; j < LAYER_LAST; j++) {
 		XRenderFreePicture(widget->display, canvas[i][j].picture);
@@ -2444,18 +2447,6 @@ cleanup(struct widget *widget)
 			);
 		}
 	}
-	if (widget->opacity.pict != None) {
-		XRenderFreePicture(
-			widget->display,
-			widget->opacity.pict
-		);
-	}
-	if (widget->opacity.pix != None) {
-		XFreePixmap(
-			widget->display,
-			widget->opacity.pix
-		);
-	}
 	if (widget->colormap != None)
 		XFreeColormap(widget->display, widget->colormap);
 	if (widget->window != None)
@@ -2479,15 +2470,15 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.colormap = colormap,
 		.window = None,
 
-	/* default hardcoded values (overriddable at runtime) */
-#define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
-		.colors[COLOR_BG].chans = COLOR(0x3100, 0x3100, 0x3100),
-		.colors[COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF),
-		.colors[COLOR_SELBG].chans = COLOR(0x3400, 0x6500, 0xA400),
-		.colors[COLOR_SELFG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF),
-		.colors[COLOR_TOP].chans = COLOR(0x7300, 0x7300, 0x7300),
-		.colors[COLOR_BOT].chans = COLOR(0x1000, 0x1000, 0x1000),
-		.border.chans = COLOR(0x0000, 0x0000, 0x0000),
+		/* defaults [for color channels:  RED,  GREEN,   BLUE,  ALPHA] */
+		.colors[COLOR_BG].chans     = {0x3100, 0x3100, 0x3100, 0xFFFF},
+		.colors[COLOR_FG].chans     = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF},
+		.colors[COLOR_SELBG].chans  = {0x3400, 0x6500, 0xA400, 0xFFFF},
+		.colors[COLOR_SELFG].chans  = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF},
+		.colors[COLOR_TOP].chans    = {0x7300, 0x7300, 0x7300, 0xFFFF},
+		.colors[COLOR_BOT].chans    = {0x1000, 0x1000, 0x1000, 0xFFFF},
+		.colors[COLOR_BORDER].chans = {0x0000, 0x0000, 0x0000, 0xFFFF},
+		.colors[COLOR_OPACITY].chans = {.alpha = 0xFFFF},
 		.borderwid = 1,
 		.iconsize = 16,
 		.gap = 0,
@@ -2509,20 +2500,6 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		if (retval == RETURN_FAILURE)
 			goto error;
 	}
-	createpicture(
-		widget,
-		&widget->border.pict,
-		&widget->border.pix,
-		&widget->border.chans,
-		false
-	);
-	createpicture(
-		widget,
-		&widget->opacity.pict,
-		&widget->opacity.pix,
-		&(XRenderColor){ .alpha = 0xFFFF },
-		true
-	);
 	loadresources(widget, XResourceManagerString(widget->display));
 	if (widget->fontset == NULL)
 		setfont(widget, NULL, 0.0);
