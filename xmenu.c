@@ -154,8 +154,6 @@ struct widget {
 	Window window;
 	struct timespec lasttime;
 	XRectangle monitor;
-	XRenderPictFormat *xformat;
-	XRenderPictFormat *alphaformat;
 	ctrlfnt *fontset;
 	struct menu *menus;
 	unsigned int fonth;
@@ -712,7 +710,9 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 	*picture = XRenderCreatePicture(
 		widget->display,
 		*pixmap,
-		isalpha ? widget->alphaformat : widget->xformat,
+		isalpha
+			? XRenderFindStandardFormat(widget->display, PictStandardA8)
+			: XRenderFindVisualFormat(widget->display, widget->visual),
 		CPRepeat,
 		&(XRenderPictureAttributes){
 			.repeat = RepeatNormal,
@@ -733,68 +733,22 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 }
 
 static struct widget *
-setup(Display *display, int screen)
+setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth)
 {
 	struct widget *widget;
-	XVisualInfo vinfo;
-	Colormap cmap = None;
 
 	if ((widget = malloc(sizeof(*widget))) == NULL)
 		return NULL;
 	*widget = (struct widget){
 		.display = display,
 		.screen = screen,
+		.rootwin = RootWindow(display, screen),
+		.visual = visual,
+		.depth = depth,
+		.colormap = colormap,
 	};
-	widget->rootwin = RootWindow(widget->display, widget->screen);
 	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
-	if (options.rootmode) {
-		XGrabButton(
-			widget->display,
-			options.button,
-			AnyModifier,
-			widget->rootwin,
-			False,
-			ButtonPressMask,
-			GrabModeSync,
-			GrabModeSync,
-			None,
-			None
-		);
-	}
 
-	if (XMatchVisualInfo(widget->display, widget->screen, 32, TrueColor, &vinfo)) {
-		cmap = XCreateColormap(
-			widget->display,
-			widget->rootwin,
-			vinfo.visual,
-			AllocNone
-		);
-	}
-	if (cmap != None) {
-		widget->colormap = cmap;
-		widget->visual = vinfo.visual;
-		widget->depth = vinfo.depth;
-	} else {
-		widget->colormap = DefaultColormap(widget->display, widget->screen);
-		widget->visual = DefaultVisual(widget->display, widget->screen);
-		widget->depth = DefaultDepth(widget->display, widget->screen);
-	}
-	widget->xformat = XRenderFindVisualFormat(
-		widget->display,
-		widget->visual
-	);
-	if (widget->xformat == NULL) {
-		XCloseDisplay(widget->display);
-		errx(EXIT_FAILURE, "cannot find XRender visual format");
-	}
-	widget->alphaformat = XRenderFindStandardFormat(
-		widget->display,
-		PictStandardA8
-	);
-	if (widget->alphaformat == NULL) {
-		XCloseDisplay(widget->display);
-		errx(EXIT_FAILURE, "cannot find XRender visual format");
-	}
 	widget->window = createwindow(widget, NULL, 0, True);
 	if (widget->window == None) {
 		XCloseDisplay(widget->display);
@@ -1260,7 +1214,7 @@ drawtriangle(struct widget *widget, Picture picture, Picture src, int x, int y, 
 		PictOpOver,
 		src,
 		picture,
-		widget->alphaformat,
+		XRenderFindStandardFormat(widget->display, PictStandardA8),
 		0, 0,
 		&triangle,
 		1
@@ -1437,7 +1391,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 		menu->canvas[i].picture = XRenderCreatePicture(
 			widget->display,
 			menu->canvas[i].pixmap,
-			widget->xformat,
+			XRenderFindVisualFormat(widget->display, widget->visual),
 			0,
 			NULL
 		);
@@ -1462,7 +1416,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 		canvas[i][j].picture = XRenderCreatePicture(
 			widget->display,
 			canvas[i][j].pixmap,
-			widget->xformat,
+			XRenderFindVisualFormat(widget->display, widget->visual),
 			0,
 			NULL
 		);
@@ -2592,8 +2546,12 @@ main(int argc, char *argv[])
 	char const *dpyname;
 	struct sigaction sa;
 	struct widget *widget = NULL;
-	Display *display;
+	Display *display = NULL;
 	XRectangle geometry = { 0 };
+	Visual *visual;
+	Colormap colormap;
+	int depth;
+	XVisualInfo vinfo;
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
@@ -2618,7 +2576,39 @@ main(int argc, char *argv[])
 		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
 	if (fcntl(XConnectionNumber(display), F_SETFD, FD_CLOEXEC) == -1)
 		err(EXIT_FAILURE, "connection to display \"%s\"", dpyname);
-	if ((widget = setup(display, DefaultScreen(widget->display))) == NULL)
+	if (options.rootmode) {
+		XGrabButton(
+			display,
+			options.button,
+			AnyModifier,
+			DefaultRootWindow(display),
+			False,
+			ButtonPressMask,
+			GrabModeSync,
+			GrabModeSync,
+			None,
+			None
+		);
+	}
+	if (XMatchVisualInfo(display, DefaultScreen(display), 32, TrueColor, &vinfo)) {
+		colormap = XCreateColormap(
+			display,
+			DefaultRootWindow(display),
+			vinfo.visual,
+			AllocNone
+		);
+		visual = vinfo.visual;
+		depth = vinfo.depth;
+	} else {
+		colormap = DefaultColormap(display, DefaultScreen(display));
+		visual = DefaultVisual(display, DefaultScreen(display));
+		depth = DefaultDepth(display, DefaultScreen(display));
+	}
+	widget = setup(
+		display, DefaultScreen(display),
+		visual, colormap, depth
+	);
+	if (widget == NULL)
 		errx(EXIT_FAILURE, "cannot create widget");
 	do {
 		waitrootclick(widget);
