@@ -549,9 +549,9 @@ static void
 setcolor(Display *display, struct color *color, struct rgb rgb)
 {
 	color->chans = (XRenderColor){
-		.red   = rgb.red,
-		.green = rgb.green,
-		.blue  = rgb.blue,
+		.red   = rgb.red * 0xFFFF,
+		.green = rgb.green * 0xFFFF,
+		.blue  = rgb.blue * 0xFFFF,
 		.alpha = 0xFFFF,
 	};
 	XRenderFillRectangle(
@@ -578,9 +578,9 @@ parse_bg(void *ctx, void *, char const *value)
 		return false;
 	}
 	hsy = to_hsy(rgb = (struct rgb){
-		.red = xcolor.red,
-		.green = xcolor.green,
-		.blue = xcolor.blue,
+		.red = (double)xcolor.red / 0xFFFF,
+		.green = (double)xcolor.green / 0xFFFF,
+		.blue = (double)xcolor.blue / 0xFFFF,
 	});
 
 	setcolor(widget->display, &widget->colors[COLOR_BG], rgb);
@@ -612,9 +612,9 @@ parse_color(void *ctx, void *addr, char const *value)
 	if (!XParseColor(widget->display, widget->colormap, value, &xcolor))
 		return false;
 	setcolor(widget->display, color, (struct rgb){
-		.red = xcolor.red,
-		.green = xcolor.green,
-		.blue = xcolor.blue,
+		.red = (double)xcolor.red / 0xFFFF,
+		.green = (double)xcolor.green / 0xFFFF,
+		.blue = (double)xcolor.blue / 0xFFFF,
 	});
 	return true;
 }
