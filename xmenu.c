@@ -688,7 +688,7 @@ loadresources(struct widget *widget, const char *str)
 		MK_RES("opacity", "Opacity", NULL, parse_opacity),
 		MK_RES("tearOff", "TearOff", &widget->tearoff, CTRLRES_SETBOOL),
 
-		/* undocumented; for compatibility with X11/Motif's TearOffModel */
+		/* undocumented; for compatibility with Motif's TearOffModel resource */
 		MK_RES("tearOffModel", "TearOffModel", &widget->tearoff, parse_tearoff),
 	}, 13);
 	if (fontspec != NULL)
