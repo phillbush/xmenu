@@ -2478,27 +2478,24 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.depth = depth,
 		.colormap = colormap,
 		.window = None,
-	};
-	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
-
-	widget->window = createwindow(widget, NULL, 0, True);
-	if (widget->window == None)
-		goto error;
-
-#define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
 
 	/* default hardcoded values (overriddable at runtime) */
-	widget->colors[COLOR_BG].chans = COLOR(0x3100, 0x3100, 0x3100);
-	widget->colors[COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
-	widget->colors[COLOR_SELBG].chans = COLOR(0x3400, 0x6500, 0xA400);
-	widget->colors[COLOR_SELFG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
-	widget->colors[COLOR_TOP].chans = COLOR(0x7300, 0x7300, 0x7300);
-	widget->colors[COLOR_BOT].chans = COLOR(0x1000, 0x1000, 0x1000);
-	widget->border.chans = COLOR(0x0000, 0x0000, 0x0000);
-	widget->borderwid = 1;
-	widget->iconsize = 16;
-	widget->gap = 0;
-	widget->alignment = ALIGN_LEFT;
+#define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
+		.colors[COLOR_BG].chans = COLOR(0x3100, 0x3100, 0x3100),
+		.colors[COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF),
+		.colors[COLOR_SELBG].chans = COLOR(0x3400, 0x6500, 0xA400),
+		.colors[COLOR_SELFG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF),
+		.colors[COLOR_TOP].chans = COLOR(0x7300, 0x7300, 0x7300),
+		.colors[COLOR_BOT].chans = COLOR(0x1000, 0x1000, 0x1000),
+		.border.chans = COLOR(0x0000, 0x0000, 0x0000),
+		.borderwid = 1,
+		.iconsize = 16,
+		.gap = 0,
+		.alignment = ALIGN_LEFT,
+	};
+	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
+	if ((widget->window = createwindow(widget, NULL, 0, True)) == None)
+		goto error;
 
 	for (size_t color = 0; color < COLOR_LAST; color++) {
 		int retval;
