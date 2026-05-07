@@ -732,84 +732,6 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 	return RETURN_SUCCESS;
 }
 
-static struct widget *
-setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth)
-{
-	struct widget *widget;
-
-	if ((widget = malloc(sizeof(*widget))) == NULL)
-		return NULL;
-	*widget = (struct widget){
-		.display = display,
-		.screen = screen,
-		.rootwin = RootWindow(display, screen),
-		.visual = visual,
-		.depth = depth,
-		.colormap = colormap,
-	};
-	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
-
-	widget->window = createwindow(widget, NULL, 0, True);
-	if (widget->window == None) {
-		XCloseDisplay(widget->display);
-		errx(EXIT_FAILURE, "cannot create window");
-	}
-
-#define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
-
-	/* default hardcoded values (overriddable at runtime) */
-	widget->colors[COLOR_BG].chans = COLOR(0x3100, 0x3100, 0x3100);
-	widget->colors[COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
-	widget->colors[COLOR_SELBG].chans = COLOR(0x3400, 0x6500, 0xA400);
-	widget->colors[COLOR_SELFG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
-	widget->colors[COLOR_TOP].chans = COLOR(0x7300, 0x7300, 0x7300);
-	widget->colors[COLOR_BOT].chans = COLOR(0x1000, 0x1000, 0x1000);
-	widget->border.chans = COLOR(0x0000, 0x0000, 0x0000);
-	widget->borderwid = 1;
-	widget->iconsize = 16;
-	widget->gap = 0;
-	widget->alignment = ALIGN_LEFT;
-
-	for (size_t color = 0; color < COLOR_LAST; color++) {
-		int retval;
-		retval = createpicture(
-			widget,
-			&widget->colors[color].pict,
-			&widget->colors[color].pix,
-			&widget->colors[color].chans,
-			false
-		);
-		if (retval == RETURN_FAILURE) {
-			XDestroyWindow(widget->display, widget->window);
-			XCloseDisplay(widget->display);
-			errx(EXIT_FAILURE, "cannot create picture");
-		}
-	}
-	createpicture(
-		widget,
-		&widget->border.pict,
-		&widget->border.pix,
-		&widget->border.chans,
-		false
-	);
-	createpicture(
-		widget,
-		&widget->opacity.pict,
-		&widget->opacity.pix,
-		&(XRenderColor){ .alpha = 0xFFFF },
-		true
-	);
-	loadresources(widget, XResourceManagerString(widget->display));
-	if (widget->fontset == NULL)
-		setfont(widget, NULL, 0.0);
-	if (widget->fontset == NULL) {
-		XDestroyWindow(widget->display, widget->window);
-		XCloseDisplay(widget->display);
-		errx(EXIT_FAILURE, "cannot load any font");
-	}
-	return widget;
-}
-
 static struct item *
 parsestdin(void)
 {
@@ -902,45 +824,6 @@ cleanitems(struct item *item, struct item *skip)
 		free(tmp->output);
 		free(tmp);
 	}
-}
-
-static void
-cleanup(struct widget *widget)
-{
-	if (widget == NULL)
-		return;
-	if (widget->fontset != NULL)
-		ctrlfnt_free(widget->fontset);
-	for (int color = 0; color < COLOR_LAST; color++) {
-		if (widget->colors[color].pict != None) {
-			XRenderFreePicture(
-				widget->display,
-				widget->colors[color].pict
-			);
-		}
-		if (widget->colors[color].pix != None) {
-			XFreePixmap(
-				widget->display,
-				widget->colors[color].pix
-			);
-		}
-	}
-	if (widget->opacity.pict != None) {
-		XRenderFreePicture(
-			widget->display,
-			widget->opacity.pict
-		);
-	}
-	if (widget->opacity.pix != None) {
-		XFreePixmap(
-			widget->display,
-			widget->opacity.pix
-		);
-	}
-	if (widget->colormap != None)
-		XFreeColormap(widget->display, widget->colormap);
-	if (widget->window != None)
-		XDestroyWindow(widget->display, widget->window);
 }
 
 static void
@@ -2538,6 +2421,120 @@ waitrootclick(struct widget *widget)
 			xev.xbutton.time
 		);
 	}
+}
+
+static void
+cleanup(struct widget *widget)
+{
+	if (widget == NULL)
+		return;
+	if (widget->fontset != NULL)
+		ctrlfnt_free(widget->fontset);
+	for (int color = 0; color < COLOR_LAST; color++) {
+		if (widget->colors[color].pict != None) {
+			XRenderFreePicture(
+				widget->display,
+				widget->colors[color].pict
+			);
+		}
+		if (widget->colors[color].pix != None) {
+			XFreePixmap(
+				widget->display,
+				widget->colors[color].pix
+			);
+		}
+	}
+	if (widget->opacity.pict != None) {
+		XRenderFreePicture(
+			widget->display,
+			widget->opacity.pict
+		);
+	}
+	if (widget->opacity.pix != None) {
+		XFreePixmap(
+			widget->display,
+			widget->opacity.pix
+		);
+	}
+	if (widget->colormap != None)
+		XFreeColormap(widget->display, widget->colormap);
+	if (widget->window != None)
+		XDestroyWindow(widget->display, widget->window);
+	free(widget);
+}
+
+static struct widget *
+setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth)
+{
+	struct widget *widget;
+
+	if ((widget = malloc(sizeof(*widget))) == NULL)
+		return NULL;
+	*widget = (struct widget){
+		.display = display,
+		.screen = screen,
+		.rootwin = RootWindow(display, screen),
+		.visual = visual,
+		.depth = depth,
+		.colormap = colormap,
+		.window = None,
+	};
+	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
+
+	widget->window = createwindow(widget, NULL, 0, True);
+	if (widget->window == None)
+		goto error;
+
+#define COLOR(r,g,b) (XRenderColor){.red=(r),.green=(g),.blue=(b),.alpha=0xFFFF}
+
+	/* default hardcoded values (overriddable at runtime) */
+	widget->colors[COLOR_BG].chans = COLOR(0x3100, 0x3100, 0x3100);
+	widget->colors[COLOR_FG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
+	widget->colors[COLOR_SELBG].chans = COLOR(0x3400, 0x6500, 0xA400);
+	widget->colors[COLOR_SELFG].chans = COLOR(0xFFFF, 0xFFFF, 0xFFFF);
+	widget->colors[COLOR_TOP].chans = COLOR(0x7300, 0x7300, 0x7300);
+	widget->colors[COLOR_BOT].chans = COLOR(0x1000, 0x1000, 0x1000);
+	widget->border.chans = COLOR(0x0000, 0x0000, 0x0000);
+	widget->borderwid = 1;
+	widget->iconsize = 16;
+	widget->gap = 0;
+	widget->alignment = ALIGN_LEFT;
+
+	for (size_t color = 0; color < COLOR_LAST; color++) {
+		int retval;
+		retval = createpicture(
+			widget,
+			&widget->colors[color].pict,
+			&widget->colors[color].pix,
+			&widget->colors[color].chans,
+			false
+		);
+		if (retval == RETURN_FAILURE)
+			goto error;
+	}
+	createpicture(
+		widget,
+		&widget->border.pict,
+		&widget->border.pix,
+		&widget->border.chans,
+		false
+	);
+	createpicture(
+		widget,
+		&widget->opacity.pict,
+		&widget->opacity.pix,
+		&(XRenderColor){ .alpha = 0xFFFF },
+		true
+	);
+	loadresources(widget, XResourceManagerString(widget->display));
+	if (widget->fontset == NULL)
+		setfont(widget, NULL, 0.0);
+	if (widget->fontset == NULL)
+		goto error;
+	return widget;
+error:
+	cleanup(widget);
+	return NULL;
 }
 
 int
