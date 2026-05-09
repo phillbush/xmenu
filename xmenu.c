@@ -667,14 +667,11 @@ loadresources(struct widget *widget, const char *str)
 	XrmDatabase xdb = NULL;
 	char const *fontspec = NULL;
 	double fontsize = 0.0;
-
-	if (str != NULL)
-		xdb = XrmGetStringDatabase(str);
 #define MK_RES(n, c, p, fun) (struct ctrlres){\
 	.name_path  = (char *[]){options.name, n},\
 	.class_path = (char *[]){options.class, c},\
 	.nnodes = 2, .addr = p, .setter = fun}
-	ctrlres_parsexrdb(widget, (XrmDatabase[]){xdb}, 1, (struct ctrlres[]){
+	struct ctrlres resources[] = {
 		MK_RES("alignment", "Alignment", &widget->alignment, parse_alignment),
 		MK_RES("font", "Font", &fontspec, CTRLRES_SETSTR),
 		MK_RES("faceName", "FaceName", &fontspec, CTRLRES_SETSTR),
@@ -692,7 +689,11 @@ loadresources(struct widget *widget, const char *str)
 
 		/* undocumented; for compatibility with Motif's TearOffModel resource */
 		MK_RES("tearOffModel", "TearOffModel", &widget->tearoff, parse_tearoff),
-	}, 15);
+	};
+
+	if (str != NULL)
+		xdb = XrmGetStringDatabase(str);
+	ctrlres_parsexrdb(widget, (XrmDatabase[]){xdb}, 1, resources, LEN(resources));
 	if (fontspec != NULL)
 		setfont(widget, fontspec, fontsize);
 	XrmDestroyDatabase(xdb);
