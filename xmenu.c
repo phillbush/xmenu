@@ -657,7 +657,7 @@ parse_tearoff(void *, void *addr, char const *value)
 {
 	bool *dst = addr;
 	if (dst != NULL && value != NULL)
-		*dst = ctrlres_istrue(value) || strcasestr(value, "ENABLED");
+		*dst = ctrlres_istrue(value) || strcasecmp(value, "TEAR_OFF_ENABLED") == 0;
 	return true;
 }
 
@@ -681,6 +681,8 @@ loadresources(struct widget *widget, const char *str)
 		MK_RES("fontSize", "FontSize", &fontsize, parse_double),
 		MK_RES("gap", "Gap", &widget->gap, parse_width),
 		MK_RES("maxItems", "MaxItems", &widget->maxitems, parse_width),
+		MK_RES("borderWidth", "BorderWidth", &widget->borderwid, parse_width),
+		MK_RES("shadowThickness", "ShadowThickness", &widget->shadowwid, parse_width),
 		MK_RES("background", "Background", NULL, parse_bg),
 		MK_RES("foreground", "Foreground", &widget->colors[COLOR_FG], parse_color),
 		MK_RES("activeBackground", "ActiveBackground", &widget->colors[COLOR_SELBG], parse_color),
@@ -690,7 +692,7 @@ loadresources(struct widget *widget, const char *str)
 
 		/* undocumented; for compatibility with Motif's TearOffModel resource */
 		MK_RES("tearOffModel", "TearOffModel", &widget->tearoff, parse_tearoff),
-	}, 13);
+	}, 15);
 	if (fontspec != NULL)
 		setfont(widget, fontspec, fontsize);
 	XrmDestroyDatabase(xdb);
@@ -919,9 +921,7 @@ grabkeyboard(struct widget *widget)
 static void
 drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 {
-	int i;
-
-	for(i = 0; i < widget->shadowwid; i++) {
+	for (int i = 0; i < widget->shadowwid; i++) {
 		/* draw light shadow */
 		XRenderFillRectangle(
 			widget->display,

@@ -43,10 +43,12 @@ Bool
 ctrlres_istrue(char const *value)
 {
 	return value != NULL && (
-		strcasecmp(value, "true") == 0 ||
+		strcasecmp(value, "1") == 0 ||
+		strcasecmp(value, "enable") == 0 ||
+		strcasecmp(value, "enabled") == 0 ||
 		strcasecmp(value, "on") == 0 ||
-		strcasecmp(value, "yes") == 0 ||
-		strcasecmp(value, "1") == 0
+		strcasecmp(value, "true") == 0 ||
+		strcasecmp(value, "yes") == 0
 	);
 }
 
