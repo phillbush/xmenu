@@ -122,15 +122,8 @@ struct Options {
 	bool userplaced;
 	bool xneg, yneg, xpercent, ypercent;
 	bool monplaced;
-	bool filebrowse;
-	bool freetitle;
 	bool use_monitor;
 	int monitor;
-	int argc;
-	char **argv;
-	char *name;
-	char *class;
-	char *title;
 
 	unsigned int button;
 	unsigned int modifier;
@@ -141,10 +134,7 @@ struct Options {
 	size_t niconpaths;
 
 	XRectangle geometry;
-} options = {
-	.name = "xmenu",
-	.class = "XMenu",
-};
+} options;
 
 struct widget {
 	Display *display;
@@ -175,23 +165,18 @@ struct widget {
 		Pixmap pix;
 		Picture pict;
 	} colors[COLOR_LAST];
+
+	int argc;
+	char **argv;
+	char *name;
+	char *class;
+	char *title;
 };
 
 static jmp_buf jmpenv;
 static struct item tearoff = { .label = "tearoff" };
 static struct item scrollup = { .label = "scrollup" };
 static struct item scrolldown = { .label = "scrolldown" };
-
-static void
-usage(void)
-{
-	(void)fprintf(
-		stderr,
-		"usage: xmenu [-fw] [-N name] "
-		"[-p position] [-t window] [-x button]\n"
-	);
-	exit(EXIT_FAILURE);
-}
 
 static void *
 emalloc(size_t size)
@@ -348,74 +333,6 @@ setmodifier(const char *s)
 		}
 		break;
 	}
-}
-
-static void
-parseoptions(int argc, char *argv[])
-{
-	int ch;
-
-	options.argc = argc;
-	options.argv = argv;
-	if (argv[0] != NULL && argv[0][0] != '\0') {
-		options.name = strchr(argv[0], '/');
-		if (options.name != NULL) {
-			options.name++;
-		} else {
-			options.name = argv[0];
-		}
-	}
-	while ((ch = getopt(argc, argv, "ifN:p:rt:wx:X:")) != -1) switch (ch) {
-	case 'N':
-		options.name = optarg;
-		break;
-	case 'f':
-		options.filebrowse = true;
-		break;
-	case 'p':
-		parsegeometry(optarg);
-		break;
-	case 't':
-		options.client = strtoul(optarg, NULL, 0);
-		break;
-	case 'w':
-		options.windowed = true;
-		break;
-	case 'x':
-		if (setbutton(optarg))
-			options.rootmode = true;
-		setmodifier(optarg);
-		break;
-	default:
-		usage();
-		break;
-
-	/* options below are deprecated and ignored */
-	case 'i':
-	case 'r':
-	case 'X':
-		break;
-	}
-	if (options.rootmode) {
-		options.client = None;
-		options.windowed = false;
-	} else if (options.windowed) {
-		options.rootmode = false;
-	}
-	argc -= optind;
-	argv += optind;
-	switch (argc) {
-	case 1:
-		options.title = argv[0];
-		break;
-	case 0:
-		options.title = options.class;
-		break;
-	default:
-		usage();
-		exit(EXIT_FAILURE);
-	}
-	return;
 }
 
 static Window
@@ -668,27 +585,31 @@ loadresources(struct widget *widget, const char *str)
 	char const *fontspec = NULL;
 	double fontsize = 0.0;
 #define MK_RES(n, c, p, fun) (struct ctrlres){\
-	.name_path  = (char *[]){options.name, n},\
-	.class_path = (char *[]){options.class, c},\
+	.name_path  = (char *[]){widget->name, n},\
+	.class_path = (char *[]){widget->class, c},\
 	.nnodes = 2, .addr = p, .setter = fun}
 	struct ctrlres resources[] = {
-		MK_RES("alignment", "Alignment", &widget->alignment, parse_alignment),
-		MK_RES("font", "Font", &fontspec, CTRLRES_SETSTR),
-		MK_RES("faceName", "FaceName", &fontspec, CTRLRES_SETSTR),
-		MK_RES("fontSize", "FontSize", &fontsize, parse_double),
-		MK_RES("gap", "Gap", &widget->gap, parse_width),
-		MK_RES("maxItems", "MaxItems", &widget->maxitems, parse_width),
-		MK_RES("borderWidth", "BorderWidth", &widget->borderwid, parse_width),
-		MK_RES("shadowThickness", "ShadowThickness", &widget->shadowwid, parse_width),
-		MK_RES("background", "Background", NULL, parse_bg),
-		MK_RES("foreground", "Foreground", &widget->colors[COLOR_FG], parse_color),
 		MK_RES("activeBackground", "ActiveBackground", &widget->colors[COLOR_SELBG], parse_color),
 		MK_RES("activeForeground", "ActiveForeground", &widget->colors[COLOR_SELFG], parse_color),
+		MK_RES("alignment", "Alignment", &widget->alignment, parse_alignment),
+		MK_RES("background", "Background", NULL, parse_bg),
+		MK_RES("borderWidth", "BorderWidth", &widget->borderwid, parse_width),
+		MK_RES("font", "Font", &fontspec, CTRLRES_SETSTR),
+		MK_RES("fontSize", "FontSize", &fontsize, parse_double),
+		MK_RES("foreground", "Foreground", &widget->colors[COLOR_FG], parse_color),
+		MK_RES("gap", "Gap", &widget->gap, parse_width),
+		MK_RES("maxItems", "MaxItems", &widget->maxitems, parse_width),
 		MK_RES("opacity", "Opacity", NULL, parse_opacity),
+		MK_RES("shadowThickness", "ShadowThickness", &widget->shadowwid, parse_width),
 		MK_RES("tearOff", "TearOff", &widget->tearoff, CTRLRES_SETBOOL),
 
 		/* undocumented; for compatibility with Motif's TearOffModel resource */
 		MK_RES("tearOffModel", "TearOffModel", &widget->tearoff, parse_tearoff),
+
+		/* overriding resources; must come later */
+		MK_RES("faceName", "FaceName", &fontspec, CTRLRES_SETSTR),
+		MK_RES("topShadowColor", "TopShadowColor", &widget->colors[COLOR_TOP], parse_color),
+		MK_RES("bottomShadowColor", "BottomShadowColor", &widget->colors[COLOR_BOT], parse_color),
 	};
 
 	if (str != NULL)
@@ -1245,7 +1166,7 @@ openssubmenu(struct item *item)
 {
 	if (item->children != NULL)
 		return true;
-	if (options.filebrowse && item->output != NULL && item->output[0] == '/')
+	if (item->output != NULL && item->output[0] == '/')
 		return true;
 	return false;
 }
@@ -1722,7 +1643,7 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 		(void)grabkeyboard(widget);
 	} else {
 		caller = NULL;
-		name = options.title;
+		name = widget->title;
 		if (options.userplaced)
 			xgap = ygap = 0;
 		else
@@ -1870,13 +1791,13 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 		widget->display,
 		menu->window,
 		name, name,
-		options.argv,
-		options.argc,
+		widget->argv,
+		widget->argc,
 		&(XSizeHints){ .flags = USPosition|USSize },
 		NULL,
 		&(XClassHint){
-			.res_class = options.class,
-			.res_name = options.name,
+			.res_class = widget->class,
+			.res_name = widget->name,
 		}
 	);
 	(void)XChangeProperty(
@@ -2084,8 +2005,6 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 		options.xpercent = options.ypercent = false;
 		options.windowed = true,
 		options.rootmode = false,
-		options.title = estrdup(menu->title),
-		options.freetitle = true,
 		options.geometry.x = menu->geometry.x,
 		options.geometry.y = menu->geometry.y,
 		options.geometry.width = 0,
@@ -2179,7 +2098,7 @@ openitem(struct widget *widget, struct item *item, int ypos, bool alt)
 		popupmenu(widget, item->children, &rect, false);
 	} else if (alt && item->altoutput != NULL) {
 		printitem(widget, item->altoutput);
-	} else if (options.filebrowse && item->output != NULL &&
+	} else if (item->output != NULL &&
 	           item->output[0] == '/') {
 		if (alt) {
 			snprintf(buf, PATH_MAX, "%s%s", "file:", item->output);
@@ -2456,7 +2375,9 @@ cleanup(struct widget *widget)
 }
 
 static struct widget *
-setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth)
+setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth,
+		char *title, char *name, char *class,
+		int argc, char *argv[])
 {
 	struct widget *widget;
 
@@ -2470,6 +2391,11 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.depth = depth,
 		.colormap = colormap,
 		.window = None,
+		.argc = argc,
+		.argv = argv,
+		.name = name,
+		.class = class,
+		.title = title,
 
 		/* defaults [for color channels:  RED,  GREEN,   BLUE,  ALPHA] */
 		.colors[COLOR_BG].chans     = {0x3100, 0x3100, 0x3100, 0xFFFF},
@@ -2524,6 +2450,9 @@ main(int argc, char *argv[])
 	Colormap colormap;
 	int depth;
 	XVisualInfo vinfo;
+	char *name = "xmenu";
+	char *class = "XMenu";
+	char *title = "XMenu";
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
@@ -2531,11 +2460,59 @@ main(int argc, char *argv[])
 	if (sigaction(SIGCHLD, &sa, NULL) == -1)
 		err(EXIT_FAILURE, "sigaction");
 	parseiconpaths(getenv("ICONPATH"));
-	parseoptions(argc, argv);
-	if ((options.items = parsestdin()) == NULL) {
-		warnx("no menu generated");
-		goto error;
+
+	if (argv[0] != NULL && argv[0][0] != '\0') {
+		name = strchr(argv[0], '/');
+		if (name != NULL)
+			name++;
+		else
+			name = argv[0];
 	}
+	for (int i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "-windowed") || !strcmp(argv[i], "-w")) {
+			options.windowed = true;
+		} else if (!strcmp(argv[i], "-name") || !strcmp(argv[i], "-N")) {
+			name = argv[++i];
+		} else if (!strcmp(argv[i], "-leader")) {
+			options.client = strtoul(argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p")) {
+			parsegeometry(argv[++i]);
+		} else if (!strcmp(argv[i], "-rootgrab") || !strcmp(argv[i], "-x")) {
+			char *arg = argv[++i];
+			if (setbutton(arg))
+				options.rootmode = true;
+			setmodifier(arg);
+		} else if (!strcmp(argv[i], "-title")) {
+			title = argv[++i];
+		} else {
+			warnx("unknown option -- %s", argv[i]);
+		usage:
+			(void)fprintf(
+				stderr,
+				"usage: xmenu"
+				" [-leader WINDOWID]"
+				" [-name NAME]"
+				" [-position POSITION]"
+				" [-rootgrab BUTTON]"
+				" [-title TITLE]"
+				" [-windowed]"
+				"\n"
+			);
+			exit(EXIT_FAILURE);
+		}
+		if (i == argc) {
+			warnx("option requires an argument -- %s", argv[i-1]);
+			goto usage;
+		}
+	}
+	if (options.rootmode) {
+		options.client = None;
+		options.windowed = false;
+	} else if (options.windowed) {
+		options.rootmode = false;
+	}
+	if ((options.items = parsestdin()) == NULL)
+		errx(EXIT_FAILURE, "no menu generated");
 	(void)setjmp(jmpenv);
 	if (options.userplaced)
 		geometry = options.geometry;
@@ -2577,8 +2554,8 @@ main(int argc, char *argv[])
 		depth = DefaultDepth(display, DefaultScreen(display));
 	}
 	widget = setup(
-		display, DefaultScreen(display),
-		visual, colormap, depth
+		display, DefaultScreen(display), visual, colormap, depth,
+		title, name, class, argc, argv
 	);
 	if (widget == NULL)
 		errx(EXIT_FAILURE, "cannot create widget");
@@ -2593,11 +2570,8 @@ main(int argc, char *argv[])
 		run(widget, &geometry);
 		ungrab(widget);
 	} while (options.rootmode);
-error:
 	cleanup(widget);
 	free(options.iconstring);
-	if (options.freetitle)
-		free(options.title);
 	cleanitems(options.items, NULL);
 	if (display != NULL)
 		XCloseDisplay(display);

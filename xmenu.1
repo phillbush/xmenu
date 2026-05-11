@@ -1,4 +1,4 @@
-.Dd April 11, 2025
+.Dd May 9, 2026
 .Dt XMENU 1
 .Os
 .Sh NAME
@@ -6,12 +6,12 @@
 .Nd desktop menu for X11
 .Sh SYNOPSIS
 .Nm xmenu
-.Op Fl fw
-.Op Fl N Ar name
-.Op Fl p Ar position
-.Op Fl t Ar window
-.Op Fl x Ar modifier-button
-.Op Ar title
+.Op Fl leader Ar WINDOWID
+.Op Fl name Ar NAME
+.Op Fl position Ar POSITION
+.Op Fl rootgrab Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON
+.Op Fl title Ar TITLE
+.Op Fl windowed
 .Sh DESCRIPTION
 .Nm
 is a desktop menu for X11.
@@ -21,17 +21,17 @@ and writes the selected item into standard output.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
-.It Fl f
-Enable file system navigation.
-If this flag is set,
-any menu item whose output begins with a slash is interpreted as the path to a directory.
-Entering this item will open a menu containing the entries of that directory,
-so the user can navigate the contents of the directory with
-.Nm .
-If an item is selected, its absolute path is output prefixed with
-.Qq Ic "file:" .
-A directory's path can be output by selecting it with the middle mouse button.
-.It Fl N Ar NAME
+.It Fl leader Ar WINDOW
+Make the menu windows transient for the given
+.Ar WINDOW .
+That is, notify the window manager that the menus are bound to the given leader
+.Ar WINDOW .
+This also makes
+.Nm
+close when the
+.Ar WINDOW
+is destroyed.
+.It Fl name Ar NAME
 Specifiy the application name under which resources are to be obtained,
 rather than the execultable file name.
 .Ar NAME
@@ -40,15 +40,17 @@ should not contain
 or
 .Dq "*\&"
 characters.
-.It Fl p Ar POSITION
-Set the position to spawn
-.Nm .
+.It Fl position Xo
+.Cm "±" Ns Ar "X" Ns Op Cm "%" Ns
+.Cm "±" Ns Ar "Y" Ns Op Cm "%" Ns
+.Op Cm "@" Ns Ar MONITOR Oc .
+.Xc
+Set the position to open
+.Nm
+at.
 Without this option,
 .Nm
-spawns next to the cursor.
-.Ar POSITION
-is a string of the form
-.Cm "±" Ns Ar "X" Ns Oo Cm "%" Oc Ns Cm "±" Ns Ar "Y" Ns Oo Cm "%" Oc Ns Oo Cm "@" Ns Ar MONITOR Oc .
+pops up next to the cursor.
 The
 .Ar X
 and
@@ -64,7 +66,7 @@ or
 .Ar Y
 .Pc
 is preceded by a plus sign
-.Ar "+\&" ,
+.Pq Cm "\&+" ,
 position is from the left (or top) edge of the screen.
 .It
 If
@@ -74,7 +76,7 @@ or
 .Ar Y
 .Pc
 is preceded by a minus sign
-.Ar "-\&" ,
+.Pq Cm "\&-" ,
 position is from the right (or bottom) edge.
 .It
 If
@@ -84,7 +86,7 @@ or
 .Ar Y
 .Pc
 is followed by a percent sign
-.Pq Qq Cm "%" ,
+.Pq Cm "%" ,
 position of the center of the root menu is relative to the width (or height) of the screen.
 With no percent sign,
 position of the left (or top) corner of the menu is relative to the left (or top) corner of the screen.
@@ -100,22 +102,7 @@ or
 .Qq Cm cursor ,
 specifying the monitor where the cursor is on.
 .El
-.It Fl t Ar WINDOW
-Make the menu windows transient for the given
-.Ar WINDOW .
-That is, notify the window manager that the menus are bound to the given
-.Ar WINDOW .
-This also makes
-.Nm
-close when the
-.Ar WINDOW
-is destroyed.
-.It Fl w
-Asks the window manager to draw a border around the menu.
-This makes
-.Nm
-start torn off.
-.It Fl x Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON
+.It Fl rootgrab Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON
 This option requires an argument of the form
 .Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON ;
 where
@@ -151,14 +138,15 @@ is invoked in background on a X11 startup file
 or
 .Pa "~/.xsession" ) .
 This option cannot be used together with
-.Fl w
-or
-.Fl t .
+.Fl windowed.
+.It Fl title Ar TITLE
+Set the title of the menu window, when torn off.
+.It Fl windowed
+Asks the window manager to draw a border around the menu.
+This makes
+.Nm
+start torn off.
 .El
-.Pp
-If the argument
-.Ar title
-is given, the title of the menu window is set to it.
 .Sh SYNTAX
 Each item read from standard input has the following tab-separated format
 (bracket groups optional elements):
@@ -200,43 +188,46 @@ when the user clicks with the middle mouse button.
 .It Ar OUTPUT
 String that will be output after selecting the item.
 If an item does not have tabs after the label, its label is used as its output.
+.Pp
 If the output is empty or is a colon
 .Pq Ic \&: ,
 the item cannot be selected.
+.Pp
+If the output begins with a slash,
+it is interpreted as the path to a directory.
+Entering this item pops up a menu containing the entries of that directory,
+so the user can navigate the contents of the directory with
+.Nm .
+If an file is selected, its absolute path is output prefixed with
+.Qq Ic "file:" .
+A directory's path can be output by selecting it with the middle mouse button.
 .It Cm "\en"
 The newline terminates the item specification.
 .El
 .Sh USAGE
 .Nm
-is controlled by the mouse.
-Each menu has a list of items that can be activated by clicking on it with the
-first, second or third mouse buttons.
-.Bl -bullet
+is controlled as follows
+.Bl -tag -width "Left-/right-click" -compact
+.It Any click anywhere outside
+Closes any popped up menu.
+.It Ic Left- Ns / Ns Ic right-click
+.Bl -bullet -compact -width ""
+.It 
+On dashed topmost entry,
+tear the menu off.
 .It
-If there is a right-pointing triangle on the item, it pops up a submenu when activated.
+On entry with right-pointing triangle,
+pop up submenu.
 .It
-If the item is a dash at the top of the menu,
-it tears the menu off (that is, the menu becomes "windowed").
-.It
-If the item is a continuous horizontal line,
-it is a separator and cannot be selected.
-.It
-Otherwise, the item outputs some string when activated.
-Some items output an "alternative string" when activated with the second mouse buton
-(see above at
-.Sx SYNTAX ) .
+On regular entry ,
+print output for entry.
 .El
-.Pp
-.Nm
-can also be controlled by the keyboard.
-Items can be selected using the arrow keys.
-Tab (with and without Shift), Home, End, Enter and Esc, and 1-9 keys.
-.Bl -tag -width Ds
+.It Ic Middle-click
+Print alternate output for entry (if any).
 .It Ic End
 Selects the last item in the menu.
 .It Ic Esc
 Go to the menu above in the hierarchy or exit
-.Nm .
 .It Ic Home
 Selects the first item in the menu.
 .It Ic Left
@@ -249,22 +240,39 @@ Cycle through the items in the reverse direction.
 Cycle through the items in the regular direction.
 .El
 .Sh RESOURCES
-.Nm
-understands the following X resources.
-They must be prefixed with either the
-.Qq Ic "XMenu"
-class, or the application name
+All resources apply to the toplevel
+.Qq Ic XMenu
+class or the name specified by the
+.Fl name
+command line option
 .Po
-the executable file name, or the string given with the
-.Fl N
-command-line option
-.Pc ,
-followed by a period.
+.Qq Ic xmenu
+by default
+.Pc .
+Refer to the
+.Xr X 7
+manual, at the section
+.Sx RESOURCES
+for more information on X resources.
+.Bl -column XXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXX XXX
+.It Sy Resource name                Ta Sy Default value  Ta Sy Type
+.It Dv activeBackground  Ta Dv #3465A4   Ta color
+.It Dv activeForeground  Ta Dv #FFFFFF   Ta color
+.It Dv alignment         Ta Dv left      Ta Brq Qo Dv left Qc , Qo Dv center Qc , Qo Dv right Qc
+.It Dv background        Ta Dv #313131   Ta color
+.It Dv borderWidth       Ta Dv 1         Ta size (in pixels)
+.It Dv font Ns / Ns Dv faceName     Ta (system's default)  Ta xft-font Sy OR No xldf-font
+.It Dv fontSize Ns / Ns Dv faceSize Ta (system's default)  Ta size (in points)
+.It Dv foreground        Ta Dv #FFFFFF   Ta color
+.It Dv gap               Ta Dv 0         Ta distance (in pixels)
+.It Dv maxItems          Ta (computed)   Ta positive integer
+.It Dv opacity           Ta 1.0          Ta Bq 0.0 , 1.0
+.It Dv shadowThickness   Ta Dv 1         Ta size (in pixels)
+.It Dv tearOff           Ta Dv false     Ta boolean
+.It Dv topShadowColor    Ta (computed)   Ta boolean
+.It Dv bottomShadowColor Ta (computed)   Ta boolean
+.El
 .Bl -tag -width Ds
-.It Ic activeBackground
-The backround color of selected items in the menu.
-.It Ic activeForeground
-The color of the label text of selected items in the menu.
 .It Ic alignment
 If set to
 .Qq Ic left ,
@@ -273,60 +281,95 @@ or
 .Qq Ic right ,
 text is aligned to the left, center, or right of the menu, respectively.
 By default, text is aligned to the left.
-.It Ic background
-The background color of non-selected items in the menu.
+.It Ic background , activeBackground
+The color of the background for the menu and its selected entry,
+respectively.
+.Pp
+Refer to the
+.Xr X 7
+manual, at the section
+.Sx COLOR NAMES ,
+for the syntax of color names.
 .It Ic borderColor
 The color of the border around the menu.
 .It Ic borderWidth
 The size in pixels of the border around the menu.
-.It Ic faceName
-Font for drawing text.
-If the value is prefixed with
-.Qq Ic "xft:"
-(case insensitive), then
-.Nm
-uses the
-.Xr Xft 3
-library for drawing text;
-and fallback fonts can be specified by delimiting the fonts with commas.
-If the value is prefixed with
-.Qq Ic "x:"
+.It Ic font Pq synonym: Ic faceName
+The font for drawing text.
+.Pp
+If it is prefixed with
+.Qq Ic xft: ,
+it is a
+.Em FontConfig
+font pattern;
+and the Xft library is used to draw text.
+Fallback fonts, for missing glyphs, can be specified by delimiting the fonts with commas.
+Refer to the
+.Xr fonts.conf 5
+manual, at the section
+.Sx FONT NAMES ,
+for the syntax of font pattern strings.
+.Pp
+If it is prefixed with
+.Qq Ic x:
 or
-.Qq Ic "x11:"
-(case insensitive), then
-.Nm
-uses the X11 library for drawing text.
-.It Ic faceSize
+.Qq Ic x11: ,
+it is a
+.Em X Logical Font Description
+font pattern;
+and the X11 library is used to draw text.
+Refer to the
+.Xr fonts.conf 5
+manual, at the section
+.Sx FONT NAMES ,
+for the syntax of font pattern strings.
+.Pp
+If no prefix is given,
+the value is taken as a Xft/font-config pattern.
+.It Ic fontSize Pq synonym: Ic faceSize
 The size, in points of the font.
 This only affects
 .Xr Xft 3
 fonts.
-.It Ic foreground
-The color of the label text of non-selected items in the menu.
+.It Ic foreground , activeForeground
+The color of the label text on the menu and its selected entry,
+respectively.
+If not set, these resources are a contrasting color computed from
+.Ic background
+and
+.Ic activeBackground ,
+respectively.
+.Pp
+Refer to the
+.Xr X 7
+manual, at the section
+.Sx COLOR NAMES ,
+for the syntax of color names.
 .It Ic gap
 The gap, in pixels, between the menus.
 .It Ic maxItems
 Maximum number of items to be displayed in a menu.
 If a menu has more than this number of items, they will be scrolled with arrow buttons.
+The actual number of items displayed may be lower to fit the screen.
 .It Ic opacity
-Background opacity as a floating point number between 0.0 and 1.0 inclusive.
-.It Ic separatorColor
-The color of the separator between items in the menu.
+Background opacity as a floating point number between
+0.0 (transparent) and 1.0 (opaque) inclusive.
 .It Ic shadowThickness
 The size in pixels of the Motif-like 3D relief.
 .It Ic tearOff
-If set to
-.Qq Ic True ,
-.Qq Ic On ,
-or
-.Qq Ic Enable ,
+If
+.Qq Ic true ,
 creates a dashed line on the top of each non-windowed menu to tear them off into a new windowed menu.
-.It Ic topShadowColor , middleShadowColor , bottomShadowColor
-The color of the top/light, middle and bottom/dark parts of the Motif-like 3D relief.
-Setting these resources override
-.Ic background
-and
-.Ic separateColor .
+.It Ic topShadowColor , bottomShadowColor
+The color of the top/light and bottom/dark parts of the Motif-like 3D relief.
+If not set, these resources are computed from
+.Ic background .
+.Pp
+Refer to the
+.Xr X 7
+manual, at the section
+.Sx COLOR NAMES ,
+for the syntax of color names.
 .El
 .Sh ENVIRONMENT
 The following environment variables affect the execution of
