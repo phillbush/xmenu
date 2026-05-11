@@ -1498,8 +1498,6 @@ commitdraw(struct widget *widget, struct menu *menu, int ypos)
 {
 	int height;
 
-	if (menu->selected == NULL)
-		return;
 	if (menu->selected == &tearoff || menu->selected == &scrollup ||
 	    menu->selected == &scrolldown)
 		height = widget->separatorh;
