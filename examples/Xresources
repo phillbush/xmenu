@@ -7,7 +7,6 @@ XMenu.background:               #D4D0C8
 XMenu.foreground:               #000000
 XMenu.activeBackground:         #0A246A
 XMenu.activeForeground:         #FFFFFF
-XMenu.separatorColor:           #808080
 XMenu.borderColor:              #404040
 XMenu.borderWidth:              1
 
@@ -20,7 +19,7 @@ XMenu.middleShadowColor:        #D4D0C8
 ! Menu alignment
 XMenu.alignment:                right
 
-! Enable torn off menus
+! Enable torn off menus ("On", "True", "1" all fits, case insensitive)
 XMenu.tearOff:                  On
 
 ! Transparency
