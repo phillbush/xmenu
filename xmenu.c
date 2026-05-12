@@ -85,9 +85,9 @@ enum {
 };
 
 struct item {
-	char *label;            /* string to be drawed on menu */
-	char *output;           /* string to be outputed when item is clicked */
-	char *altoutput;        /* string to be outputed when item is clicked with alt button */
+	char const *label;
+	char const *output;
+	char const *altoutput;
 	char *file;             /* filename of the icon */
 	size_t labellen;
 	struct item *prev;
@@ -100,7 +100,7 @@ struct menu {
 	struct menu *next;
 	struct item *items, *selected;
 	struct item *first, *last, *lastsave;
-	char *title;
+	char const *title;
 	XRectangle geometry;
 	int selposition;
 	Window window;
@@ -374,16 +374,16 @@ allocitem(const char *label, const char *output, char *file)
 		item->output = NULL;
 		item->labellen = 0;
 	} else {
-		item->label = estrdup(label);
+		item->label = label;
 		item->labellen = strlen(item->label);
 		if (label == output) {
 			item->output = item->label;
 		} else if (output != NULL) {
-			item->output = estrdup(output);
+			item->output = output;
 		}
 	}
 	if (file != NULL)
-		item->file = estrdup(file);
+		item->file = file;
 	return item;
 }
 
@@ -660,56 +660,68 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 }
 
 static struct item *
-parsestdin(void)
+parsestdin(char **data)
 {
 	struct item *root = NULL;
 	struct item *prev = NULL;
 	struct item *item;
-	char *s, buf[BUFSIZ];
-	char *file, *label, *output;
-	size_t level = 0;
-	size_t prevlvl = 0;
 
-	while (fgets(buf, BUFSIZ, stdin) != NULL) {
-		/* get the indentation level */
-		level = strspn(buf, "\t");
+	FILE *stream;
+	char buf[BUFSIZ];
+	size_t size;
+	ssize_t nread;
 
-		/* get the label */
-		s = level + buf;
-		label = strtok(s, "\t\n");
-		if (label != NULL && strcmp(label, ":") == 0)
-			label = NULL;
+	if ((stream = open_memstream(data, &size)) == NULL)
+		err(EXIT_FAILURE, "open_memstream");
+	while ((nread = read(STDIN_FILENO, buf, sizeof(buf))) != 0) {
+		if (nread < 0)
+			err(EXIT_FAILURE, "read");
+		if (fwrite(buf, 1, nread, stream) != (size_t)nread)
+			err(EXIT_FAILURE, "fwrite");
+	}
+	if (fwrite("\0", 1, 1, stream) != 1)
+			err(EXIT_FAILURE, "fwrite");
+	if (fclose(stream) == EOF)
+			err(EXIT_FAILURE, "fclose");
 
-		/* get the filename */
-		file = NULL;
-		if (label != NULL && strncmp(label, "IMG:", 4) == 0) {
+	for (size_t beg = 0, linelen = 0; beg < size-1; beg += linelen+1) {
+		char *line = *data + beg;
+		char *label = NULL, *file = NULL, *output = NULL;
+		size_t indent_level = strspn(line, "\t");
+		static size_t prevlvl = 0;
+		char *s;
+
+		linelen = strcspn(line, "\n");
+		line[linelen] = '\0';
+		label = line + indent_level;
+		if (strncmp(label, "IMG:", 4) == 0) {
 			file = label + 4;
-			label = strtok(NULL, "\t\n");
+			label = file + strcspn(file, "\t");
+			s = label;
+			label += strspn(label, "\t");
+			*s = '\0';
 		}
+		output = label + strcspn(label, "\t");
+		s = output;
+		output += strspn(output, "\t");
+		*s = '\0';
 
-		/* get the output */
-		output = strtok(NULL, "\n");
-		if (output == NULL) {
+		if (*label == '\0')
+			label = NULL;
+		if (*output == '\0' || strcmp(output, ":") == 0)
 			output = label;
-		} else {
-			while (*output == '\t')
-				output++;
-		}
-		if (output != NULL && strcmp(output, ":") == 0)
-			output = NULL;
 
 		if (label != NULL && prev != NULL && prev->label != NULL &&
-		    level == prevlvl && strcmp(label, "''") == 0) {
-			free(prev->altoutput);
-			prev->altoutput = estrdup(output);
+		    indent_level == prevlvl && strcmp(label, "''") == 0) {
+			prev->altoutput = output;
 			continue;
 		}
 
 		item = allocitem(label, output, file);
 		if (prev == NULL) {
 			root = item;
-		} else if (level < prevlvl) {
-			for (size_t i = level; i < prevlvl; i++){
+		} else if (indent_level < prevlvl) {
+			for (size_t i = indent_level; i < prevlvl; i++){
 				if (prev->parent == NULL)
 					break;
 				prev = prev->parent;
@@ -717,16 +729,16 @@ parsestdin(void)
 			item->parent = prev->parent;
 			item->prev = prev;
 			prev->next = item;
-		} else if (level == prevlvl) {
+		} else if (indent_level == prevlvl) {
 			item->parent = prev->parent;
 			item->prev = prev;
 			prev->next = item;
-		} else if (level > prevlvl) {
+		} else if (indent_level > prevlvl) {
 			item->parent = prev;
 			prev->children = item;
 		}
 		prev = item;
-		prevlvl = level;
+		prevlvl = indent_level;
 	}
 	return root;
 }
@@ -746,9 +758,6 @@ cleanitems(struct item *item, struct item *skip)
 		tmp = item;
 		item = item->next;
 		if (tmp->label != tmp->output)
-			free(tmp->label);
-		free(tmp->altoutput);
-		free(tmp->output);
 		free(tmp);
 	}
 }
@@ -1620,7 +1629,7 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 	size_t nitems;
 	unsigned int textw, menuh;
 	int xgap, ygap;
-	char *name;
+	char const *name;
 	bool override_redirect, tearoff;
 
 	type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
@@ -2062,6 +2071,7 @@ listdirentries(const char *dirname)
 			prev->next = item;
 		item->prev = prev;
 		prev = item;
+#warning will get SEGFAULT, 
 		free(namelist[i]);
 	}
 	free(namelist);
@@ -2451,6 +2461,7 @@ main(int argc, char *argv[])
 	char *name = "xmenu";
 	char *class = "XMenu";
 	char *title = "XMenu";
+	char *read_data = NULL;
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
@@ -2509,7 +2520,7 @@ main(int argc, char *argv[])
 	} else if (options.windowed) {
 		options.rootmode = false;
 	}
-	if ((options.items = parsestdin()) == NULL)
+	if ((options.items = parsestdin(&read_data)) == NULL)
 		errx(EXIT_FAILURE, "no menu generated");
 	(void)setjmp(jmpenv);
 	if (options.userplaced)
@@ -2570,6 +2581,7 @@ main(int argc, char *argv[])
 	} while (options.rootmode);
 	cleanup(widget);
 	free(options.iconstring);
+	free(read_data);
 	cleanitems(options.items, NULL);
 	if (display != NULL)
 		XCloseDisplay(display);
