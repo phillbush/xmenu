@@ -1,5 +1,6 @@
 #include <sys/types.h>
 
+#include <assert.h>
 #include <dirent.h>
 #include <err.h>
 #include <errno.h>
@@ -46,13 +47,6 @@
 #define TRIANGLE_PAD            8
 
 enum {
-	SEL_FIRST,
-	SEL_PREV,
-	SEL_NEXT,
-	SEL_LAST,
-};
-
-enum {
 	COLOR_BG,
 	COLOR_FG,
 	COLOR_TOP,
@@ -85,21 +79,24 @@ enum {
 };
 
 struct item {
-	char const *label;
-	char const *output;
-	char const *altoutput;
-	char *file;             /* filename of the icon */
+	char *label;
 	size_t labellen;
-	struct item *prev;
-	struct item *next;
-	struct item *parent;
+
+	char *output;
+	char *altoutput;
+	char *file;
+
 	struct item *children;
+	size_t nchildren;
 };
 
 struct menu {
 	struct menu *next;
-	struct item *items, *selected;
-	struct item *first, *last, *lastsave;
+	struct item *items;
+	struct item *first_visible;
+	struct item *last_visible;
+	size_t nitems;
+	ssize_t selected;
 	char const *title;
 	XRectangle geometry;
 	int selposition;
@@ -117,6 +114,7 @@ struct menu {
 
 struct Options {
 	struct item *items;
+	size_t nitems;
 	bool windowed;
 	bool rootmode;
 	bool userplaced;
@@ -174,9 +172,6 @@ struct widget {
 };
 
 static jmp_buf jmpenv;
-static struct item tearoff = { .label = "tearoff" };
-static struct item scrollup = { .label = "scrollup" };
-static struct item scrolldown = { .label = "scrolldown" };
 
 static void *
 emalloc(size_t size)
@@ -360,31 +355,6 @@ createwindow(struct widget *widget, XRectangle *geometry, long eventmask, bool o
 			.override_redirect = override,
 		}
 	);
-}
-
-static struct item *
-allocitem(const char *label, const char *output, char *file)
-{
-	struct item *item;
-
-	item = emalloc(sizeof *item);
-	*item = (struct item){ 0 };
-	if (label == NULL) {
-		item->label = NULL;
-		item->output = NULL;
-		item->labellen = 0;
-	} else {
-		item->label = label;
-		item->labellen = strlen(item->label);
-		if (label == output) {
-			item->output = item->label;
-		} else if (output != NULL) {
-			item->output = output;
-		}
-	}
-	if (file != NULL)
-		item->file = file;
-	return item;
 }
 
 static char *
@@ -659,13 +629,84 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 	return RETURN_SUCCESS;
 }
 
-static struct item *
-parsestdin(char **data)
+static size_t
+fill_entries(struct item *entries, size_t nlines, size_t menu_indentlvl, char *data, ssize_t datasize)
 {
-	struct item *root = NULL;
-	struct item *prev = NULL;
-	struct item *item;
+	size_t nentries = 0;
+	size_t maxentries = 0;
+	struct item *prev_entry;
 
+	for (ssize_t len = 0; len < datasize; len++) {
+		size_t entry_indentlvl;
+
+		entry_indentlvl = strspn(data+len, "\t");
+		len += strcspn(data+len, "\n");
+		if (entry_indentlvl < menu_indentlvl)
+			break;
+		if (entry_indentlvl == menu_indentlvl)
+			maxentries++;
+	}
+
+	for (
+		size_t linelen = 0;
+		nlines > 0 && datasize > 0;
+		nlines--, data += linelen+1, datasize -= linelen+1
+	) {
+		struct item *entry = &entries[nentries];
+		size_t entry_indentlvl;
+
+		*entry = (struct item){
+			.children = NULL,
+			.nchildren = 0,
+		};
+		linelen = strcspn(data, "\n");
+		entry_indentlvl = strspn(data, "\t");
+		if (entry_indentlvl < menu_indentlvl) {
+			break;
+		} else if (entry_indentlvl > menu_indentlvl) {
+			assert(prev_entry != NULL);
+			prev_entry->children = entries+maxentries,
+			prev_entry->nchildren = fill_entries(
+				prev_entry->children,
+				nlines, entry_indentlvl,
+				data, datasize
+			);
+		} else {
+			data[linelen] = '\0';
+			entry->label = data + entry_indentlvl;
+			if (strncmp(entry->label, "IMG:", 4) == 0) {
+				size_t pathlen;
+				entry->file = entry->label + 4;
+				pathlen = strcspn(entry->file, "\t");
+				entry->label = entry->file + pathlen;
+				entry->label += strspn(entry->file, "\t");
+				entry->file[pathlen] = '\0';
+			}
+			entry->labellen = strcspn(entry->label, "\t");
+			entry->output = entry->label + entry->labellen;
+			entry->output += strspn(entry->label, "\t");
+			entry->label[entry->labellen] = '\0';
+
+			if (*entry->label == '\0')
+				entry->label = NULL;
+			if (*entry->output == '\0' || strcmp(entry->output, ":") == 0)
+				entry->output = entry->label;
+			if (prev_entry != NULL && prev_entry->label != NULL &&
+			    entry->label != NULL && strcmp(entry->label, "''") == 0) {
+				prev_entry->altoutput = entry->output;
+				continue;
+			}
+			prev_entry = entry;
+			nentries++;
+		}
+	}
+	return nentries;
+}
+
+static size_t
+parsestdin(struct item **entries, char **data)
+{
+	size_t nlines;
 	FILE *stream;
 	char buf[BUFSIZ];
 	size_t size;
@@ -679,87 +720,23 @@ parsestdin(char **data)
 		if (fwrite(buf, 1, nread, stream) != (size_t)nread)
 			err(EXIT_FAILURE, "fwrite");
 	}
-	if (fwrite("\0", 1, 1, stream) != 1)
+	fflush(stream);
+	if (size == 0)
+		return 0;
+	if ((*data)[size-1] != '\n' && (*data)[size-1] != '\0')
+		if (fwrite("\0", 1, 1, stream) != 1)
 			err(EXIT_FAILURE, "fwrite");
+	(*data)[size-1] = '\0';
 	if (fclose(stream) == EOF)
 			err(EXIT_FAILURE, "fclose");
 
-	for (size_t beg = 0, linelen = 0; beg < size-1; beg += linelen+1) {
-		char *line = *data + beg;
-		char *label = NULL, *file = NULL, *output = NULL;
-		size_t indent_level = strspn(line, "\t");
-		static size_t prevlvl = 0;
-		char *s;
+	nlines = 0;
+	for (size_t len = 0; len < size; len += strcspn((*data)+len, "\n") + 1)
+		nlines++;
+	if ((*entries = calloc(nlines, sizeof(**entries))) == NULL)
+		err(EXIT_FAILURE, "calloc");
 
-		linelen = strcspn(line, "\n");
-		line[linelen] = '\0';
-		label = line + indent_level;
-		if (strncmp(label, "IMG:", 4) == 0) {
-			file = label + 4;
-			label = file + strcspn(file, "\t");
-			s = label;
-			label += strspn(label, "\t");
-			*s = '\0';
-		}
-		output = label + strcspn(label, "\t");
-		s = output;
-		output += strspn(output, "\t");
-		*s = '\0';
-
-		if (*label == '\0')
-			label = NULL;
-		if (*output == '\0' || strcmp(output, ":") == 0)
-			output = label;
-
-		if (label != NULL && prev != NULL && prev->label != NULL &&
-		    indent_level == prevlvl && strcmp(label, "''") == 0) {
-			prev->altoutput = output;
-			continue;
-		}
-
-		item = allocitem(label, output, file);
-		if (prev == NULL) {
-			root = item;
-		} else if (indent_level < prevlvl) {
-			for (size_t i = indent_level; i < prevlvl; i++){
-				if (prev->parent == NULL)
-					break;
-				prev = prev->parent;
-			}
-			item->parent = prev->parent;
-			item->prev = prev;
-			prev->next = item;
-		} else if (indent_level == prevlvl) {
-			item->parent = prev->parent;
-			item->prev = prev;
-			prev->next = item;
-		} else if (indent_level > prevlvl) {
-			item->parent = prev;
-			prev->children = item;
-		}
-		prev = item;
-		prevlvl = indent_level;
-	}
-	return root;
-}
-
-static void
-cleanitems(struct item *item, struct item *skip)
-{
-	struct item *tmp;
-
-	if (item == NULL)
-		return;
-	if (item == skip)
-		return;
-	while (item != NULL) {
-		if (item->children != NULL)
-			cleanitems(item->children, skip);
-		tmp = item;
-		item = item->next;
-		if (tmp->label != tmp->output)
-		free(tmp);
-	}
+	return fill_entries(*entries, nlines, strspn(*data, "\t"), *data, size);
 }
 
 static void
@@ -1175,15 +1152,14 @@ openssubmenu(struct item *item)
 {
 	if (item->children != NULL)
 		return true;
-	if (item->output != NULL && item->output[0] == '/')
-		return true;
+	//if (item->output != NULL && item->output[0] == '/')
+	//	return true;
 	return false;
 }
 
 static void
 drawmenu(struct widget *widget, struct menu *menu)
 {
-	struct item *item;
 	Imlib_Image image;
 	XRectangle rect;
 	int textx, textw, iconw, iconh, y;
@@ -1267,7 +1243,9 @@ drawmenu(struct widget *widget, struct menu *menu)
 		rect.x += widget->iconsize + PADDING;
 	rect.y = firstitempos(widget, menu);
 	rect.width = menu->geometry.width;
-	for (item = menu->first; item != NULL; item = item->next) {
+	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
+		struct item *item = &menu->items[itemc];
+
 		if (item->label == NULL) {
 			rect.height = widget->separatorh;
 			drawseparator(
@@ -1505,13 +1483,13 @@ next:
 static void
 commitdraw(struct widget *widget, struct menu *menu, int ypos)
 {
-	int height;
+	int height = widget->itemh;
 
-	if (menu->selected == &tearoff || menu->selected == &scrollup ||
-	    menu->selected == &scrolldown)
-		height = widget->separatorh;
-	else
-		height = widget->itemh;
+	//if (menu->selected == &tearoff || menu->selected == &scrollup ||
+	//    menu->selected == &scrolldown)
+	//	height = widget->separatorh;
+	//else
+	//	height = widget->itemh;
 	menu->selposition = ypos;
 	XRenderFillRectangle(
 		widget->display,
@@ -1557,91 +1535,78 @@ commitdraw(struct widget *widget, struct menu *menu, int ypos)
 }
 
 static bool
-selitem(struct widget *widget, struct menu *menu, struct item *from, struct item *first, struct item *last, int ypos, int dir)
+selnext(struct widget *widget, struct menu *menu)
 {
-	struct item *item, *prev;
-	int prevypos;
+	for (ssize_t itemc = menu->selected; itemc < (ssize_t)menu->nitems; itemc++) {
+		struct item *item = &menu->items[itemc];
+		if (item->output != NULL) {
+			menu->selected = itemc;
+			drawmenu(widget, menu);
+			commitdraw(widget, menu, menu->selposition);
+			return true;
+		}
+	}
+	return false;
+}
 
-	prev = NULL;
-	for (item = from;
-	     item != NULL;
-	     item = (dir == SEL_PREV) ? item->prev : item->next) {
-		if (item->label != NULL && item->output != NULL &&
-		    (item != menu->selected || dir == SEL_LAST || dir == SEL_FIRST)) {
-			prev = item;
-			prevypos = ypos;
-			if (menu->first != first) {
-				menu->first = first;
-				menu->last = last;
-			}
-			if (dir != SEL_LAST) {
-				menu->selected = item;
-				drawmenu(widget, menu);
-				commitdraw(widget, menu, ypos);
-				return true;
-			}
-		}
-		if ((dir == SEL_PREV) && menu->overflow && item == first) {
-			first = first->prev;
-			last = last->prev;
-				ypos = firstitempos(widget, menu);
-		} else if (menu->overflow && item == last) {
-			first = first->next;
-			last = last->next;
-		} else if (item->label == NULL) {
-			ypos += ((dir == SEL_PREV) ? -1 : 1) * widget->separatorh;
-		} else {
-			ypos += ((dir == SEL_PREV) ? -1 : 1) * widget->itemh;
+static bool
+selprev(struct widget *widget, struct menu *menu)
+{
+	for (ssize_t itemc = menu->selected - 1; itemc >= 0; itemc--) {
+		struct item *item = &menu->items[itemc];
+		if (item->output != NULL) {
+			menu->selected = itemc;
+			drawmenu(widget, menu);
+			commitdraw(widget, menu, menu->selposition);
+			return true;
 		}
 	}
-	if (dir == SEL_LAST && prev != NULL) {
-		menu->selected = prev;
-		drawmenu(widget, menu);
-		commitdraw(widget, menu, prevypos);
-		return true;
-	} else {
-		drawmenu(widget, menu);
-		commitdraw(widget, menu, -1);
-		return false;
-	}
+	return false;
 }
 
 static void
 selfirst(struct widget *widget, struct menu *menu)
 {
-	(void)selitem(
-		widget, menu,
-		menu->items, menu->items,
-		menu->lastsave,
-		firstitempos(widget, menu),
-		SEL_FIRST
-	);
+	for (ssize_t itemc = 0; itemc < (ssize_t)menu->nitems; itemc++) {
+		struct item *item = &menu->items[itemc];
+		if (item->output != NULL) {
+			menu->selected = itemc;
+			drawmenu(widget, menu);
+			commitdraw(widget, menu, firstitempos(widget,menu));
+			return;
+		}
+	}
 }
 
 static void
-popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isroot)
+sellast(struct widget *widget, struct menu *menu)
+{
+	for (ssize_t itemc = menu->nitems - 1; itemc >= 0; itemc--) {
+		struct item *item = &menu->items[itemc];
+		if (item->output != NULL) {
+			menu->selected = itemc;
+			drawmenu(widget, menu);
+			commitdraw(widget, menu, firstitempos(widget,menu));
+			return;
+		}
+	}
+}
+
+static void
+popupmenu(struct widget *widget, struct item *items, size_t nitems,
+		XRectangle *basis, bool isroot, char const *title)
 {
 	XRectangle *monitor = &widget->monitor;
 	struct menu *menu;
-	struct item *caller;
 	Atom type;
-	struct item *item;
-	size_t nitems;
 	unsigned int textw, menuh;
 	int xgap, ygap;
-	char const *name;
 	bool override_redirect, tearoff;
 
 	type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
 	override_redirect = true;
 	tearoff = widget->tearoff;
 	if (widget->menus != NULL) {
-		if (widget->menus->selected == NULL)
-			return;         /* no item selected */
-		if (!openssubmenu(widget->menus->selected))
-			return;         /* item creates no submenu */
-		caller = widget->menus->selected;
-		name = caller->output;
 		xgap = widget->gap + widget->borderwid * 2;
 		ygap = -widget->shadowwid;
 		if (tearoff)
@@ -1649,8 +1614,6 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 		(void)grabpointer(widget);
 		(void)grabkeyboard(widget);
 	} else {
-		caller = NULL;
-		name = widget->title;
 		if (options.userplaced)
 			xgap = ygap = 0;
 		else
@@ -1664,20 +1627,19 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 	menu = emalloc(sizeof(*menu));
 	*menu = (struct menu){
 		.items = items,
-		.first = items,
-		.title = name,
-		.last = NULL,
-		.selected = NULL,
+		.nitems = nitems,
+		.title = title,
+		.selected = -1,
 	};
 	menu->next = widget->menus;
 	menuh = widget->shadowwid * 2;
 	if (tearoff)
 		menuh += widget->separatorh;
 	menu->geometry.height = widget->shadowwid * 2;
-	nitems = 0;
 	menu->nicons = 0;
-	for (item = menu->items; item != NULL; item = item->next) {
-		nitems++;
+	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
+		struct item *item = &menu->items[itemc];
+
 		if (item->label != NULL) {
 			menuh += widget->itemh;
 			textw = ctrlfnt_width(
@@ -1698,15 +1660,9 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 		menu->geometry.width = MAX(menu->geometry.width, textw);
 		if (menu->overflow)
 			continue;
-		menu->lastsave = menu->last = item->prev;
-		if (widget->maxitems > 0 && nitems > (unsigned)widget->maxitems) {
-			menu->lastsave = menu->last = item->prev;
-			menu->overflow = true;
-		}
 		if (menuh + widget->separatorh * 2 <= monitor->height) {
 			menu->geometry.height = menuh;
 		} else {
-			menu->lastsave = menu->last = item->prev;
 			menu->overflow = true;
 			menu->geometry.height = monitor->height;
 		}
@@ -1797,7 +1753,7 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 	(void)XmbSetWMProperties(
 		widget->display,
 		menu->window,
-		name, name,
+		title, title,
 		widget->argv,
 		widget->argc,
 		&(XSizeHints){ .flags = USPosition|USSize },
@@ -1814,8 +1770,8 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 		XInternAtom(widget->display, "UTF8_STRING", False),
 		8,
 		PropModeReplace,
-		(unsigned char *)name,
-		strlen(name)
+		(unsigned char *)title,
+		strlen(title)
 	);
 	(void)XChangeProperty(
 		widget->display,
@@ -1830,10 +1786,7 @@ popupmenu(struct widget *widget, struct item *items, XRectangle *basis, bool isr
 
 	widget->menus = menu;
 	drawmenu(widget, menu);
-	if (caller != NULL)
-		selfirst(widget, menu);
-	else
-		commitdraw(widget, menu, -1);
+	commitdraw(widget, menu, -1);
 	XMapRaised(widget->display, menu->window);
 }
 
@@ -1844,8 +1797,8 @@ delmenu(struct widget *widget)
 
 	if ((menu = widget->menus) == NULL)
 		return;
-	if (menu->directory)
-		cleanitems(menu->items, NULL);
+	//if (menu->directory)
+	//	cleanitems(menu->items, NULL);
 	widget->menus = menu->next;
 	XDestroyWindow(widget->display, menu->window);
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
@@ -1881,33 +1834,33 @@ closepopups(struct widget *widget)
 	}
 }
 
-static struct item *
-getitem(struct widget *widget, struct menu *menu, long y, int *ypos)
+static size_t
+index_item(struct widget *widget, struct menu *menu, long y, int *ypos)
 {
 	long h;
-	struct item *item;
 
 	h = widget->shadowwid;
-	if (cantearoff(widget, menu)) {
-		if (y < h + widget->separatorh) {
-			item = &tearoff;
-			goto done;
-		}
-		h += widget->separatorh;
-	}
-	if (menu->overflow && y >= h && y < h + widget->separatorh) {
-		item = &scrollup;
-		goto done;
-	}
-	if (menu->overflow && y >= menu->geometry.height - widget->separatorh &&
-	    y < menu->geometry.height) {
-		h = menu->geometry.height - widget->separatorh;
-		item = &scrolldown;
-		goto done;
-	}
+	//if (cantearoff(widget, menu)) {
+	//	if (y < h + widget->separatorh) {
+	//		item = &tearoff;
+	//		goto done;
+	//	}
+	//	h += widget->separatorh;
+	//}
+	//if (menu->overflow && y >= h && y < h + widget->separatorh) {
+	//	item = &scrollup;
+	//	goto done;
+	//}
+	//if (menu->overflow && y >= menu->geometry.height - widget->separatorh &&
+	//    y < menu->geometry.height) {
+	//	h = menu->geometry.height - widget->separatorh;
+	//	item = &scrolldown;
+	//	goto done;
+	//}
 	if (menu->overflow)
 		h += widget->separatorh;
-	for (item = menu->first; item != NULL; item = item->next) {
+	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
+		struct item *item = &menu->items[itemc];
 		if (item->label == NULL) {
 			h += widget->separatorh;
 			continue;
@@ -1916,82 +1869,91 @@ getitem(struct widget *widget, struct menu *menu, long y, int *ypos)
 			h += widget->itemh;
 			continue;
 		}
-		if (y >= h && y < (long)h + widget->itemh)
-			break;
+		if (y >= h && y < (long)h + widget->itemh) {
+			if (ypos != NULL)
+				*ypos = h;
+			return itemc;
+		}
 		h += widget->itemh;
 		if (menu->overflow &&
 		    h + widget->itemh + widget->itemh + widget->shadowwid >=
 		    menu->geometry.height) {
-			return NULL;
+			break;
 		}
 	}
-done:
-	if (ypos != NULL)
-		*ypos = h;
-	return item;
+//done:
+	return -1;
 }
 
-static void
-scroll(struct widget *widget, bool down)
+static struct item *
+get_item(struct menu *menu, ssize_t itemc)
 {
-	XRectangle rect;
-	struct menu *menu;
-	time_t elapsed;
-	struct timespec ts;
-	int ret;
-	struct pollfd pfd = {
-		.fd = XConnectionNumber(widget->display),
-		.events = POLLIN,
-	};
-
-	if ((menu = widget->menus) == NULL)
-		return;
-	if (down)
-		rect.y = menu->geometry.height - widget->separatorh - widget->shadowwid;
-	else
-		rect.y = widget->shadowwid + widget->separatorh;
-	rect.x = 0;
-	rect.width = menu->geometry.width;
-	rect.height = widget->separatorh;
-	for (;;) {
-		static int const SCROLL_TIME = 32;
-		if (XPending(widget->display) > 0)
-			break;
-		switch ((ret = poll(&pfd, 1, SCROLL_TIME))) {
-		case -1:
-			if (errno == EINTR)
-				continue;
-			return;
-		default:
-			egettime(&ts);
-			elapsed = (ts.tv_sec - widget->lasttime.tv_sec) * 1000;
-			elapsed += ts.tv_nsec / 1000000;
-			elapsed -= widget->lasttime.tv_nsec / 1000000;
-			if (elapsed < SCROLL_TIME)
-				return;
-			/* fallthrough */
-		case 0:
-			if (down) {
-				if (menu->last->next == NULL)
-					break;
-				menu->first = menu->first->next;
-				menu->last = menu->last->next;
-			} else {
-				if (menu->first->prev == NULL)
-					break;
-				menu->first = menu->first->prev;
-				menu->last = menu->last->prev;
-			}
-			drawmenu(widget, menu);
-			commitdraw(widget, menu, rect.y);
-			XFlush(widget->display);
-			if (ret == 0)
-				break;
-			egettime(&widget->lasttime);
-			break;
-		}
-	}
+	if (itemc >= 0 && itemc < (ssize_t)menu->nitems)
+		return &menu->items[itemc];
+	return NULL;
 }
+
+//static void
+//scroll(struct widget *widget, bool down)
+//{
+//	XRectangle rect;
+//	struct menu *menu;
+//	time_t elapsed;
+//	struct timespec ts;
+//	int ret;
+//	struct pollfd pfd = {
+//		.fd = XConnectionNumber(widget->display),
+//		.events = POLLIN,
+//	};
+//
+//	if ((menu = widget->menus) == NULL)
+//		return;
+//	if (down)
+//		rect.y = menu->geometry.height - widget->separatorh - widget->shadowwid;
+//	else
+//		rect.y = widget->shadowwid + widget->separatorh;
+//	rect.x = 0;
+//	rect.width = menu->geometry.width;
+//	rect.height = widget->separatorh;
+//	for (;;) {
+//		static int const SCROLL_TIME = 32;
+//		if (XPending(widget->display) > 0)
+//			break;
+//		switch ((ret = poll(&pfd, 1, SCROLL_TIME))) {
+//		case -1:
+//			if (errno == EINTR)
+//				continue;
+//			return;
+//		default:
+//			egettime(&ts);
+//			elapsed = (ts.tv_sec - widget->lasttime.tv_sec) * 1000;
+//			elapsed += ts.tv_nsec / 1000000;
+//			elapsed -= widget->lasttime.tv_nsec / 1000000;
+//			if (elapsed < SCROLL_TIME)
+//				return;
+//			/* fallthrough */
+//		case 0:
+//			if (down) {
+//				if (menu->last->next == NULL)
+//					break;
+//				menu->first = menu->first->next;
+//				menu->last = menu->last->next;
+//			} else {
+//				if (menu->first->prev == NULL)
+//					break;
+//				menu->first = menu->first->prev;
+//				menu->last = menu->last->prev;
+//			}
+//			drawmenu(widget, menu);
+//			commitdraw(widget, menu, rect.y);
+//			XFlush(widget->display);
+//			if (ret == 0)
+//				break;
+//			egettime(&widget->lasttime);
+//			break;
+//		}
+//	}
+//}
 
 static void
 forkandtearoff(struct widget *widget, struct menu *menu)
@@ -2006,7 +1968,7 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 		}
 		*widget = (struct widget){ 0 };
 		widget->display = NULL;
-		options.items = menu->first,
+		options.items = menu->items,
 		options.monitor = -1,
 		options.userplaced = true,
 		options.xpercent = options.ypercent = false;
@@ -2016,7 +1978,6 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 		options.geometry.y = menu->geometry.y,
 		options.geometry.width = 0,
 		options.geometry.height = 0,
-		cleanitems(options.items, menu->first);
 		longjmp(jmpenv, 1);
 		exit(EXIT_FAILURE);
 	}
@@ -2042,41 +2003,42 @@ direntcmp(const struct dirent **ap, const struct dirent **bp)
 	return strcoll(a->d_name, b->d_name);
 }
 
-static struct item *
-listdirentries(const char *dirname)
-{
-	struct dirent **namelist;
-	struct item *items, *item, *prev;
-	int nents;
-	char buf[PATH_MAX + 8];
-
-	nents = scandir(dirname, &namelist, &direntsel, &direntcmp);
-	if (nents == -1)
-		return NULL;
-	items = NULL;
-	prev = NULL;
-	for (int i = 0; i < nents; i++) {
-		snprintf(
-			buf,
-			sizeof(buf),
-			"%s%s/%s",
-			namelist[i]->d_type == DT_DIR ? "" : "file:",
-			dirname,
-			namelist[i]->d_name
-		);
-		item = allocitem(namelist[i]->d_name, buf, NULL);
-		if (prev == NULL)
-			items = item;
-		else
-			prev->next = item;
-		item->prev = prev;
-		prev = item;
-#warning will get SEGFAULT, 
-		free(namelist[i]);
-	}
-	free(namelist);
-	return items;
-}
+//static struct item *
+//listdirentries(const char *dirname)
+//{
+//#warning readd listdirentries()
+//	//struct dirent **namelist;
+//	//struct item *items, *item, *prev;
+//	//int nents;
+//	//char buf[PATH_MAX + 8];
+//	//
+//	//nents = scandir(dirname, &namelist, &direntsel, &direntcmp);
+//	//if (nents == -1)
+//	//	return NULL;
+//	//items = NULL;
+//	//prev = NULL;
+//	//for (int i = 0; i < nents; i++) {
+//	//	snprintf(
+//	//		buf,
+//	//		sizeof(buf),
+//	//		"%s%s/%s",
+//	//		namelist[i]->d_type == DT_DIR ? "" : "file:",
+//	//		dirname,
+//	//		namelist[i]->d_name
+//	//	);
+//	//	item = allocitem(namelist[i]->d_name, buf, NULL);
+//	//	if (prev == NULL)
+//	//		items = item;
+//	//	else
+//	//		prev->next = item;
+//	//	item->prev = prev;
+//	//	prev = item;
+//	//	free(namelist[i]);
+//	//}
+//	//free(namelist);
+//	//return items;
+//	return NULL;
+//}
 
 static void
 printitem(struct widget *widget, const char *str)
@@ -2091,34 +2053,33 @@ openitem(struct widget *widget, struct item *item, int ypos, bool alt)
 {
 	XRectangle rect;
 	struct menu *menu;
-	struct item *items;
-	char buf[PATH_MAX + 8];
 
-	if (item == NULL || item == &tearoff)
+	if (item == NULL)
 		return;
+	//if (item == &tearoff)
+	//	return;
 	menu = widget->menus;
-	menu->selected = item;
 	rect = menu->geometry;
 	rect.y += ypos;
-	if (item == &scrollup || item == &scrolldown)
-		return;
+	//if (item == &scrollup || item == &scrolldown)
+	//	return;
 	if (item->children != NULL) {
-		popupmenu(widget, item->children, &rect, false);
+		popupmenu(widget, item->children, item->nchildren, &rect, false, item->label);
 	} else if (alt && item->altoutput != NULL) {
 		printitem(widget, item->altoutput);
-	} else if (item->output != NULL &&
-	           item->output[0] == '/') {
-		if (alt) {
-			snprintf(buf, PATH_MAX, "%s%s", "file:", item->output);
-			printitem(widget, buf);
-			return;
-		}
-		items = listdirentries(item->output);
-		if (items == NULL)
-			return;
-		popupmenu(widget, items, &rect, false);
-		widget->menus->directory = true;
-		widget->menus->items = items;
+	//} else if (item->output != NULL &&
+	//           item->output[0] == '/') {
+	//	if (alt) {
+	//		snprintf(buf, PATH_MAX, "%s%s", "file:", item->output);
+	//		printitem(widget, buf);
+	//		return;
+	//	}
+	//	items = listdirentries(item->output);
+	//	if (items == NULL)
+	//		return;
+	//	popupmenu(widget, items, &rect, false);
+	//	widget->menus->directory = true;
+	//	widget->menus->items = items;
 	} else if (item->output != NULL) {
 		printitem(widget, item->output);
 	}
@@ -2138,9 +2099,6 @@ getmenu(struct widget *widget, Window window)
 static void
 keypress(struct widget *widget, struct menu *menu, unsigned int state, KeySym ksym)
 {
-	struct item *last, *first, *start;
-	int ypos;
-
 	if (menu == NULL)
 		return;
 	if (ksym == XK_Tab && FLAG(state, ShiftMask))
@@ -2157,11 +2115,7 @@ keypress(struct widget *widget, struct menu *menu, unsigned int state, KeySym ks
 	switch (ksym) {
 	case XK_Down:
 	case XK_Tab:
-		first = menu->first;
-		last = menu->last;
-		start = menu->selected->next;
-		ypos = menu->selposition;
-		if (selitem(widget, menu, start, first, last, ypos, SEL_NEXT))
+		if (selnext(widget, menu))
 			break;
 		/* fallthrough */
 	case XK_Home:
@@ -2169,19 +2123,11 @@ keypress(struct widget *widget, struct menu *menu, unsigned int state, KeySym ks
 		break;
 	case XK_ISO_Left_Tab:
 	case XK_Up:
-		first = menu->first;
-		last = menu->last;
-		start = menu->selected->prev;
-		ypos = menu->selposition;
-		if (selitem(widget, menu, start, first, last, ypos, SEL_PREV))
+		if (selprev(widget, menu))
 			break;
 		/* fallthrough */
 	case XK_End:
-		first = menu->items;
-		start = menu->items;
-		last = menu->lastsave;
-		ypos = firstitempos(widget, menu);
-		(void)selitem(widget, menu, start, first, last, ypos, SEL_LAST);
+		sellast(widget, menu);
 		break;
 	case XK_Left:
 		if (menu->next == NULL)
@@ -2192,9 +2138,7 @@ keypress(struct widget *widget, struct menu *menu, unsigned int state, KeySym ks
 		break;
 	case XK_Right:
 	case XK_Return:
-		if (menu->selected == NULL)
-			break;
-		openitem(widget, menu->selected, menu->selposition, false);
+		openitem(widget, get_item(menu, menu->selected), menu->selposition, false);
 		break;
 	}
 }
@@ -2205,10 +2149,11 @@ run(struct widget *widget, XRectangle *geometry)
 	XEvent xev;
 	struct menu *menu;
 	struct item *item;
+	ssize_t nitem;
 	int ypos;
 
 	getposition(widget, geometry);
-	popupmenu(widget, options.items, geometry, true);
+	popupmenu(widget, options.items, options.nitems, geometry, true, widget->title);
 #define XNextEvent(dpy, xev) (XNextEvent((dpy),(xev)),(xev)->type)
 	while (widget->menus != NULL) switch (XNextEvent(widget->display, &xev)) {
 	case ButtonPress:
@@ -2219,7 +2164,8 @@ run(struct widget *widget, XRectangle *geometry)
 		}
 		while (widget->menus != menu)
 			delmenu(widget);
-		if ((item = getitem(widget, menu, xev.xbutton.y, &ypos)) != NULL) {
+		nitem = index_item(widget, menu, xev.xbutton.y, &ypos);
+		if (nitem != -1) {
 			if (item->children != NULL) {
 				openitem(widget, item, ypos, false);
 			}
@@ -2233,17 +2179,17 @@ run(struct widget *widget, XRectangle *geometry)
 		menu = getmenu(widget, xev.xbutton.window);
 		if (menu == NULL)
 			continue;
-		item = getitem(widget, menu, xev.xbutton.y, &ypos);
+		item = get_item(menu, index_item(widget, menu, xev.xbutton.y, &ypos));
 		if (item == NULL)
 			continue;
 		if (item->children != NULL)
 			continue;
 		while (widget->menus != menu)
 			delmenu(widget);
-		if (item == &tearoff)
-			forkandtearoff(widget, menu);
-		else
-			openitem(widget, item, ypos, xev.xbutton.button == Button2);
+		//if (item == &tearoff)
+		//	forkandtearoff(widget, menu);
+		//else
+		openitem(widget, item, ypos, xev.xbutton.button == Button2);
 		continue;
 	case ClientMessage:
 		if ((Atom)xev.xclient.data.l[0] == XInternAtom(widget->display, "WM_DELETE_WINDOW", False))
@@ -2263,7 +2209,7 @@ run(struct widget *widget, XRectangle *geometry)
 		menu->geometry.width = xev.xconfigure.width;
 		menu->geometry.height = xev.xconfigure.height;
 		drawmenu(widget, menu);
-		if (menu->selected != NULL)
+		if (get_item(menu, menu->selected) != NULL)
 			commitdraw(widget, menu, menu->selposition);
 		continue;
 	case DestroyNotify:
@@ -2277,23 +2223,23 @@ run(struct widget *widget, XRectangle *geometry)
 		);
 		continue;
 	case LeaveNotify:
-		if (getmenu(widget, xev.xcrossing.window) == widget->menus) {
-			widget->menus->selected = NULL;
-			commitdraw(widget, widget->menus, -1);
-		}
+		//if (getmenu(widget, xev.xcrossing.window) == widget->menus) {
+		//	widget->menus->selected = NULL;
+		//	commitdraw(widget, widget->menus, -1);
+		//}
 		continue;
 	case MotionNotify:
 		menu = getmenu(widget, xev.xmotion.window);
 		if (menu == NULL)
 			continue;
-		item = getitem(widget, menu, xev.xmotion.y, &ypos);
-		if (item == &scrollup || item == &scrolldown)
-			scroll(widget, item == &scrolldown);
-		if (item == menu->selected)
+		nitem = index_item(widget, menu, xev.xbutton.y, &ypos);
+		//if (item == &scrollup || item == &scrolldown)
+		//	scroll(widget, item == &scrolldown);
+		if (nitem == menu->selected)
 			continue;
+		item = get_item(menu, nitem);
 		if (item == NULL)
 			ypos = -1;
-		menu->selected = item;
 		commitdraw(widget, menu, ypos);
 		if (item != NULL && xev.xmotion.state & (Button1Mask|Button3Mask)) {
 			while (widget->menus != menu)
@@ -2520,7 +2466,8 @@ main(int argc, char *argv[])
 	} else if (options.windowed) {
 		options.rootmode = false;
 	}
-	if ((options.items = parsestdin(&read_data)) == NULL)
+	options.nitems = parsestdin(&options.items, &read_data);
+	if (options.nitems == 0)
 		errx(EXIT_FAILURE, "no menu generated");
 	(void)setjmp(jmpenv);
 	if (options.userplaced)
@@ -2582,7 +2529,7 @@ main(int argc, char *argv[])
 	cleanup(widget);
 	free(options.iconstring);
 	free(read_data);
-	cleanitems(options.items, NULL);
+	free(options.items);
 	if (display != NULL)
 		XCloseDisplay(display);
 	return EXIT_SUCCESS;
