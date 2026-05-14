@@ -145,7 +145,6 @@ struct widget {
 	int screen;
 	Window rootwin;
 	Window window;
-	struct timespec lasttime;
 	XRectangle monitor;
 	ctrlfnt *fontset;
 	struct menu *menus;
@@ -2021,9 +2020,11 @@ get_item(struct menu *menu, ssize_t itemc)
 static void
 scroll(struct widget *widget, struct menu *menu, bool down)
 {
-	time_t elapsed;
+	static struct timespec last_time = {};
 	struct timespec ts;
+	time_t elapsed;
 	int ret;
+	size_t last_offset = menu->curr_screenful.offset;
 	struct pollfd pfd = {
 		.fd = XConnectionNumber(widget->display),
 		.events = POLLIN,
@@ -2043,12 +2044,12 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 				warn("clock_gettime");
 				return;
 			}
-			elapsed = (ts.tv_sec - widget->lasttime.tv_sec) * 1000;
+			elapsed = (ts.tv_sec - last_time.tv_sec) * 1000;
 			elapsed += ts.tv_nsec / 1000000;
-			elapsed -= widget->lasttime.tv_nsec / 1000000;
+			elapsed -= last_time.tv_nsec / 1000000;
 			if (elapsed < SCROLL_TIME)
 				return;
-			if (clock_gettime(CLOCK_MONOTONIC, &widget->lasttime) == -1) {
+			if (clock_gettime(CLOCK_MONOTONIC, &last_time) == -1) {
 				warn("clock_gettime");
 				return;
 			}
@@ -2058,7 +2059,9 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 				scrolldown(widget, menu, widget->itemh);
 			else
 				scrollup(widget, menu, widget->itemh);
-			commitdraw(widget, menu);
+			if (menu->curr_screenful.offset != last_offset)
+				commitdraw(widget, menu);
+			last_offset = menu->curr_screenful.offset;
 			XFlush(widget->display);
 			break;
 		}
