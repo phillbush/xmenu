@@ -99,13 +99,14 @@ struct menu {
 	char const *title;
 	XRectangle geometry;
 	int canvas_height;
-	int viewarea;
+	int scroll_offset;
 	Window window;
 	struct Canvas {
 		Pixmap pixmap;
 		Picture picture;
 	} canvas[CANVAS_LAST];
 	size_t nicons;
+	bool tearable;
 	bool overflow;
 	bool hasicon;
 	bool hassubmenu;
@@ -1003,19 +1004,13 @@ drawtriangle(struct widget *widget, Picture picture, Picture src, int x, int y, 
 	);
 }
 
-static bool
-cantearoff(struct widget *widget, struct menu *menu)
-{
-	return (menu->next != NULL || !options.windowed) && widget->tearoff;
-}
-
 static int
 firstitempos(struct widget *widget, struct menu *menu)
 {
 	int y;
 
 	y = widget->shadowwid;
-	if (cantearoff(widget, menu))
+	if (menu->tearable)
 		y += widget->separatorh;
 	if (menu->overflow)
 		y += widget->separatorh;
@@ -1393,7 +1388,7 @@ next:
 	}
 	for (size_t i = 0; i < CANVAS_FINAL; i++) {
 		y = widget->shadowwid;
-		if (cantearoff(widget, menu)) {
+		if (menu->tearable) {
 			drawdashline(
 				widget,
 				canvas[CANVAS_NORMAL][LAYER_FG].picture,
@@ -1464,18 +1459,19 @@ next:
 }
 
 static int
-get_position(struct widget *widget, struct menu *menu, int selected)
+get_item_ypos(struct widget *widget, struct menu *menu, int selected)
 {
 	int ypos = widget->shadowwid;
 
-	if (cantearoff(widget, menu)) {
+	if (menu->tearable) {
 		if (selected == TEAROFF)
 			return ypos;
 		ypos += widget->separatorh;
 	}
 	if (menu->overflow) {
 		if (selected == SCROLLDOWN)
-			return menu->canvas_height - widget->separatorh;
+			return menu->canvas_height - widget->separatorh
+			- widget->shadowwid;
 		if (selected == SCROLLUP)
 			return ypos;
 		ypos += widget->separatorh;
@@ -1495,10 +1491,25 @@ get_position(struct widget *widget, struct menu *menu, int selected)
 	return -1;
 }
 
+static int
+get_item_height(struct widget *widget, struct menu *menu, int selected)
+{
+	if (menu->tearable && selected == TEAROFF)
+		return widget->separatorh;
+	if (menu->overflow && (selected == SCROLLDOWN || selected == SCROLLUP))
+		return widget->separatorh;
+	if (selected < 0 || selected >= (ssize_t)menu->nitems)
+		return 0;
+	if (menu->items[selected].label != NULL)
+		return widget->itemh;
+	else
+		return widget->separatorh;
+}
+
 static void
 commitdraw(struct widget *widget, struct menu *menu)
 {
-	int ypos = get_position(widget, menu, menu->selected);
+	int ypos = get_item_ypos(widget, menu, menu->selected);
 
 	XRenderFillRectangle(
 		widget->display,
@@ -1515,12 +1526,54 @@ commitdraw(struct widget *widget, struct menu *menu)
 		menu->canvas[CANVAS_NORMAL].picture,
 		None,
 		menu->canvas[CANVAS_FINAL].picture,
-		0, 0,
+		0, menu->scroll_offset,
 		0, 0,
 		0, 0,
 		menu->geometry.width,
 		menu->geometry.height
 	);
+	if (menu->tearable) {
+		XRenderComposite(
+			widget->display,
+			PictOpOver,
+			menu->canvas[CANVAS_NORMAL].picture,
+			None,
+			menu->canvas[CANVAS_FINAL].picture,
+			0, get_item_ypos(widget, menu, TEAROFF),
+			0, 0,
+			0, get_item_ypos(widget, menu, TEAROFF),
+			menu->geometry.width,
+			get_item_height(widget, menu, TEAROFF)
+		);
+	}
+	if (menu->overflow) {
+		XRenderComposite(
+			widget->display,
+			PictOpOver,
+			menu->canvas[CANVAS_NORMAL].picture,
+			None,
+			menu->canvas[CANVAS_FINAL].picture,
+			0, get_item_ypos(widget, menu, SCROLLUP),
+			0, 0,
+			0, get_item_ypos(widget, menu, SCROLLUP),
+			menu->geometry.width,
+			get_item_height(widget, menu, SCROLLUP)
+		);
+		XRenderComposite(
+			widget->display,
+			PictOpOver,
+			menu->canvas[CANVAS_NORMAL].picture,
+			None,
+			menu->canvas[CANVAS_FINAL].picture,
+			0, get_item_ypos(widget, menu, SCROLLDOWN),
+			0, 0,
+			0, menu->geometry.height
+			- get_item_height(widget, menu, SCROLLDOWN)
+			- widget->shadowwid,
+			menu->geometry.width,
+			get_item_height(widget, menu, SCROLLDOWN)
+		);
+	}
 	if (ypos >= 0) {
 		XRenderComposite(
 			widget->display,
@@ -1530,12 +1583,12 @@ commitdraw(struct widget *widget, struct menu *menu)
 			menu->canvas[CANVAS_FINAL].picture,
 			0, ypos,
 			0, 0,
-			0, ypos,
+			0,
+			menu->selected == SCROLLDOWN
+			? menu->geometry.height - widget->separatorh
+			: ypos - menu->scroll_offset,
 			menu->geometry.width,
-			(menu->selected == TEAROFF ||
-			 menu->selected == SCROLLUP ||
-			 menu->selected == SCROLLDOWN
-			) ? widget->separatorh : widget->itemh
+			get_item_height(widget, menu, menu->selected)
 		);
 	}
 	XSetWindowBackgroundPixmap(
@@ -1549,6 +1602,8 @@ commitdraw(struct widget *widget, struct menu *menu)
 static void
 selfirst(struct widget *widget, struct menu *menu)
 {
+	menu->first_visible = 0;
+	menu->scroll_offset = 0;
 	for (ssize_t itemc = 0; itemc < (ssize_t)menu->nitems; itemc++) {
 		struct item *item = &menu->items[itemc];
 		if (item->output != NULL) {
@@ -1573,6 +1628,18 @@ sellast(struct widget *widget, struct menu *menu)
 }
 
 static void
+scrolldown(struct widget *widget, struct menu *menu, int diff)
+{
+	int height = 0;
+
+	while (height < diff && menu->first_visible < menu->nitems) {
+		height = get_item_height(widget, menu, menu->first_visible);
+		menu->first_visible++;
+		menu->scroll_offset += height;
+	}
+}
+
+static void
 selprev(struct widget *widget, struct menu *menu)
 {
 	for (ssize_t itemc = menu->selected - 1; itemc >= 0; itemc--) {
@@ -1589,15 +1656,37 @@ selprev(struct widget *widget, struct menu *menu)
 static void
 selnext(struct widget *widget, struct menu *menu)
 {
-	for (ssize_t itemc = menu->selected+1; itemc < (ssize_t)menu->nitems; itemc++) {
+	int ypos, height;
+	int scroll_threshold = menu->geometry.height
+	                     - widget->separatorh - widget->shadowwid;
+
+	if (menu->selected < 0) {
+		selfirst(widget, menu);
+		return;
+	}
+	ypos = get_item_ypos(widget, menu, menu->selected);
+	height = get_item_height(widget, menu, menu->selected);
+	for (
+		ssize_t itemc = menu->selected+1;
+		itemc > 0 && itemc < (ssize_t)menu->nitems;
+		itemc++
+	) {
 		struct item *item = &menu->items[itemc];
+
+		if (menu->overflow) {
+			ypos += height;
+			height = get_item_height(widget, menu, itemc);
+			if (ypos - menu->scroll_offset > scroll_threshold) {
+				scrolldown(widget, menu, height);
+			}
+		}
 		if (item->output != NULL) {
 			menu->selected = itemc;
 			commitdraw(widget, menu);
 			return;
 		}
 	}
-	sellast(widget, menu);
+	selfirst(widget, menu);
 }
 
 static void
@@ -1620,8 +1709,9 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 		.nitems = nitems,
 		.title = title,
 		.selected = -1,
-		.viewarea = 0,
+		.scroll_offset = 0,
 		.next = widget->menus,
+		.tearable = (widget->menus != NULL || !options.windowed) && widget->tearoff,
 	};
 	type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
 	override_redirect = true;
@@ -1679,6 +1769,8 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 			menu->geometry.height = monitor->height;
 		}
 	}
+	if (menu->overflow)
+		menu->canvas_height += widget->separatorh * 2;
 
 	menu->geometry.width += PADDING * 2 + widget->shadowwid * 2;
 	if (menu->hasicon)
@@ -1852,7 +1944,7 @@ index_item(struct widget *widget, struct menu *menu, long y)
 	long h;
 
 	h = widget->shadowwid;
-	if (cantearoff(widget, menu)) {
+	if (menu->tearable) {
 		if (y < h + widget->separatorh)
 			return TEAROFF;
 		h += widget->separatorh;
@@ -1866,7 +1958,7 @@ index_item(struct widget *widget, struct menu *menu, long y)
 	}
 	if (menu->overflow)
 		h += widget->separatorh;
-	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
+	for (size_t itemc = menu->first_visible; itemc < menu->nitems; itemc++) {
 		struct item *item = &menu->items[itemc];
 		if (item->label == NULL) {
 			h += widget->separatorh;
@@ -1880,7 +1972,7 @@ index_item(struct widget *widget, struct menu *menu, long y)
 			return itemc;
 		h += widget->itemh;
 		if (menu->overflow &&
-		    h + widget->itemh + widget->itemh + widget->shadowwid >=
+		    h + widget->itemh + widget->shadowwid >=
 		    menu->geometry.height) {
 			break;
 		}
@@ -2059,7 +2151,7 @@ openitem(struct widget *widget, struct menu *menu, ssize_t nitem, bool alt)
 	if (item == NULL)
 		return;
 	rect = menu->geometry;
-	rect.y += get_position(widget, menu, nitem);
+	rect.y += get_item_ypos(widget, menu, nitem);
 	if (item->children != NULL) {
 		popupmenu(widget, item->children, item->nchildren, &rect, false, item->label);
 	} else if (alt && item->altoutput != NULL) {
