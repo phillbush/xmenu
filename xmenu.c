@@ -619,13 +619,14 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 }
 
 static size_t
-fill_entries(struct item *entries, size_t nlines, size_t menu_indentlvl, char *data, ssize_t datasize)
+fill_entries(struct item *entries, size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
 {
-	size_t nentries = 0;
+	size_t nentries;
+	size_t linelen;
 	size_t maxentries = 0;
-	struct item *prev_entry;
+	struct item *prev_entry = NULL;
 
-	for (ssize_t len = 0; len < datasize; len++) {
+	for (size_t len = *from; len < datasize; len++) {
 		size_t entry_indentlvl;
 
 		entry_indentlvl = strspn(data+len, "\t");
@@ -636,20 +637,20 @@ fill_entries(struct item *entries, size_t nlines, size_t menu_indentlvl, char *d
 			maxentries++;
 	}
 
-	for (
-		size_t linelen = 0;
-		nlines > 0 && datasize > 0;
-		nlines--, data += linelen+1, datasize -= linelen+1
-	) {
+	linelen = 0;
+	nentries = 0;
+	while (*from < datasize) {
 		struct item *entry = &entries[nentries];
 		size_t entry_indentlvl;
+		char *line = data + *from;
 
 		*entry = (struct item){
 			.children = NULL,
 			.nchildren = 0,
 		};
-		linelen = strcspn(data, "\n");
-		entry_indentlvl = strspn(data, "\t");
+		linelen = strcspn(line, "\n");
+		*from += linelen + 1;
+		entry_indentlvl = strspn(line, "\t");
 		if (entry_indentlvl < menu_indentlvl) {
 			break;
 		} else if (entry_indentlvl > menu_indentlvl) {
@@ -657,12 +658,12 @@ fill_entries(struct item *entries, size_t nlines, size_t menu_indentlvl, char *d
 			prev_entry->children = entries+maxentries,
 			prev_entry->nchildren = fill_entries(
 				prev_entry->children,
-				nlines, entry_indentlvl,
-				data, datasize
+				entry_indentlvl,
+				data, datasize, from
 			);
 		} else {
-			data[linelen] = '\0';
-			entry->label = data + entry_indentlvl;
+			line[linelen] = '\0';
+			entry->label = line + entry_indentlvl;
 			if (strncmp(entry->label, "IMG:", 4) == 0) {
 				size_t pathlen;
 				entry->file = entry->label + 4;
@@ -725,7 +726,7 @@ parsestdin(struct item **entries, char **data)
 	if ((*entries = calloc(nlines, sizeof(**entries))) == NULL)
 		err(EXIT_FAILURE, "calloc");
 
-	return fill_entries(*entries, nlines, strspn(*data, "\t"), *data, size);
+	return fill_entries(*entries, strspn(*data, "\t"), *data, size, &(size_t){0});
 }
 
 static void
@@ -1628,11 +1629,23 @@ sellast(struct widget *widget, struct menu *menu)
 }
 
 static void
+scrollup(struct widget *widget, struct menu *menu, int diff)
+{
+	int height = 0;
+
+	while (height < diff && menu->first_visible > 0) {
+		height = get_item_height(widget, menu, menu->first_visible);
+		menu->first_visible--;
+		menu->scroll_offset -= height;
+	}
+}
+
+static void
 scrolldown(struct widget *widget, struct menu *menu, int diff)
 {
 	int height = 0;
 
-	while (height < diff && menu->first_visible < menu->nitems) {
+	while (height < diff && menu->first_visible + 1 < menu->nitems) {
 		height = get_item_height(widget, menu, menu->first_visible);
 		menu->first_visible++;
 		menu->scroll_offset += height;
@@ -1642,15 +1655,35 @@ scrolldown(struct widget *widget, struct menu *menu, int diff)
 static void
 selprev(struct widget *widget, struct menu *menu)
 {
+	int ypos, height;
+	int scroll_threshold;
+
+	if (menu->selected < 0) {
+		sellast(widget, menu);
+		return;
+	}
+	scroll_threshold = widget->shadowwid + get_item_height(widget, menu, SCROLLUP);
+	if (menu->tearable)
+		scroll_threshold += get_item_height(widget, menu, TEAROFF);
+	ypos = get_item_ypos(widget, menu, menu->selected);
+	height = get_item_height(widget, menu, menu->selected);
 	for (ssize_t itemc = menu->selected - 1; itemc >= 0; itemc--) {
 		struct item *item = &menu->items[itemc];
+
+		if (menu->overflow) {
+			ypos -= height;
+			height = get_item_height(widget, menu, itemc);
+			if (ypos - menu->scroll_offset < scroll_threshold) {
+				scrollup(widget, menu, height);
+			}
+		}
 		if (item->output != NULL) {
 			menu->selected = itemc;
 			commitdraw(widget, menu);
 			return;
 		}
 	}
-	selfirst(widget, menu);
+	sellast(widget, menu);
 }
 
 static void
@@ -1666,11 +1699,7 @@ selnext(struct widget *widget, struct menu *menu)
 	}
 	ypos = get_item_ypos(widget, menu, menu->selected);
 	height = get_item_height(widget, menu, menu->selected);
-	for (
-		ssize_t itemc = menu->selected+1;
-		itemc > 0 && itemc < (ssize_t)menu->nitems;
-		itemc++
-	) {
+	for (ssize_t itemc = menu->selected+1; itemc < (ssize_t)menu->nitems; itemc++) {
 		struct item *item = &menu->items[itemc];
 
 		if (menu->overflow) {
