@@ -93,13 +93,15 @@ struct item {
 struct menu {
 	struct menu *next;
 	struct item *items;
-	size_t first_visible;
 	size_t nitems;
 	ssize_t selected;
 	char const *title;
 	XRectangle geometry;
 	int canvas_height;
-	int scroll_offset;
+	struct {
+		size_t first_item;
+		int offset;
+	} curr_screenful, last_screenful;
 	Window window;
 	struct Canvas {
 		Pixmap pixmap;
@@ -1527,7 +1529,7 @@ commitdraw(struct widget *widget, struct menu *menu)
 		menu->canvas[CANVAS_NORMAL].picture,
 		None,
 		menu->canvas[CANVAS_FINAL].picture,
-		0, menu->scroll_offset,
+		0, menu->curr_screenful.offset,
 		0, 0,
 		0, 0,
 		menu->geometry.width,
@@ -1587,7 +1589,7 @@ commitdraw(struct widget *widget, struct menu *menu)
 			0,
 			menu->selected == SCROLLDOWN
 			? menu->geometry.height - widget->separatorh
-			: ypos - menu->scroll_offset,
+			: ypos - menu->curr_screenful.offset,
 			menu->geometry.width,
 			get_item_height(widget, menu, menu->selected)
 		);
@@ -1603,8 +1605,8 @@ commitdraw(struct widget *widget, struct menu *menu)
 static void
 selfirst(struct widget *widget, struct menu *menu)
 {
-	menu->first_visible = 0;
-	menu->scroll_offset = 0;
+	menu->curr_screenful.first_item = 0;
+	menu->curr_screenful.offset = 0;
 	for (ssize_t itemc = 0; itemc < (ssize_t)menu->nitems; itemc++) {
 		struct item *item = &menu->items[itemc];
 		if (item->output != NULL) {
@@ -1618,6 +1620,7 @@ selfirst(struct widget *widget, struct menu *menu)
 static void
 sellast(struct widget *widget, struct menu *menu)
 {
+	menu->curr_screenful = menu->last_screenful;
 	for (ssize_t itemc = menu->nitems - 1; itemc >= 0; itemc--) {
 		struct item *item = &menu->items[itemc];
 		if (item->output != NULL) {
@@ -1633,10 +1636,10 @@ scrollup(struct widget *widget, struct menu *menu, int diff)
 {
 	int height = 0;
 
-	while (height < diff && menu->first_visible > 0) {
-		height = get_item_height(widget, menu, menu->first_visible);
-		menu->first_visible--;
-		menu->scroll_offset -= height;
+	while (height < diff && menu->curr_screenful.first_item > 0) {
+		height = get_item_height(widget, menu, menu->curr_screenful.first_item);
+		menu->curr_screenful.first_item--;
+		menu->curr_screenful.offset -= height;
 	}
 }
 
@@ -1645,10 +1648,10 @@ scrolldown(struct widget *widget, struct menu *menu, int diff)
 {
 	int height = 0;
 
-	while (height < diff && menu->first_visible + 1 < menu->nitems) {
-		height = get_item_height(widget, menu, menu->first_visible);
-		menu->first_visible++;
-		menu->scroll_offset += height;
+	while (height < diff && menu->curr_screenful.first_item + 1 < menu->nitems) {
+		height = get_item_height(widget, menu, menu->curr_screenful.first_item);
+		menu->curr_screenful.first_item++;
+		menu->curr_screenful.offset += height;
 	}
 }
 
@@ -1673,7 +1676,7 @@ selprev(struct widget *widget, struct menu *menu)
 		if (menu->overflow) {
 			ypos -= height;
 			height = get_item_height(widget, menu, itemc);
-			if (ypos - menu->scroll_offset < scroll_threshold) {
+			if (ypos - menu->curr_screenful.offset < scroll_threshold) {
 				scrollup(widget, menu, height);
 			}
 		}
@@ -1705,7 +1708,7 @@ selnext(struct widget *widget, struct menu *menu)
 		if (menu->overflow) {
 			ypos += height;
 			height = get_item_height(widget, menu, itemc);
-			if (ypos - menu->scroll_offset > scroll_threshold) {
+			if (ypos - menu->curr_screenful.offset > scroll_threshold) {
 				scrolldown(widget, menu, height);
 			}
 		}
@@ -1738,7 +1741,8 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 		.nitems = nitems,
 		.title = title,
 		.selected = -1,
-		.scroll_offset = 0,
+		.curr_screenful = {0, 0},
+		.last_screenful = {0, 0},
 		.next = widget->menus,
 		.tearable = (widget->menus != NULL || !options.windowed) && widget->tearoff,
 	};
@@ -1789,9 +1793,14 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 		if (openssubmenu(item))
 			menu->hassubmenu = true;
 		menu->geometry.width = MAX(menu->geometry.width, textw);
-		if (menu->overflow)
+		if (menu->overflow) {
+			menu->last_screenful.offset += get_item_height(
+				widget, menu, menu->last_screenful.first_item
+			);
+			menu->last_screenful.first_item++;
 			continue;
-		if (menu->canvas_height + widget->separatorh * 2 <= monitor->height) {
+		}
+		if (menu->canvas_height + widget->itemh <= monitor->height) {
 			menu->geometry.height = menu->canvas_height;
 		} else {
 			menu->overflow = true;
@@ -1987,7 +1996,7 @@ index_item(struct widget *widget, struct menu *menu, long y)
 	}
 	if (menu->overflow)
 		h += widget->separatorh;
-	for (size_t itemc = menu->first_visible; itemc < menu->nitems; itemc++) {
+	for (size_t itemc = menu->curr_screenful.first_item; itemc < menu->nitems; itemc++) {
 		struct item *item = &menu->items[itemc];
 		if (item->label == NULL) {
 			h += widget->separatorh;
