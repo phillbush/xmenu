@@ -181,14 +181,6 @@ static ssize_t TEAROFF    = -100;
 static ssize_t SCROLLUP   = -200;
 static ssize_t SCROLLDOWN = -300;
 
-static void
-egettime(struct timespec *ts)
-{
-	if (clock_gettime(CLOCK_MONOTONIC, ts) == RETURN_FAILURE) {
-		err(EXIT_FAILURE, "clock_gettime");
-	}
-}
-
 static pid_t
 efork(void)
 {
@@ -2026,66 +2018,52 @@ get_item(struct menu *menu, ssize_t itemc)
 	return NULL;
 }
 
-//static void
-//scroll(struct widget *widget, bool down)
-//{
-//	XRectangle rect;
-//	struct menu *menu;
-//	time_t elapsed;
-//	struct timespec ts;
-//	int ret;
-//	struct pollfd pfd = {
-//		.fd = XConnectionNumber(widget->display),
-//		.events = POLLIN,
-//	};
-//
-//	if ((menu = widget->menus) == NULL)
-//		return;
-//	if (down)
-//		rect.y = menu->geometry.height - widget->separatorh - widget->shadowwid;
-//	else
-//		rect.y = widget->shadowwid + widget->separatorh;
-//	rect.x = 0;
-//	rect.width = menu->geometry.width;
-//	rect.height = widget->separatorh;
-//	for (;;) {
-//		static int const SCROLL_TIME = 32;
-//		if (XPending(widget->display) > 0)
-//			break;
-//		switch ((ret = poll(&pfd, 1, SCROLL_TIME))) {
-//		case -1:
-//			if (errno == EINTR)
-//				continue;
-//			return;
-//		default:
-//			egettime(&ts);
-//			elapsed = (ts.tv_sec - widget->lasttime.tv_sec) * 1000;
-//			elapsed += ts.tv_nsec / 1000000;
-//			elapsed -= widget->lasttime.tv_nsec / 1000000;
-//			if (elapsed < SCROLL_TIME)
-//				return;
-//			/* fallthrough */
-//		case 0:
-//			if (down) {
-//				if (menu->last->next == NULL)
-//					break;
-//				menu->first = menu->first->next;
-//				menu->last = menu->last->next;
-//			} else {
-//				if (menu->first->prev == NULL)
-//					break;
-//				menu->first = menu->first->prev;
-//				menu->last = menu->last->prev;
-//			}
-//			commitdraw(widget, menu);
-//			XFlush(widget->display);
-//			if (ret == 0)
-//				break;
-//			egettime(&widget->lasttime);
-//			break;
-//		}
-//	}
-//}
+static void
+scroll(struct widget *widget, struct menu *menu, bool down)
+{
+	time_t elapsed;
+	struct timespec ts;
+	int ret;
+	struct pollfd pfd = {
+		.fd = XConnectionNumber(widget->display),
+		.events = POLLIN,
+	};
+
+	for (;;) {
+		static int const SCROLL_TIME = 32;
+		if (XPending(widget->display) > 0)
+			break;
+		switch ((ret = poll(&pfd, 1, SCROLL_TIME))) {
+		case -1:
+			if (errno == EINTR)
+				continue;
+			return;
+		default:
+			if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
+				warn("clock_gettime");
+				return;
+			}
+			elapsed = (ts.tv_sec - widget->lasttime.tv_sec) * 1000;
+			elapsed += ts.tv_nsec / 1000000;
+			elapsed -= widget->lasttime.tv_nsec / 1000000;
+			if (elapsed < SCROLL_TIME)
+				return;
+			if (clock_gettime(CLOCK_MONOTONIC, &widget->lasttime) == -1) {
+				warn("clock_gettime");
+				return;
+			}
+			/* fallthrough */
+		case 0:
+			if (down)
+				scrolldown(widget, menu, widget->itemh);
+			else
+				scrollup(widget, menu, widget->itemh);
+			commitdraw(widget, menu);
+			XFlush(widget->display);
+			break;
+		}
+	}
+}
 
 static void
 forkandtearoff(struct widget *widget, struct menu *menu)
@@ -2359,8 +2337,8 @@ run(struct widget *widget, XRectangle *geometry)
 		if (menu == NULL)
 			continue;
 		nitem = index_item(widget, menu, xev.xbutton.y);
-		//if (nitem == SCROLLUP || nitem == SCROLLDOWN)
-		//	scroll(widget, ntem == SCROLLDOWN);
+		if (nitem == SCROLLUP || nitem == SCROLLDOWN)
+			scroll(widget, menu, nitem == SCROLLDOWN);
 		if (nitem == menu->selected)
 			continue;
 		item = get_item(menu, nitem);
