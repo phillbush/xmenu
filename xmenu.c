@@ -2330,10 +2330,10 @@ run(struct widget *widget, XRectangle *geometry)
 		);
 		continue;
 	case LeaveNotify:
-		//if (getmenu(widget, xev.xcrossing.window) == widget->menus) {
-		//	widget->menus->selected = NULL;
-		//	commitdraw(widget, widget->menus);
-		//}
+		if (getmenu(widget, xev.xcrossing.window) == widget->menus) {
+			widget->menus->selected = -1;
+			commitdraw(widget, widget->menus);
+		}
 		continue;
 	case MotionNotify:
 		menu = getmenu(widget, xev.xmotion.window);
