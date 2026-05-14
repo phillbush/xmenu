@@ -651,7 +651,6 @@ fill_entries(struct item *entries, size_t menu_indentlvl, char *data, size_t dat
 			.nchildren = 0,
 		};
 		linelen = strcspn(line, "\n");
-		*from += linelen + 1;
 		entry_indentlvl = strspn(line, "\t");
 		if (entry_indentlvl < menu_indentlvl) {
 			break;
@@ -665,18 +664,19 @@ fill_entries(struct item *entries, size_t menu_indentlvl, char *data, size_t dat
 			);
 		} else {
 			line[linelen] = '\0';
+			*from += linelen + 1;
 			entry->label = line + entry_indentlvl;
 			if (strncmp(entry->label, "IMG:", 4) == 0) {
 				size_t pathlen;
 				entry->file = entry->label + 4;
 				pathlen = strcspn(entry->file, "\t");
 				entry->label = entry->file + pathlen;
-				entry->label += strspn(entry->file, "\t");
+				entry->label += strspn(entry->label, "\t");
 				entry->file[pathlen] = '\0';
 			}
 			entry->labellen = strcspn(entry->label, "\t");
 			entry->output = entry->label + entry->labellen;
-			entry->output += strspn(entry->label, "\t");
+			entry->output += strspn(entry->output, "\t");
 			entry->label[entry->labellen] = '\0';
 
 			if (*entry->label == '\0')
