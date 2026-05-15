@@ -146,6 +146,7 @@ struct widget {
 	Window rootwin;
 	Window window;
 	XRectangle monitor;
+	XrmDatabase cli_xrm;
 	ctrlfnt *fontset;
 	struct menu *menus;
 	unsigned int fonth;
@@ -556,7 +557,11 @@ loadresources(struct widget *widget, const char *str)
 
 	if (str != NULL)
 		xdb = XrmGetStringDatabase(str);
-	ctrlres_parsexrdb(widget, (XrmDatabase[]){xdb}, 1, resources, LEN(resources));
+	ctrlres_parsexrdb(
+		widget,
+		(XrmDatabase[]){widget->cli_xrm, xdb}, 2,
+		resources, LEN(resources)
+	);
 	if (fontspec != NULL)
 		setfont(widget, fontspec, fontsize);
 	XrmDestroyDatabase(xdb);
@@ -2436,7 +2441,7 @@ cleanup(struct widget *widget)
 
 static struct widget *
 setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth,
-		char *title, char *name, char *class,
+		XrmDatabase cli_xrm, char *title, char *name, char *class,
 		int argc, char *argv[])
 {
 	struct widget *widget;
@@ -2450,6 +2455,7 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.visual = visual,
 		.depth = depth,
 		.colormap = colormap,
+		.cli_xrm = cli_xrm,
 		.window = None,
 		.argc = argc,
 		.argv = argv,
@@ -2514,6 +2520,7 @@ main(int argc, char *argv[])
 	char *class = "XMenu";
 	char *title = "XMenu";
 	char *read_data = NULL;
+	XrmDatabase cli_xrm = NULL;
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
@@ -2545,6 +2552,10 @@ main(int argc, char *argv[])
 			setmodifier(arg);
 		} else if (!strcmp(argv[i], "-title")) {
 			title = argv[++i];
+		} else if (!strcmp(argv[i], "-xrm")) {
+			XrmDatabase db = XrmGetStringDatabase(argv[++i]);
+			if (db != NULL)
+				XrmCombineDatabase(db, &cli_xrm, True);
 		} else {
 			warnx("unknown option -- %s", argv[i]);
 		usage:
@@ -2557,6 +2568,7 @@ main(int argc, char *argv[])
 				" [-rootgrab BUTTON]"
 				" [-title TITLE]"
 				" [-windowed]"
+				" [-xrm RESOURCES]"
 				"\n"
 			);
 			exit(EXIT_FAILURE);
@@ -2617,7 +2629,7 @@ main(int argc, char *argv[])
 	}
 	widget = setup(
 		display, DefaultScreen(display), visual, colormap, depth,
-		title, name, class, argc, argv
+		cli_xrm, title, name, class, argc, argv
 	);
 	if (widget == NULL)
 		errx(EXIT_FAILURE, "cannot create widget");
@@ -2636,6 +2648,7 @@ main(int argc, char *argv[])
 	free(options.iconstring);
 	free(read_data);
 	free(options.items);
+	XrmDestroyDatabase(cli_xrm);
 	if (display != NULL)
 		XCloseDisplay(display);
 	return EXIT_SUCCESS;

@@ -12,6 +12,7 @@
 .Op Fl rootgrab Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON
 .Op Fl title Ar TITLE
 .Op Fl windowed
+.Op Fl xrm Ar RESOURCESTRING
 .Sh DESCRIPTION
 .Nm
 is a desktop menu for X11.
@@ -244,6 +245,9 @@ Asks the window manager to draw a border around the menu.
 This makes
 .Nm
 start torn off.
+.It Fl xrm Ar RESOURCESTRING
+Set resource name and value pairs to override any defaults,
+and any resource read from the X server.
 .El
 .Sh RESOURCES
 All resources apply to the toplevel
