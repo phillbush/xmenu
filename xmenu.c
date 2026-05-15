@@ -145,7 +145,7 @@ struct widget {
 	ctrlfnt *fontset;
 	struct menu *menus;
 	unsigned int fonth;
-	unsigned int itemh, separatorh;
+	int itemh, separatorh;
 	int inner_border_width;  /* part of window content, for shadow/relief */
 	int outer_border_width;  /* X11 border, not counted on window size */
 	int iconsize, gap;
