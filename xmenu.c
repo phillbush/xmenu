@@ -630,10 +630,6 @@ fill_entries(struct item *entries, size_t menu_indentlvl, char *data, size_t dat
 		size_t entry_indentlvl;
 		char *line = data + *from;
 
-		*entry = (struct item){
-			.children = NULL,
-			.nchildren = 0,
-		};
 		linelen = strcspn(line, "\n");
 		entry_indentlvl = strspn(line, "\t");
 		if (entry_indentlvl < menu_indentlvl) {
