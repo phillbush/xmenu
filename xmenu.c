@@ -2098,59 +2098,58 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 	closepopups(widget);
 }
 
-static int
-direntsel(const struct dirent *dp)
-{
-	return dp->d_name[0] != '.' && strpbrk(dp->d_name, "\t\n") == NULL;
-}
-
-static int
-direntcmp(const struct dirent **ap, const struct dirent **bp)
-{
-	const struct dirent *a = *ap;
-	const struct dirent *b = *bp;
-
-	if (a->d_type == DT_DIR && b->d_type != DT_DIR)
-		return -1;
-	if (b->d_type == DT_DIR && a->d_type != DT_DIR)
-		return 1;
-	return strcoll(a->d_name, b->d_name);
-}
-
+//static int
+//direntsel(const struct dirent *dp)
+//{
+//	return dp->d_name[0] != '.' && strpbrk(dp->d_name, "\t\n") == NULL;
+//}
+//
+//static int
+//direntcmp(const struct dirent **ap, const struct dirent **bp)
+//{
+//	const struct dirent *a = *ap;
+//	const struct dirent *b = *bp;
+//
+//	if (a->d_type == DT_DIR && b->d_type != DT_DIR)
+//		return -1;
+//	if (b->d_type == DT_DIR && a->d_type != DT_DIR)
+//		return 1;
+//	return strcoll(a->d_name, b->d_name);
+//}
+//
 //static struct item *
 //listdirentries(const char *dirname)
 //{
-//#warning readd listdirentries()
-//	//struct dirent **namelist;
-//	//struct item *items, *item, *prev;
-//	//int nents;
-//	//char buf[PATH_MAX + 8];
-//	//
-//	//nents = scandir(dirname, &namelist, &direntsel, &direntcmp);
-//	//if (nents == -1)
-//	//	return NULL;
-//	//items = NULL;
-//	//prev = NULL;
-//	//for (int i = 0; i < nents; i++) {
-//	//	snprintf(
-//	//		buf,
-//	//		sizeof(buf),
-//	//		"%s%s/%s",
-//	//		namelist[i]->d_type == DT_DIR ? "" : "file:",
-//	//		dirname,
-//	//		namelist[i]->d_name
-//	//	);
-//	//	item = allocitem(namelist[i]->d_name, buf, NULL);
-//	//	if (prev == NULL)
-//	//		items = item;
-//	//	else
-//	//		prev->next = item;
-//	//	item->prev = prev;
-//	//	prev = item;
-//	//	free(namelist[i]);
-//	//}
-//	//free(namelist);
-//	//return items;
+//	struct dirent **namelist;
+//	struct item *items, *item, *prev;
+//	int nents;
+//	char buf[PATH_MAX + 8];
+//	
+//	nents = scandir(dirname, &namelist, &direntsel, &direntcmp);
+//	if (nents == -1)
+//		return NULL;
+//	items = NULL;
+//	prev = NULL;
+//	for (int i = 0; i < nents; i++) {
+//		snprintf(
+//			buf,
+//			sizeof(buf),
+//			"%s%s/%s",
+//			namelist[i]->d_type == DT_DIR ? "" : "file:",
+//			dirname,
+//			namelist[i]->d_name
+//		);
+//		item = allocitem(namelist[i]->d_name, buf, NULL);
+//		if (prev == NULL)
+//			items = item;
+//		else
+//			prev->next = item;
+//		item->prev = prev;
+//		prev = item;
+//		free(namelist[i]);
+//	}
+//	free(namelist);
+//	return items;
 //	return NULL;
 //}
 
