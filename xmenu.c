@@ -180,16 +180,6 @@ static ssize_t TEAROFF    = -100;
 static ssize_t SCROLLUP   = -200;
 static ssize_t SCROLLDOWN = -300;
 
-static pid_t
-efork(void)
-{
-	pid_t pid;
-
-	if ((pid = fork()) == -1)
-		err(EXIT_FAILURE, "fork");
-	return pid;
-}
-
 static void
 parsegeometry(char *geomspec)
 {
@@ -2076,7 +2066,13 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 static void
 forkandtearoff(struct widget *widget, struct menu *menu)
 {
-	if (efork() == 0) {
+	pid_t pid;
+
+	if ((pid = fork()) == -1) {
+		warn("fork");
+		return;
+	}
+	if (pid == 0) {
 		/* child */
 		ctrlfnt_free(widget->fontset);
 		while (close(XConnectionNumber(widget->display)) == -1) {
