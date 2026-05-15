@@ -90,8 +90,9 @@ struct menu {
 	size_t nitems;
 	ssize_t selected;
 	char const *title;
-	XRectangle geometry;
-	int canvas_height;
+	XRectangle window_geometry;
+	int canvas_width, canvas_height;
+	int total_height;
 	struct {
 		size_t first_item;
 		int offset;
@@ -1132,41 +1133,48 @@ drawmenu(struct widget *widget, struct menu *menu)
 	XRectangle item_geometry;
 	int textx, textw, iconw, iconh, y;
 
-	for (size_t i = 0; i < CANVAS_LAST; i++) {
-		if (menu->canvas[i].picture != None) {
-			XRenderFreePicture(
+	if (menu->canvas_width  < menu->window_geometry.width &&
+	    menu->canvas_height < menu->window_geometry.height) {
+		menu->canvas_width = menu->window_geometry.width + 128;
+		menu->canvas_height = MAX(
+			menu->window_geometry.height + 128,
+			menu->total_height
+		);
+		for (size_t i = 0; i < CANVAS_LAST; i++) {
+			if (menu->canvas[i].picture != None) {
+				XRenderFreePicture(
+					widget->display,
+					menu->canvas[i].picture
+				);
+			}
+			if (menu->canvas[i].pixmap != None)
+				XFreePixmap(widget->display, menu->canvas[i].pixmap);
+			menu->canvas[i].pixmap = XCreatePixmap(
 				widget->display,
-				menu->canvas[i].picture
+				menu->window,
+				menu->canvas_width,
+				menu->canvas_height,
+				widget->depth
+			);
+			menu->canvas[i].picture = XRenderCreatePicture(
+				widget->display,
+				menu->canvas[i].pixmap,
+				XRenderFindVisualFormat(widget->display, widget->visual),
+				0,
+				NULL
+			);
+			XRenderFillRectangle(
+				widget->display,
+				PictOpClear,
+				menu->canvas[i].picture,
+				&(XRenderColor){ 0 },
+				0, 0,
+				menu->canvas_width,
+				menu->canvas_height
 			);
 		}
-		if (menu->canvas[i].pixmap != None)
-			XFreePixmap(widget->display, menu->canvas[i].pixmap);
-		menu->canvas[i].pixmap = XCreatePixmap(
-			widget->display,
-			menu->window,
-			menu->geometry.width,
-			menu->canvas_height,
-			widget->depth
-		);
-		menu->canvas[i].picture = XRenderCreatePicture(
-			widget->display,
-			menu->canvas[i].pixmap,
-			XRenderFindVisualFormat(widget->display, widget->visual),
-			0,
-			NULL
-		);
-		XRenderFillRectangle(
-			widget->display,
-			PictOpClear,
-			menu->canvas[i].picture,
-			&(XRenderColor){ 0 },
-			0, 0,
-			menu->geometry.width,
-			menu->canvas_height
-		);
 	}
-	for (size_t i = 0; i < CANVAS_FINAL; i++) {
-		drawshadows(widget, menu->canvas[i].picture, &menu->geometry);
+	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		XRenderComposite(
 			widget->display,
 			PictOpSrc,
@@ -1176,15 +1184,15 @@ drawmenu(struct widget *widget, struct menu *menu)
 			0, 0,
 			0, 0,
 			widget->inner_border_width, widget->inner_border_width,
-			menu->geometry.width - widget->inner_border_width * 2,
-			menu->canvas_height - widget->inner_border_width * 2
+			menu->window_geometry.width - widget->inner_border_width * 2,
+			menu->total_height - widget->inner_border_width * 2
 		);
 	}
 	item_geometry.x = widget->inner_border_width + PADDING;
 	if (menu->hasicon)
 		item_geometry.x += widget->iconsize + PADDING;
 	item_geometry.y = firstitempos(widget, menu);
-	item_geometry.width = menu->geometry.width;
+	item_geometry.width = menu->window_geometry.width;
 	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
 		struct item *item = &menu->items[itemc];
 		Imlib_Image image;
@@ -1259,7 +1267,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 		else if (widget->alignment == ALIGN_RIGHT)
 			textx = item_geometry.width - textw - PADDING;
 		else if (widget->alignment == ALIGN_CENTER)
-			textx = item_geometry.x + (menu->geometry.width - textw) / 2;
+			textx = item_geometry.x + (menu->window_geometry.width - textw) / 2;
 		else
 			textx = item_geometry.x;
 		if (item->output != NULL) {
@@ -1352,12 +1360,12 @@ next:
 			drawdashline(
 				widget,
 				menu->canvas[CANVAS_NORMAL].picture,
-				menu->geometry.width, y
+				menu->window_geometry.width, y
 			);
 			drawdashline(
 				widget,
 				menu->canvas[CANVAS_SELECT].picture,
-				menu->geometry.width, y
+				menu->window_geometry.width, y
 			);
 			y += widget->separatorh;
 		}
@@ -1366,7 +1374,7 @@ next:
 				widget,
 				menu->canvas[i].picture,
 				widget->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
-				menu->geometry.width / 2 - TRIANGLE_HEIGHT / 2,
+				menu->window_geometry.width / 2 - TRIANGLE_HEIGHT / 2,
 				y + widget->separatorh /2 - TRIANGLE_WIDTH / 2,
 				DIR_UP
 			);
@@ -1374,8 +1382,8 @@ next:
 				widget,
 				menu->canvas[i].picture,
 				widget->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
-				menu->geometry.width / 2 - TRIANGLE_HEIGHT / 2,
-				menu->canvas_height - widget->separatorh /2
+				menu->window_geometry.width / 2 - TRIANGLE_HEIGHT / 2,
+				menu->total_height - widget->separatorh /2
 				- TRIANGLE_WIDTH / 2,
 				DIR_DOWN
 			);
@@ -1402,7 +1410,7 @@ get_item_ypos(struct widget *widget, struct menu *menu, int selected)
 	}
 	if (menu->overflow) {
 		if (selected == SCROLLDOWN)
-			return menu->canvas_height - widget->separatorh
+			return menu->total_height - widget->separatorh
 			- widget->inner_border_width;
 		if (selected == SCROLLUP)
 			return ypos;
@@ -1449,8 +1457,8 @@ commitdraw(struct widget *widget, struct menu *menu)
 		menu->canvas[CANVAS_FINAL].picture,
 		&(XRenderColor){ 0 },
 		0, 0,
-		menu->geometry.width,
-		menu->geometry.height
+		menu->window_geometry.width,
+		menu->window_geometry.height
 	);
 	XRenderComposite(
 		widget->display,
@@ -1461,8 +1469,8 @@ commitdraw(struct widget *widget, struct menu *menu)
 		0, menu->curr_screenful.offset,
 		0, 0,
 		0, 0,
-		menu->geometry.width,
-		menu->geometry.height
+		menu->window_geometry.width,
+		menu->window_geometry.height
 	);
 	if (menu->tearable) {
 		XRenderComposite(
@@ -1474,7 +1482,7 @@ commitdraw(struct widget *widget, struct menu *menu)
 			0, get_item_ypos(widget, menu, TEAROFF),
 			0, 0,
 			0, get_item_ypos(widget, menu, TEAROFF),
-			menu->geometry.width,
+			menu->window_geometry.width,
 			get_item_height(widget, menu, TEAROFF)
 		);
 	}
@@ -1488,7 +1496,7 @@ commitdraw(struct widget *widget, struct menu *menu)
 			0, get_item_ypos(widget, menu, SCROLLUP),
 			0, 0,
 			0, get_item_ypos(widget, menu, SCROLLUP),
-			menu->geometry.width,
+			menu->window_geometry.width,
 			get_item_height(widget, menu, SCROLLUP)
 		);
 		XRenderComposite(
@@ -1499,16 +1507,16 @@ commitdraw(struct widget *widget, struct menu *menu)
 			menu->canvas[CANVAS_FINAL].picture,
 			0, get_item_ypos(widget, menu, SCROLLDOWN),
 			0, 0,
-			0, menu->geometry.height
+			0, menu->window_geometry.height
 			- get_item_height(widget, menu, SCROLLDOWN)
 			- widget->inner_border_width,
-			menu->geometry.width,
+			menu->window_geometry.width,
 			get_item_height(widget, menu, SCROLLDOWN)
 		);
 	}
 	src_canvas_y = get_item_ypos(widget, menu, menu->selected);
 	if (menu->selected == SCROLLDOWN)
-		dst_canvas_y = menu->geometry.height
+		dst_canvas_y = menu->window_geometry.height
 		             - widget->separatorh - widget->inner_border_width;
 	else if (menu->selected == SCROLLUP || menu->selected == TEAROFF)
 		dst_canvas_y = src_canvas_y;
@@ -1524,10 +1532,15 @@ commitdraw(struct widget *widget, struct menu *menu)
 			0, src_canvas_y,
 			0, 0,
 			0, dst_canvas_y,
-			menu->geometry.width,
+			menu->window_geometry.width,
 			get_item_height(widget, menu, menu->selected)
 		);
 	}
+	drawshadows(
+		widget,
+		menu->canvas[CANVAS_FINAL].picture,
+		&menu->window_geometry
+	);
 	XSetWindowBackgroundPixmap(
 		widget->display,
 		menu->window,
@@ -1582,6 +1595,10 @@ scrolldown(struct widget *widget, struct menu *menu, int diff)
 {
 	int height = 0;
 
+	if (menu->curr_screenful.offset + height >= menu->last_screenful.offset) {
+		menu->curr_screenful = menu->last_screenful;
+		return;
+	}
 	while (height < diff && menu->curr_screenful.first_item + 1 < menu->nitems) {
 		height = get_item_height(widget, menu, menu->curr_screenful.first_item);
 		menu->curr_screenful.first_item++;
@@ -1627,7 +1644,7 @@ static void
 selnext(struct widget *widget, struct menu *menu)
 {
 	int ypos, height;
-	int scroll_threshold = menu->geometry.height
+	int scroll_threshold = menu->window_geometry.height
 	                     - widget->separatorh - widget->inner_border_width;
 
 	if (menu->selected < 0) {
@@ -1702,16 +1719,16 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 			type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_MENU", False);
 		}
 	}
-	menu->canvas_height = widget->inner_border_width * 2;
+	menu->total_height = widget->inner_border_width * 2;
 	if (tearoff)
-		menu->canvas_height += widget->separatorh;
-	menu->geometry.height = widget->inner_border_width * 2;
+		menu->total_height += widget->separatorh;
+	menu->window_geometry.height = widget->inner_border_width * 2;
 	menu->nicons = 0;
 	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
 		struct item *item = &menu->items[itemc];
 
 		if (item->label != NULL) {
-			menu->canvas_height += widget->itemh;
+			menu->total_height += widget->itemh;
 			textw = ctrlfnt_width(
 				widget->fontset,
 				item->label,
@@ -1719,7 +1736,7 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 			);
 		} else {
 			textw = 0;
-			menu->canvas_height += widget->separatorh;
+			menu->total_height += widget->separatorh;
 		}
 		if (item->file != NULL) {
 			menu->hasicon = true;
@@ -1727,7 +1744,7 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 		}
 		if (openssubmenu(item))
 			menu->hassubmenu = true;
-		menu->geometry.width = MAX(menu->geometry.width, textw);
+		menu->window_geometry.width = MAX(menu->window_geometry.width, textw);
 		if (menu->overflow) {
 			menu->last_screenful.offset += get_item_height(
 				widget, menu, menu->last_screenful.first_item
@@ -1735,40 +1752,40 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 			menu->last_screenful.first_item++;
 			continue;
 		}
-		if (menu->canvas_height + widget->itemh <= max_height) {
-			menu->geometry.height = menu->canvas_height;
+		if (menu->total_height + widget->itemh <= max_height) {
+			menu->window_geometry.height = menu->total_height;
 		} else {
 			menu->overflow = true;
-			menu->geometry.height = max_height;
+			menu->window_geometry.height = max_height;
 		}
 	}
 	if (menu->overflow)
-		menu->canvas_height += widget->separatorh * 2;
+		menu->total_height += widget->separatorh * 2;
 
-	menu->geometry.width += PADDING * 2 + widget->inner_border_width * 2;
+	menu->window_geometry.width += PADDING * 2 + widget->inner_border_width * 2;
 	if (menu->hasicon)
-		menu->geometry.width += widget->iconsize + PADDING;
+		menu->window_geometry.width += widget->iconsize + PADDING;
 	if (menu->hassubmenu)
-		menu->geometry.width += TRIANGLE_WIDTH + TRIANGLE_PAD + PADDING;
-	menu->geometry.width = MIN(menu->geometry.width, monitor->width/2);
+		menu->window_geometry.width += TRIANGLE_WIDTH + TRIANGLE_PAD + PADDING;
+	menu->window_geometry.width = MIN(menu->window_geometry.width, monitor->width/2);
 
 	/* place menu to align with parent menu and be visible on monitor */
 	if (menu->overflow && widget->menus != NULL)
 		ygap -= widget->separatorh;
-	menu->geometry.x = monitor->x;
-	menu->geometry.y = monitor->y;
+	menu->window_geometry.x = monitor->x;
+	menu->window_geometry.y = monitor->y;
 	if (monitor->x + monitor->width - (basis->x + basis->width + xgap)
-	    >= menu->geometry.width) {
-		menu->geometry.x = basis->x + basis->width + xgap;
-	} else if (basis->x > (long)menu->geometry.width + xgap) {
-		menu->geometry.x = basis->x - menu->geometry.width - xgap;
+	    >= menu->window_geometry.width) {
+		menu->window_geometry.x = basis->x + basis->width + xgap;
+	} else if (basis->x > (long)menu->window_geometry.width + xgap) {
+		menu->window_geometry.x = basis->x - menu->window_geometry.width - xgap;
 	}
 	if (monitor->y + max_height - (basis->y + ygap)
-	    >= menu->geometry.height) {
-		menu->geometry.y = basis->y + ygap;
-	} else if (monitor->y + max_height > menu->geometry.height + ygap) {
-		menu->geometry.y = monitor->y + max_height;
-		menu->geometry.y -= menu->geometry.height;
+	    >= menu->window_geometry.height) {
+		menu->window_geometry.y = basis->y + ygap;
+	} else if (monitor->y + max_height > menu->window_geometry.height + ygap) {
+		menu->window_geometry.y = monitor->y + max_height;
+		menu->window_geometry.y -= menu->window_geometry.height;
 	}
 
 	if (isroot && options.userplaced) {
@@ -1784,27 +1801,27 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 
 		if (options.xpercent) {
 			if (options.xneg) x = 100 - x;
-			menu->geometry.x = screen.x + screen.width * x / 100;
-			menu->geometry.x -= menu->geometry.width / 2;
+			menu->window_geometry.x = screen.x + screen.width * x / 100;
+			menu->window_geometry.x -= menu->window_geometry.width / 2;
 		} else if (options.xneg) {
-			menu->geometry.x = screen.x + screen.width - x - menu->geometry.width;
+			menu->window_geometry.x = screen.x + screen.width - x - menu->window_geometry.width;
 		} else {
-			menu->geometry.x = screen.x + x;
+			menu->window_geometry.x = screen.x + x;
 		}
 
 		if (options.ypercent) {
 			if (options.yneg) y = 100 - y;
-			menu->geometry.y = screen.y + screen.height * y / 100;
-			menu->geometry.y -= menu->geometry.height / 2;
+			menu->window_geometry.y = screen.y + screen.height * y / 100;
+			menu->window_geometry.y -= menu->window_geometry.height / 2;
 		} else if (options.yneg) {
-			menu->geometry.y = screen.y + screen.height - y - menu->geometry.height;
+			menu->window_geometry.y = screen.y + screen.height - y - menu->window_geometry.height;
 		} else {
-			menu->geometry.y = screen.y + y;
+			menu->window_geometry.y = screen.y + y;
 		}
 	}
 
 	menu->window = createwindow(
-		widget, &menu->geometry,
+		widget, &menu->window_geometry,
 		KeyPressMask | StructureNotifyMask | LeaveWindowMask |
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
 		override_redirect
@@ -1925,7 +1942,7 @@ index_item(struct widget *widget, struct menu *menu, long y)
 	if (menu->overflow && y < h + widget->separatorh) {
 		return SCROLLUP;
 	}
-	if (menu->overflow && y >= menu->geometry.height - widget->separatorh) {
+	if (menu->overflow && y >= menu->window_geometry.height - widget->separatorh) {
 		return SCROLLDOWN;
 	}
 	if (menu->overflow)
@@ -1945,7 +1962,7 @@ index_item(struct widget *widget, struct menu *menu, long y)
 		h += widget->itemh;
 		if (menu->overflow &&
 		    h + widget->itemh + widget->inner_border_width >=
-		    menu->geometry.height) {
+		    menu->window_geometry.height) {
 			break;
 		}
 	}
@@ -2036,8 +2053,8 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 		options.xpercent = options.ypercent = false;
 		options.windowed = true,
 		options.rootmode = false,
-		options.geometry.x = menu->geometry.x,
-		options.geometry.y = menu->geometry.y,
+		options.geometry.x = menu->window_geometry.x,
+		options.geometry.y = menu->window_geometry.y,
 		options.geometry.width = 0,
 		options.geometry.height = 0,
 		longjmp(jmpenv, 1);
@@ -2117,7 +2134,7 @@ openitem(struct widget *widget, struct menu *menu, ssize_t nitem, bool alt)
 
 	if (item == NULL)
 		return;
-	rect = menu->geometry;
+	rect = menu->window_geometry;
 	rect.y += get_item_ypos(widget, menu, nitem);
 	if (item->children != NULL) {
 		popupmenu(widget, item->children, item->nchildren, &rect, false, item->label);
@@ -2257,13 +2274,13 @@ run(struct widget *widget, XRectangle *geometry)
 				break;
 		if (menu == NULL)
 			continue;
-		menu->geometry.x = xev.xconfigure.x;
-		menu->geometry.y = xev.xconfigure.y;
-		if (menu->geometry.width  == xev.xconfigure.width &&
-		    menu->geometry.height == xev.xconfigure.height)
+		menu->window_geometry.x = xev.xconfigure.x;
+		menu->window_geometry.y = xev.xconfigure.y;
+		if (menu->window_geometry.width  == xev.xconfigure.width &&
+		    menu->window_geometry.height == xev.xconfigure.height)
 			continue;       /* size not changed */
-		menu->geometry.width = xev.xconfigure.width;
-		menu->geometry.height = xev.xconfigure.height;
+		menu->window_geometry.width = xev.xconfigure.width;
+		menu->window_geometry.height = xev.xconfigure.height;
 		drawmenu(widget, menu);
 		if (get_item(menu, menu->selected) != NULL)
 			commitdraw(widget, menu);
