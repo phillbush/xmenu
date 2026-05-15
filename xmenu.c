@@ -2321,6 +2321,7 @@ run(struct widget *widget, XRectangle *geometry)
 			continue;       /* size not changed */
 		menu->geometry.width = xev.xconfigure.width;
 		menu->geometry.height = xev.xconfigure.height;
+		drawmenu(widget, menu);
 		if (get_item(menu, menu->selected) != NULL)
 			commitdraw(widget, menu);
 		continue;
