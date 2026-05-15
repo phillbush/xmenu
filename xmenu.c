@@ -537,6 +537,7 @@ loadresources(struct widget *widget, const char *str)
 		MK_RES("alignment", "Alignment", &widget->alignment, parse_alignment),
 		MK_RES("background", "Background", NULL, parse_bg),
 		MK_RES("borderWidth", "BorderWidth", &widget->borderwid, parse_width),
+		MK_RES("borderColor", "BorderColor", &widget->colors[COLOR_BORDER], parse_color),
 		MK_RES("font", "Font", &fontspec, CTRLRES_SETSTR),
 		MK_RES("fontSize", "FontSize", &fontsize, parse_double),
 		MK_RES("foreground", "Foreground", &widget->colors[COLOR_FG], parse_color),
