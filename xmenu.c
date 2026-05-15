@@ -151,7 +151,9 @@ struct widget {
 	struct menu *menus;
 	unsigned int fonth;
 	unsigned int itemh, separatorh;
-	int shadowwid, iconsize, borderwid, gap;
+	int inner_border_width;  /* part of window content, for shadow/relief */
+	int outer_border_width;  /* X11 border, not counted on window size */
+	int iconsize, gap;
 	int maxitems;
 	bool initimlib;
 	bool tearoff;
@@ -313,7 +315,7 @@ createwindow(struct widget *widget, XRectangle *geometry, long eventmask, bool o
 		geometry != NULL ? geometry->y : 0,
 		geometry != NULL ? geometry->width : 1,
 		geometry != NULL ? geometry->height : 1,
-		widget->borderwid,
+		widget->outer_border_width,
 		widget->depth,
 		InputOutput,
 		widget->visual,
@@ -536,7 +538,7 @@ loadresources(struct widget *widget, const char *str)
 		MK_RES("activeForeground", "ActiveForeground", &widget->colors[COLOR_SELFG], parse_color),
 		MK_RES("alignment", "Alignment", &widget->alignment, parse_alignment),
 		MK_RES("background", "Background", NULL, parse_bg),
-		MK_RES("borderWidth", "BorderWidth", &widget->borderwid, parse_width),
+		MK_RES("borderWidth", "BorderWidth", &widget->outer_border_width, parse_width),
 		MK_RES("borderColor", "BorderColor", &widget->colors[COLOR_BORDER], parse_color),
 		MK_RES("font", "Font", &fontspec, CTRLRES_SETSTR),
 		MK_RES("fontSize", "FontSize", &fontsize, parse_double),
@@ -544,7 +546,7 @@ loadresources(struct widget *widget, const char *str)
 		MK_RES("gap", "Gap", &widget->gap, parse_width),
 		MK_RES("maxItems", "MaxItems", &widget->maxitems, parse_width),
 		MK_RES("opacity", "Opacity", NULL, parse_opacity),
-		MK_RES("shadowThickness", "ShadowThickness", &widget->shadowwid, parse_width),
+		MK_RES("shadowThickness", "ShadowThickness", &widget->inner_border_width, parse_width),
 		MK_RES("tearOff", "TearOff", &widget->tearoff, CTRLRES_SETBOOL),
 
 		/* undocumented; for compatibility with Motif's TearOffModel resource */
@@ -808,7 +810,7 @@ grabkeyboard(struct widget *widget)
 static void
 drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 {
-	for (int i = 0; i < widget->shadowwid; i++) {
+	for (int i = 0; i < widget->inner_border_width; i++) {
 		/* draw light shadow */
 		XRenderFillRectangle(
 			widget->display,
@@ -857,10 +859,10 @@ drawdashline(struct widget *widget, Picture picture, int width, int y)
 	int w;
 	int maxw;
 
-	x = widget->shadowwid + PADDING;
+	x = widget->inner_border_width + PADDING;
 	y += widget->separatorh / 2;
 	w = 0;
-	maxw = width - widget->shadowwid * 2 - PADDING * 2;
+	maxw = width - widget->inner_border_width * 2 - PADDING * 2;
 	while (w < maxw) {
 		nrects = 0;
 		for (size_t i = 0; i < LEN(toprects); i++) {
@@ -907,9 +909,9 @@ drawseparator(struct widget *widget, Picture picture, XRectangle *rect)
 		PictOpSrc,
 		picture,
 		&widget->colors[COLOR_BOT].chans,
-		widget->shadowwid + PADDING,
+		widget->inner_border_width + PADDING,
 		rect->y + widget->separatorh / 2 - 1,
-		rect->width - widget->shadowwid * 2 - PADDING * 2,
+		rect->width - widget->inner_border_width * 2 - PADDING * 2,
 		1
 	);
 	XRenderFillRectangle(
@@ -917,9 +919,9 @@ drawseparator(struct widget *widget, Picture picture, XRectangle *rect)
 		PictOpSrc,
 		picture,
 		&widget->colors[COLOR_TOP].chans,
-		widget->shadowwid + PADDING,
+		widget->inner_border_width + PADDING,
 		rect->y + widget->separatorh / 2,
-		rect->width - widget->shadowwid * 2 - PADDING * 2,
+		rect->width - widget->inner_border_width * 2 - PADDING * 2,
 		1
 	);
 }
@@ -999,7 +1001,7 @@ firstitempos(struct widget *widget, struct menu *menu)
 {
 	int y;
 
-	y = widget->shadowwid;
+	y = widget->inner_border_width;
 	if (menu->tearable)
 		y += widget->separatorh;
 	if (menu->overflow)
@@ -1205,12 +1207,12 @@ drawmenu(struct widget *widget, struct menu *menu)
 			canvas[i][LAYER_BG].picture,
 			0, 0,
 			0, 0,
-			widget->shadowwid, widget->shadowwid,
-			menu->geometry.width - widget->shadowwid * 2,
-			menu->canvas_height - widget->shadowwid * 2
+			widget->inner_border_width, widget->inner_border_width,
+			menu->geometry.width - widget->inner_border_width * 2,
+			menu->canvas_height - widget->inner_border_width * 2
 		);
 	}
-	item_geometry.x = widget->shadowwid + PADDING;
+	item_geometry.x = widget->inner_border_width + PADDING;
 	if (menu->hasicon)
 		item_geometry.x += widget->iconsize + PADDING;
 	item_geometry.y = firstitempos(widget, menu);
@@ -1247,7 +1249,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 				canvas[CANVAS_NORMAL][LAYER_FG].pixmap
 			);
 			imlib_render_image_on_drawable(
-				widget->shadowwid + PADDING
+				widget->inner_border_width + PADDING
 				+ (widget->iconsize - iconw) / 2,
 				item_geometry.y + (widget->itemh - iconh) / 2
 			);
@@ -1255,7 +1257,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 				canvas[CANVAS_SELECT][LAYER_FG].pixmap
 			);
 			imlib_render_image_on_drawable(
-				widget->shadowwid + PADDING
+				widget->inner_border_width + PADDING
 				+ (widget->iconsize - iconw) / 2,
 				item_geometry.y + (widget->itemh - iconh) / 2
 			);
@@ -1377,7 +1379,7 @@ next:
 		item_geometry.y += item_geometry.height;
 	}
 	for (size_t i = 0; i < CANVAS_FINAL; i++) {
-		y = widget->shadowwid;
+		y = widget->inner_border_width;
 		if (menu->tearable) {
 			drawdashline(
 				widget,
@@ -1451,7 +1453,7 @@ next:
 static int
 get_item_ypos(struct widget *widget, struct menu *menu, int selected)
 {
-	int ypos = widget->shadowwid;
+	int ypos = widget->inner_border_width;
 
 	if (menu->tearable) {
 		if (selected == TEAROFF)
@@ -1461,7 +1463,7 @@ get_item_ypos(struct widget *widget, struct menu *menu, int selected)
 	if (menu->overflow) {
 		if (selected == SCROLLDOWN)
 			return menu->canvas_height - widget->separatorh
-			- widget->shadowwid;
+			- widget->inner_border_width;
 		if (selected == SCROLLUP)
 			return ypos;
 		ypos += widget->separatorh;
@@ -1559,7 +1561,7 @@ commitdraw(struct widget *widget, struct menu *menu)
 			0, 0,
 			0, menu->geometry.height
 			- get_item_height(widget, menu, SCROLLDOWN)
-			- widget->shadowwid,
+			- widget->inner_border_width,
 			menu->geometry.width,
 			get_item_height(widget, menu, SCROLLDOWN)
 		);
@@ -1567,7 +1569,7 @@ commitdraw(struct widget *widget, struct menu *menu)
 	src_canvas_y = get_item_ypos(widget, menu, menu->selected);
 	if (menu->selected == SCROLLDOWN)
 		dst_canvas_y = menu->geometry.height
-		             - widget->separatorh - widget->shadowwid;
+		             - widget->separatorh - widget->inner_border_width;
 	else if (menu->selected == SCROLLUP || menu->selected == TEAROFF)
 		dst_canvas_y = src_canvas_y;
 	else
@@ -1657,7 +1659,7 @@ selprev(struct widget *widget, struct menu *menu)
 		sellast(widget, menu);
 		return;
 	}
-	scroll_threshold = widget->shadowwid + get_item_height(widget, menu, SCROLLUP);
+	scroll_threshold = widget->inner_border_width + get_item_height(widget, menu, SCROLLUP);
 	if (menu->tearable)
 		scroll_threshold += get_item_height(widget, menu, TEAROFF);
 	ypos = get_item_ypos(widget, menu, menu->selected);
@@ -1686,7 +1688,7 @@ selnext(struct widget *widget, struct menu *menu)
 {
 	int ypos, height;
 	int scroll_threshold = menu->geometry.height
-	                     - widget->separatorh - widget->shadowwid;
+	                     - widget->separatorh - widget->inner_border_width;
 
 	if (menu->selected < 0) {
 		selfirst(widget, menu);
@@ -1721,6 +1723,7 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 	struct menu *menu;
 	Atom type;
 	unsigned int textw;
+	int max_height = monitor->height - widget->outer_border_width * 2;
 	int xgap, ygap;
 	bool override_redirect, tearoff;
 
@@ -1742,8 +1745,8 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 	override_redirect = true;
 	tearoff = widget->tearoff;
 	if (widget->menus != NULL) {
-		xgap = widget->gap + widget->borderwid * 2;
-		ygap = -widget->shadowwid;
+		xgap = widget->gap + widget->outer_border_width * 2;
+		ygap = -widget->inner_border_width;
 		if (tearoff)
 			ygap -= widget->separatorh;
 		(void)grabpointer(widget);
@@ -1759,10 +1762,10 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 			type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_MENU", False);
 		}
 	}
-	menu->canvas_height = widget->shadowwid * 2;
+	menu->canvas_height = widget->inner_border_width * 2;
 	if (tearoff)
 		menu->canvas_height += widget->separatorh;
-	menu->geometry.height = widget->shadowwid * 2;
+	menu->geometry.height = widget->inner_border_width * 2;
 	menu->nicons = 0;
 	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
 		struct item *item = &menu->items[itemc];
@@ -1792,17 +1795,17 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 			menu->last_screenful.first_item++;
 			continue;
 		}
-		if (menu->canvas_height + widget->itemh <= monitor->height) {
+		if (menu->canvas_height + widget->itemh <= max_height) {
 			menu->geometry.height = menu->canvas_height;
 		} else {
 			menu->overflow = true;
-			menu->geometry.height = monitor->height;
+			menu->geometry.height = max_height;
 		}
 	}
 	if (menu->overflow)
 		menu->canvas_height += widget->separatorh * 2;
 
-	menu->geometry.width += PADDING * 2 + widget->shadowwid * 2;
+	menu->geometry.width += PADDING * 2 + widget->inner_border_width * 2;
 	if (menu->hasicon)
 		menu->geometry.width += widget->iconsize + PADDING;
 	if (menu->hassubmenu)
@@ -1820,11 +1823,11 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 	} else if (basis->x > (long)menu->geometry.width + xgap) {
 		menu->geometry.x = basis->x - menu->geometry.width - xgap;
 	}
-	if (monitor->y + monitor->height - (basis->y + ygap)
+	if (monitor->y + max_height - (basis->y + ygap)
 	    >= menu->geometry.height) {
 		menu->geometry.y = basis->y + ygap;
-	} else if (monitor->y + monitor->height > menu->geometry.height + ygap) {
-		menu->geometry.y = monitor->y + monitor->height;
+	} else if (monitor->y + max_height > menu->geometry.height + ygap) {
+		menu->geometry.y = monitor->y + max_height;
 		menu->geometry.y -= menu->geometry.height;
 	}
 
@@ -1973,17 +1976,16 @@ index_item(struct widget *widget, struct menu *menu, long y)
 {
 	long h;
 
-	h = widget->shadowwid;
+	h = widget->inner_border_width;
 	if (menu->tearable) {
 		if (y < h + widget->separatorh)
 			return TEAROFF;
 		h += widget->separatorh;
 	}
-	if (menu->overflow && y >= h && y < h + widget->separatorh) {
+	if (menu->overflow && y < h + widget->separatorh) {
 		return SCROLLUP;
 	}
-	if (menu->overflow && y >= menu->geometry.height - widget->separatorh &&
-	    y < menu->geometry.height) {
+	if (menu->overflow && y >= menu->geometry.height - widget->separatorh) {
 		return SCROLLDOWN;
 	}
 	if (menu->overflow)
@@ -2002,7 +2004,7 @@ index_item(struct widget *widget, struct menu *menu, long y)
 			return itemc;
 		h += widget->itemh;
 		if (menu->overflow &&
-		    h + widget->itemh + widget->shadowwid >=
+		    h + widget->itemh + widget->inner_border_width >=
 		    menu->geometry.height) {
 			break;
 		}
@@ -2473,7 +2475,7 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.colors[COLOR_BOT].chans    = {0x1000, 0x1000, 0x1000, 0xFFFF},
 		.colors[COLOR_BORDER].chans = {0x0000, 0x0000, 0x0000, 0xFFFF},
 		.colors[COLOR_OPACITY].chans = {.alpha = 0xFFFF},
-		.borderwid = 1,
+		.outer_border_width = 1,
 		.iconsize = 16,
 		.gap = 0,
 		.alignment = ALIGN_LEFT,
