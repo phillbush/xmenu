@@ -66,12 +66,6 @@ enum {
 };
 
 enum {
-	LAYER_BG,
-	LAYER_FG,
-	LAYER_LAST
-};
-
-enum {
 	DIR_UP,
 	DIR_DOWN,
 	DIR_LEFT,
@@ -1017,7 +1011,7 @@ initimlib(struct widget *widget)
 	widget->initimlib = true;
 	imlib_set_cache_size(2048 * 1024);
 	imlib_context_set_dither(1);
-	imlib_context_set_blend(0);
+	imlib_context_set_blend(1);
 	imlib_context_set_display(widget->display);
 	imlib_context_set_visual(widget->visual);
 	imlib_context_set_colormap(widget->colormap);
@@ -1137,7 +1131,6 @@ drawmenu(struct widget *widget, struct menu *menu)
 {
 	XRectangle item_geometry;
 	int textx, textw, iconw, iconh, y;
-	struct Canvas canvas[CANVAS_FINAL][LAYER_LAST];
 
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		if (menu->canvas[i].picture != None) {
@@ -1172,39 +1165,14 @@ drawmenu(struct widget *widget, struct menu *menu)
 			menu->canvas_height
 		);
 	}
-	for (size_t i = 0; i < CANVAS_FINAL; i++) for (size_t j = 0; j < LAYER_LAST; j++) {
-		canvas[i][j].pixmap = XCreatePixmap(
-			widget->display,
-			menu->window,
-			menu->geometry.width,
-			menu->canvas_height,
-			widget->depth
-		);
-		canvas[i][j].picture = XRenderCreatePicture(
-			widget->display,
-			canvas[i][j].pixmap,
-			XRenderFindVisualFormat(widget->display, widget->visual),
-			0,
-			NULL
-		);
-		XRenderFillRectangle(
-			widget->display,
-			PictOpClear,
-			canvas[i][j].picture,
-			&(XRenderColor){ 0 },
-			0, 0,
-			menu->geometry.width,
-			menu->canvas_height
-		);
-	}
 	for (size_t i = 0; i < CANVAS_FINAL; i++) {
-		drawshadows(widget, canvas[i][LAYER_BG].picture, &menu->geometry);
+		drawshadows(widget, menu->canvas[i].picture, &menu->geometry);
 		XRenderComposite(
 			widget->display,
 			PictOpSrc,
 			widget->colors[i==CANVAS_SELECT ?  COLOR_SELBG : COLOR_BG].pict,
 			widget->colors[COLOR_OPACITY].pict,
-			canvas[i][LAYER_BG].picture,
+			menu->canvas[i].picture,
 			0, 0,
 			0, 0,
 			widget->inner_border_width, widget->inner_border_width,
@@ -1225,12 +1193,12 @@ drawmenu(struct widget *widget, struct menu *menu)
 			item_geometry.height = widget->separatorh;
 			drawseparator(
 				widget,
-				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				menu->canvas[CANVAS_NORMAL].picture,
 				&item_geometry
 			);
 			drawseparator(
 				widget,
-				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				menu->canvas[CANVAS_SELECT].picture,
 				&item_geometry
 			);
 			goto next;
@@ -1246,7 +1214,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 		if (image != NULL) {
 			imlib_context_set_image(image);
 			imlib_context_set_drawable(
-				canvas[CANVAS_NORMAL][LAYER_FG].pixmap
+				menu->canvas[CANVAS_NORMAL].pixmap
 			);
 			imlib_render_image_on_drawable(
 				widget->inner_border_width + PADDING
@@ -1254,7 +1222,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 				item_geometry.y + (widget->itemh - iconh) / 2
 			);
 			imlib_context_set_drawable(
-				canvas[CANVAS_SELECT][LAYER_FG].pixmap
+				menu->canvas[CANVAS_SELECT].pixmap
 			);
 			imlib_render_image_on_drawable(
 				widget->inner_border_width + PADDING
@@ -1266,7 +1234,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 		if (openssubmenu(item)) {
 			drawtriangle(
 				widget,
-				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				menu->canvas[CANVAS_NORMAL].picture,
 				widget->colors[COLOR_FG].pict,
 				item_geometry.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
 				item_geometry.y + widget->itemh/2 - TRIANGLE_HEIGHT/2,
@@ -1274,7 +1242,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			);
 			drawtriangle(
 				widget,
-				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				menu->canvas[CANVAS_SELECT].picture,
 				widget->colors[COLOR_SELFG].pict,
 				item_geometry.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
 				item_geometry.y + widget->itemh/2 - TRIANGLE_HEIGHT/2,
@@ -1297,7 +1265,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 		if (item->output != NULL) {
 			ctrlfnt_draw(
 				widget->fontset,
-				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				menu->canvas[CANVAS_NORMAL].picture,
 				widget->colors[COLOR_FG].pict,
 				(XRectangle){
 					.x = textx,
@@ -1310,7 +1278,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			);
 			ctrlfnt_draw(
 				widget->fontset,
-				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				menu->canvas[CANVAS_SELECT].picture,
 				widget->colors[COLOR_SELFG].pict,
 				(XRectangle){
 					.x = textx,
@@ -1324,7 +1292,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 		} else {
 			ctrlfnt_draw(
 				widget->fontset,
-				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				menu->canvas[CANVAS_NORMAL].picture,
 				widget->colors[COLOR_TOP].pict,
 				(XRectangle){
 					.x = textx + 1,
@@ -1337,7 +1305,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			);
 			ctrlfnt_draw(
 				widget->fontset,
-				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				menu->canvas[CANVAS_NORMAL].picture,
 				widget->colors[COLOR_BOT].pict,
 				(XRectangle){
 					.x = textx,
@@ -1350,7 +1318,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			);
 			ctrlfnt_draw(
 				widget->fontset,
-				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				menu->canvas[CANVAS_SELECT].picture,
 				widget->colors[COLOR_TOP].pict,
 				(XRectangle){
 					.x = textx + 1,
@@ -1363,7 +1331,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			);
 			ctrlfnt_draw(
 				widget->fontset,
-				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				menu->canvas[CANVAS_SELECT].picture,
 				widget->colors[COLOR_BOT].pict,
 				(XRectangle){
 					.x = textx,
@@ -1383,12 +1351,12 @@ next:
 		if (menu->tearable) {
 			drawdashline(
 				widget,
-				canvas[CANVAS_NORMAL][LAYER_FG].picture,
+				menu->canvas[CANVAS_NORMAL].picture,
 				menu->geometry.width, y
 			);
 			drawdashline(
 				widget,
-				canvas[CANVAS_SELECT][LAYER_FG].picture,
+				menu->canvas[CANVAS_SELECT].picture,
 				menu->geometry.width, y
 			);
 			y += widget->separatorh;
@@ -1396,7 +1364,7 @@ next:
 		if (menu->overflow) {
 			drawtriangle(
 				widget,
-				canvas[i][LAYER_FG].picture,
+				menu->canvas[i].picture,
 				widget->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
 				menu->geometry.width / 2 - TRIANGLE_HEIGHT / 2,
 				y + widget->separatorh /2 - TRIANGLE_WIDTH / 2,
@@ -1404,7 +1372,7 @@ next:
 			);
 			drawtriangle(
 				widget,
-				canvas[i][LAYER_FG].picture,
+				menu->canvas[i].picture,
 				widget->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
 				menu->geometry.width / 2 - TRIANGLE_HEIGHT / 2,
 				menu->canvas_height - widget->separatorh /2
@@ -1412,42 +1380,14 @@ next:
 				DIR_DOWN
 			);
 		}
-		XRenderComposite(
-			widget->display,
-			PictOpOver,
-			canvas[i][LAYER_FG].picture,
-			None,
-			canvas[i][LAYER_BG].picture,
-			0, 0,
-			0, 0,
-			0, 0,
-			menu->geometry.width,
-			menu->canvas_height
-		);
-		XRenderComposite(
-			widget->display,
-			PictOpOver,
-			canvas[i][LAYER_BG].picture,
-			None,
-			menu->canvas[i].picture,
-			0, 0,
-			0, 0,
-			0, 0,
-			menu->geometry.width,
-			menu->canvas_height
-		);
 	}
 	XSetWindowBackgroundPixmap(
 		widget->display,
 		menu->window,
-		menu->canvas[LAYER_BG].pixmap
+		menu->canvas[CANVAS_NORMAL].pixmap
 	);
 	XSetWindowBorderPixmap(widget->display, menu->window, widget->colors[COLOR_BORDER].pix);
 	XClearWindow(widget->display, menu->window);
-	for (size_t i = 0; i < CANVAS_FINAL; i++) for (size_t j = 0; j < LAYER_LAST; j++) {
-		XRenderFreePicture(widget->display, canvas[i][j].picture);
-		XFreePixmap(widget->display, canvas[i][j].pixmap);
-	}
 }
 
 static int
