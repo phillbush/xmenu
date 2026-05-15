@@ -661,8 +661,10 @@ fill_entries(struct item *entries, size_t menu_indentlvl, char *data, size_t dat
 
 			if (*entry->label == '\0')
 				entry->label = NULL;
-			if (*entry->output == '\0' || strcmp(entry->output, ":") == 0)
+			if (*entry->output == '\0')
 				entry->output = entry->label;
+			else if (strcmp(entry->output, ":") == 0)
+				entry->output = NULL;
 			if (prev_entry != NULL && prev_entry->label != NULL &&
 			    entry->label != NULL && strcmp(entry->label, "''") == 0) {
 				prev_entry->altoutput = entry->output;
@@ -1266,7 +1268,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			textx = item_geometry.x + (menu->window_geometry.width - textw) / 2;
 		else
 			textx = item_geometry.x;
-		if (item->output != NULL) {
+		if (item->output != NULL || item->nchildren > 0) {
 			ctrlfnt_draw(
 				widget->fontset,
 				menu->canvas[CANVAS_NORMAL].picture,
@@ -1552,7 +1554,7 @@ selfirst(struct widget *widget, struct menu *menu)
 	menu->curr_screenful.offset = 0;
 	for (ssize_t itemc = 0; itemc < (ssize_t)menu->nitems; itemc++) {
 		struct item *item = &menu->items[itemc];
-		if (item->output != NULL) {
+		if (item->output != NULL || item->nchildren > 0) {
 			menu->selected = itemc;
 			commitdraw(widget, menu);
 			return;
@@ -1566,7 +1568,7 @@ sellast(struct widget *widget, struct menu *menu)
 	menu->curr_screenful = menu->last_screenful;
 	for (ssize_t itemc = menu->nitems - 1; itemc >= 0; itemc--) {
 		struct item *item = &menu->items[itemc];
-		if (item->output != NULL) {
+		if (item->output != NULL || item->nchildren > 0) {
 			menu->selected = itemc;
 			commitdraw(widget, menu);
 			return;
@@ -1627,7 +1629,7 @@ selprev(struct widget *widget, struct menu *menu)
 				scrollup(widget, menu, height);
 			}
 		}
-		if (item->output != NULL) {
+		if (item->output != NULL || item->nchildren > 0) {
 			menu->selected = itemc;
 			commitdraw(widget, menu);
 			return;
@@ -1659,7 +1661,7 @@ selnext(struct widget *widget, struct menu *menu)
 				scrolldown(widget, menu, height);
 			}
 		}
-		if (item->output != NULL) {
+		if (item->output != NULL || item->nchildren > 0) {
 			menu->selected = itemc;
 			commitdraw(widget, menu);
 			return;
@@ -1949,7 +1951,7 @@ index_item(struct widget *widget, struct menu *menu, long y)
 			h += widget->separatorh;
 			continue;
 		}
-		if (item->output == NULL) {
+		if (item->output == NULL && item->nchildren == 0) {
 			h += widget->itemh;
 			continue;
 		}
