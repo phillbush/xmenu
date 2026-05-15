@@ -1503,7 +1503,7 @@ get_item_height(struct widget *widget, struct menu *menu, int selected)
 static void
 commitdraw(struct widget *widget, struct menu *menu)
 {
-	int ypos = get_item_ypos(widget, menu, menu->selected);
+	int src_canvas_y, dst_canvas_y;
 
 	XRenderFillRectangle(
 		widget->display,
@@ -1568,19 +1568,24 @@ commitdraw(struct widget *widget, struct menu *menu)
 			get_item_height(widget, menu, SCROLLDOWN)
 		);
 	}
-	if (ypos >= 0) {
+	src_canvas_y = get_item_ypos(widget, menu, menu->selected);
+	if (menu->selected == SCROLLDOWN)
+		dst_canvas_y = menu->geometry.height
+		             - widget->separatorh - widget->shadowwid;
+	else if (menu->selected == SCROLLUP || menu->selected == TEAROFF)
+		dst_canvas_y = src_canvas_y;
+	else
+		dst_canvas_y = src_canvas_y - menu->curr_screenful.offset;
+	if (src_canvas_y >= 0) {
 		XRenderComposite(
 			widget->display,
 			PictOpOver,
 			menu->canvas[CANVAS_SELECT].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
-			0, ypos,
+			0, src_canvas_y,
 			0, 0,
-			0,
-			menu->selected == SCROLLDOWN
-			? menu->geometry.height - widget->separatorh
-			: ypos - menu->curr_screenful.offset,
+			0, dst_canvas_y,
 			menu->geometry.width,
 			get_item_height(widget, menu, menu->selected)
 		);
@@ -2024,7 +2029,7 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 	struct timespec ts;
 	time_t elapsed;
 	int ret;
-	size_t last_offset = menu->curr_screenful.offset;
+	int last_offset = menu->curr_screenful.offset;
 	struct pollfd pfd = {
 		.fd = XConnectionNumber(widget->display),
 		.events = POLLIN,
