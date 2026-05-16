@@ -717,19 +717,13 @@ static void
 getposition(struct widget *widget, XRectangle *geometry)
 {
 	XineramaScreenInfo *info = NULL;
-	Window dw;          /* dummy variable */
-	int di;             /* dummy variable */
-	unsigned du;        /* dummy variable */
 	int nmons;
 	int x, y;
 
 	XQueryPointer(
-		widget->display,
-		widget->rootwin,
-		&dw, &dw,
-		&x, &y,
-		&di, &di,
-		&du
+		widget->display, widget->rootwin,
+		&(Window){}, &(Window){}, &x, &y,
+		&(int){}, &(int){}, &(unsigned){}
 	);
 	if (!options.userplaced) {
 		geometry->x = x;
