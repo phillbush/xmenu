@@ -665,7 +665,8 @@ fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t da
 				entry->output = entry->label;
 			else if (strcmp(entry->output, ":") == 0)
 				entry->output = NULL;
-			if (prev_entry != NULL && prev_entry->label != NULL &&
+			entry->altoutput = entry->output;
+			if (prev_entry != NULL && prev_entry->output != NULL &&
 			    entry->label != NULL && strcmp(entry->label, "''") == 0) {
 				prev_entry->altoutput = entry->output;
 				continue;
@@ -2111,14 +2112,6 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 //}
 
 static void
-printentry(struct widget *widget, const char *str)
-{
-	(void)printf("%s\n", str);
-	(void)fflush(stdout);
-	closepopups(widget);
-}
-
-static void
 openentry(struct widget *widget, struct menu *menu, ssize_t nentry, bool alt)
 {
 	XRectangle rect;
@@ -2130,8 +2123,11 @@ openentry(struct widget *widget, struct menu *menu, ssize_t nentry, bool alt)
 	rect.y += get_entry_ypos(widget, menu, nentry);
 	if (entry->children != NULL) {
 		popupmenu(widget, entry->children, entry->nchildren, &rect, false, entry->label);
-	} else if (alt && entry->altoutput != NULL) {
-		printentry(widget, entry->altoutput);
+	} else if (entry->output != NULL) {
+		(void)printf("%s\n", alt ? entry->altoutput : entry->output);
+		(void)fflush(stdout);
+		closepopups(widget);
+	}
 	//} else if (entry->output != NULL &&
 	//           entry->output[0] == '/') {
 	//	if (alt) {
@@ -2145,9 +2141,6 @@ openentry(struct widget *widget, struct menu *menu, ssize_t nentry, bool alt)
 	//	popupmenu(widget, entries, &rect, false);
 	//	widget->menus->directory = true;
 	//	widget->menus->entries = entries;
-	} else if (entry->output != NULL) {
-		printentry(widget, entry->output);
-	}
 }
 
 static struct menu *
