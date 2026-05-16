@@ -72,7 +72,7 @@ enum {
 	DIR_RIGHT
 };
 
-struct item {
+struct entry {
 	char *label;
 	size_t labellen;
 
@@ -80,21 +80,21 @@ struct item {
 	char *altoutput;
 	char *file;
 
-	struct item *children;
+	struct entry *children;
 	size_t nchildren;
 };
 
 struct menu {
 	struct menu *next;
-	struct item *items;
-	size_t nitems;
+	struct entry *entries;
+	size_t nentries;
 	ssize_t selected;
 	char const *title;
 	XRectangle window_geometry;
 	int canvas_width, canvas_height;
 	int total_height;
 	struct {
-		size_t first_item;
+		size_t first_entry;
 		int offset;
 	} curr_screenful, last_screenful;
 	Window window;
@@ -111,8 +111,8 @@ struct menu {
 };
 
 struct Options {
-	struct item *items;
-	size_t nitems;
+	struct entry *entries;
+	size_t nentries;
 	bool windowed;
 	bool rootmode;
 	bool userplaced;
@@ -145,11 +145,11 @@ struct widget {
 	ctrlfnt *fontset;
 	struct menu *menus;
 	unsigned int fonth;
-	int itemh, separatorh;
+	int entryh, separatorh;
 	int inner_border_width;  /* part of window content, for shadow/relief */
 	int outer_border_width;  /* X11 border, not counted on window size */
 	int iconsize, gap;
-	int maxitems;
+	int maxentries;
 	bool initimlib;
 	bool tearoff;
 	enum alignment {
@@ -384,9 +384,9 @@ setfont(struct widget *widget, const char *facename, double facesize)
 		return;
 	widget->fontset = fontset;
 	widget->fonth = ctrlfnt_height(fontset);
-	widget->itemh = widget->fonth + PADDING * 2;
-	widget->itemh = MAX(widget->itemh, MIN_HEIGHT);
-	widget->separatorh = widget->itemh / 2;
+	widget->entryh = widget->fonth + PADDING * 2;
+	widget->entryh = MAX(widget->entryh, MIN_HEIGHT);
+	widget->separatorh = widget->entryh / 2;
 }
 
 static Bool
@@ -539,7 +539,7 @@ loadresources(struct widget *widget, const char *str)
 		MK_RES("fontSize", "FontSize", &fontsize, parse_double),
 		MK_RES("foreground", "Foreground", &widget->colors[COLOR_FG], parse_color),
 		MK_RES("gap", "Gap", &widget->gap, parse_width),
-		MK_RES("maxItems", "MaxItems", &widget->maxitems, parse_width),
+		MK_RES("maxItems", "MaxItems", &widget->maxentries, parse_width),
 		MK_RES("opacity", "Opacity", NULL, parse_opacity),
 		MK_RES("shadowThickness", "ShadowThickness", &widget->inner_border_width, parse_width),
 		MK_RES("tearOff", "TearOff", &widget->tearoff, CTRLRES_SETBOOL),
@@ -605,12 +605,12 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 }
 
 static size_t
-fill_entries(struct item *entries, size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
+fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
 {
 	size_t nentries;
 	size_t linelen;
 	size_t maxentries = 0;
-	struct item *prev_entry = NULL;
+	struct entry *prev_entry = NULL;
 
 	for (size_t len = *from; len < datasize; len++) {
 		size_t entry_indentlvl;
@@ -626,7 +626,7 @@ fill_entries(struct item *entries, size_t menu_indentlvl, char *data, size_t dat
 	linelen = 0;
 	nentries = 0;
 	while (*from < datasize) {
-		struct item *entry = &entries[nentries];
+		struct entry *entry = &entries[nentries];
 		size_t entry_indentlvl;
 		char *line = data + *from;
 
@@ -678,7 +678,7 @@ fill_entries(struct item *entries, size_t menu_indentlvl, char *data, size_t dat
 }
 
 static size_t
-parsestdin(struct item **entries, char **data)
+parsestdin(struct entry **entries, char **data)
 {
 	size_t nlines;
 	FILE *stream;
@@ -990,7 +990,7 @@ drawtriangle(struct widget *widget, Picture picture, Picture src, int x, int y, 
 }
 
 static int
-firstitempos(struct widget *widget, struct menu *menu)
+firstentrypos(struct widget *widget, struct menu *menu)
 {
 	int y;
 
@@ -1116,11 +1116,11 @@ loadicon(struct widget *widget, const char *file, int size, int *width_ret, int 
 }
 
 static bool
-openssubmenu(struct item *item)
+openssubmenu(struct entry *entry)
 {
-	if (item->children != NULL)
+	if (entry->children != NULL)
 		return true;
-	//if (item->output != NULL && item->output[0] == '/')
+	//if (entry->output != NULL && entry->output[0] == '/')
 	//	return true;
 	return false;
 }
@@ -1128,7 +1128,7 @@ openssubmenu(struct item *item)
 static void
 drawmenu(struct widget *widget, struct menu *menu)
 {
-	XRectangle item_geometry;
+	XRectangle entry_geometry;
 	int textx, textw, iconw, iconh, y;
 
 	if (menu->canvas_width  < menu->window_geometry.width &&
@@ -1186,33 +1186,33 @@ drawmenu(struct widget *widget, struct menu *menu)
 			menu->total_height - widget->inner_border_width * 2
 		);
 	}
-	item_geometry.x = widget->inner_border_width + PADDING;
+	entry_geometry.x = widget->inner_border_width + PADDING;
 	if (menu->hasicon)
-		item_geometry.x += widget->iconsize + PADDING;
-	item_geometry.y = firstitempos(widget, menu);
-	item_geometry.width = menu->window_geometry.width;
-	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
-		struct item *item = &menu->items[itemc];
+		entry_geometry.x += widget->iconsize + PADDING;
+	entry_geometry.y = firstentrypos(widget, menu);
+	entry_geometry.width = menu->window_geometry.width;
+	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
+		struct entry *entry = &menu->entries[entryc];
 		Imlib_Image image;
 
-		if (item->label == NULL) {
-			item_geometry.height = widget->separatorh;
+		if (entry->label == NULL) {
+			entry_geometry.height = widget->separatorh;
 			drawseparator(
 				widget,
 				menu->canvas[CANVAS_NORMAL].picture,
-				&item_geometry
+				&entry_geometry
 			);
 			drawseparator(
 				widget,
 				menu->canvas[CANVAS_SELECT].picture,
-				&item_geometry
+				&entry_geometry
 			);
 			goto next;
 		}
-		item_geometry.height = widget->itemh;
+		entry_geometry.height = widget->entryh;
 		image = loadicon(
 			widget,
-			item->file,
+			entry->file,
 			widget->iconsize,
 			&iconw,
 			&iconh
@@ -1225,7 +1225,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			imlib_render_image_on_drawable(
 				widget->inner_border_width + PADDING
 				+ (widget->iconsize - iconw) / 2,
-				item_geometry.y + (widget->itemh - iconh) / 2
+				entry_geometry.y + (widget->entryh - iconh) / 2
 			);
 			imlib_context_set_drawable(
 				menu->canvas[CANVAS_SELECT].pixmap
@@ -1233,54 +1233,54 @@ drawmenu(struct widget *widget, struct menu *menu)
 			imlib_render_image_on_drawable(
 				widget->inner_border_width + PADDING
 				+ (widget->iconsize - iconw) / 2,
-				item_geometry.y + (widget->itemh - iconh) / 2
+				entry_geometry.y + (widget->entryh - iconh) / 2
 			);
 			imlib_free_image();
 		}
-		if (openssubmenu(item)) {
+		if (openssubmenu(entry)) {
 			drawtriangle(
 				widget,
 				menu->canvas[CANVAS_NORMAL].picture,
 				widget->colors[COLOR_FG].pict,
-				item_geometry.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
-				item_geometry.y + widget->itemh/2 - TRIANGLE_HEIGHT/2,
+				entry_geometry.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
+				entry_geometry.y + widget->entryh/2 - TRIANGLE_HEIGHT/2,
 				DIR_RIGHT
 			);
 			drawtriangle(
 				widget,
 				menu->canvas[CANVAS_SELECT].picture,
 				widget->colors[COLOR_SELFG].pict,
-				item_geometry.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
-				item_geometry.y + widget->itemh/2 - TRIANGLE_HEIGHT/2,
+				entry_geometry.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
+				entry_geometry.y + widget->entryh/2 - TRIANGLE_HEIGHT/2,
 				DIR_RIGHT
 			);
 		}
 		textw = ctrlfnt_width(
 			widget->fontset,
-			item->label,
-			item->labellen
+			entry->label,
+			entry->labellen
 		);
 		if (widget->alignment == ALIGN_RIGHT && menu->hassubmenu)
-			textx = item_geometry.width - textw - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD;
+			textx = entry_geometry.width - textw - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD;
 		else if (widget->alignment == ALIGN_RIGHT)
-			textx = item_geometry.width - textw - PADDING;
+			textx = entry_geometry.width - textw - PADDING;
 		else if (widget->alignment == ALIGN_CENTER)
-			textx = item_geometry.x + (menu->window_geometry.width - textw) / 2;
+			textx = entry_geometry.x + (menu->window_geometry.width - textw) / 2;
 		else
-			textx = item_geometry.x;
-		if (item->output != NULL || item->nchildren > 0) {
+			textx = entry_geometry.x;
+		if (entry->output != NULL || entry->nchildren > 0) {
 			ctrlfnt_draw(
 				widget->fontset,
 				menu->canvas[CANVAS_NORMAL].picture,
 				widget->colors[COLOR_FG].pict,
 				(XRectangle){
 					.x = textx,
-					.y = item_geometry.y,
-					.width = item_geometry.width,
-					.height = item_geometry.height,
+					.y = entry_geometry.y,
+					.width = entry_geometry.width,
+					.height = entry_geometry.height,
 				},
-				item->label,
-				item->labellen
+				entry->label,
+				entry->labellen
 			);
 			ctrlfnt_draw(
 				widget->fontset,
@@ -1288,12 +1288,12 @@ drawmenu(struct widget *widget, struct menu *menu)
 				widget->colors[COLOR_SELFG].pict,
 				(XRectangle){
 					.x = textx,
-					.y = item_geometry.y,
-					.width = item_geometry.width,
-					.height = item_geometry.height,
+					.y = entry_geometry.y,
+					.width = entry_geometry.width,
+					.height = entry_geometry.height,
 				},
-				item->label,
-				item->labellen
+				entry->label,
+				entry->labellen
 			);
 		} else {
 			ctrlfnt_draw(
@@ -1302,12 +1302,12 @@ drawmenu(struct widget *widget, struct menu *menu)
 				widget->colors[COLOR_TOP].pict,
 				(XRectangle){
 					.x = textx + 1,
-					.y = item_geometry.y + 1,
-					.width = item_geometry.width,
-					.height = item_geometry.height,
+					.y = entry_geometry.y + 1,
+					.width = entry_geometry.width,
+					.height = entry_geometry.height,
 				},
-				item->label,
-				item->labellen
+				entry->label,
+				entry->labellen
 			);
 			ctrlfnt_draw(
 				widget->fontset,
@@ -1315,12 +1315,12 @@ drawmenu(struct widget *widget, struct menu *menu)
 				widget->colors[COLOR_BOT].pict,
 				(XRectangle){
 					.x = textx,
-					.y = item_geometry.y,
-					.width = item_geometry.width,
-					.height = item_geometry.height,
+					.y = entry_geometry.y,
+					.width = entry_geometry.width,
+					.height = entry_geometry.height,
 				},
-				item->label,
-				item->labellen
+				entry->label,
+				entry->labellen
 			);
 			ctrlfnt_draw(
 				widget->fontset,
@@ -1328,12 +1328,12 @@ drawmenu(struct widget *widget, struct menu *menu)
 				widget->colors[COLOR_TOP].pict,
 				(XRectangle){
 					.x = textx + 1,
-					.y = item_geometry.y + 1,
-					.width = item_geometry.width,
-					.height = item_geometry.height,
+					.y = entry_geometry.y + 1,
+					.width = entry_geometry.width,
+					.height = entry_geometry.height,
 				},
-				item->label,
-				item->labellen
+				entry->label,
+				entry->labellen
 			);
 			ctrlfnt_draw(
 				widget->fontset,
@@ -1341,16 +1341,16 @@ drawmenu(struct widget *widget, struct menu *menu)
 				widget->colors[COLOR_BOT].pict,
 				(XRectangle){
 					.x = textx,
-					.y = item_geometry.y,
-					.width = item_geometry.width,
-					.height = item_geometry.height,
+					.y = entry_geometry.y,
+					.width = entry_geometry.width,
+					.height = entry_geometry.height,
 				},
-				item->label,
-				item->labellen
+				entry->label,
+				entry->labellen
 			);
 		}
 next:
-		item_geometry.y += item_geometry.height;
+		entry_geometry.y += entry_geometry.height;
 	}
 	for (size_t i = 0; i < CANVAS_FINAL; i++) {
 		y = widget->inner_border_width;
@@ -1397,7 +1397,7 @@ next:
 }
 
 static int
-get_item_ypos(struct widget *widget, struct menu *menu, int selected)
+get_entry_ypos(struct widget *widget, struct menu *menu, int selected)
 {
 	int ypos = widget->inner_border_width;
 
@@ -1414,15 +1414,15 @@ get_item_ypos(struct widget *widget, struct menu *menu, int selected)
 			return ypos;
 		ypos += widget->separatorh;
 	}
-	if (selected < 0 || selected >= (ssize_t)menu->nitems)
+	if (selected < 0 || selected >= (ssize_t)menu->nentries)
 		return -1;
-	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
-		struct item *item = &menu->items[itemc];
+	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
+		struct entry *entry = &menu->entries[entryc];
 
-		if ((ssize_t)itemc == selected)
+		if ((ssize_t)entryc == selected)
 			return ypos;
-		if (item->label != NULL)
-			ypos += widget->itemh;
+		if (entry->label != NULL)
+			ypos += widget->entryh;
 		else
 			ypos += widget->separatorh;
 	}
@@ -1430,16 +1430,16 @@ get_item_ypos(struct widget *widget, struct menu *menu, int selected)
 }
 
 static int
-get_item_height(struct widget *widget, struct menu *menu, int selected)
+get_entry_height(struct widget *widget, struct menu *menu, int selected)
 {
 	if (menu->tearable && selected == TEAROFF)
 		return widget->separatorh;
 	if (menu->overflow && (selected == SCROLLDOWN || selected == SCROLLUP))
 		return widget->separatorh;
-	if (selected < 0 || selected >= (ssize_t)menu->nitems)
+	if (selected < 0 || selected >= (ssize_t)menu->nentries)
 		return 0;
-	if (menu->items[selected].label != NULL)
-		return widget->itemh;
+	if (menu->entries[selected].label != NULL)
+		return widget->entryh;
 	else
 		return widget->separatorh;
 }
@@ -1477,11 +1477,11 @@ commitdraw(struct widget *widget, struct menu *menu)
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
-			0, get_item_ypos(widget, menu, TEAROFF),
+			0, get_entry_ypos(widget, menu, TEAROFF),
 			0, 0,
-			0, get_item_ypos(widget, menu, TEAROFF),
+			0, get_entry_ypos(widget, menu, TEAROFF),
 			menu->window_geometry.width,
-			get_item_height(widget, menu, TEAROFF)
+			get_entry_height(widget, menu, TEAROFF)
 		);
 	}
 	if (menu->overflow) {
@@ -1491,11 +1491,11 @@ commitdraw(struct widget *widget, struct menu *menu)
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
-			0, get_item_ypos(widget, menu, SCROLLUP),
+			0, get_entry_ypos(widget, menu, SCROLLUP),
 			0, 0,
-			0, get_item_ypos(widget, menu, SCROLLUP),
+			0, get_entry_ypos(widget, menu, SCROLLUP),
 			menu->window_geometry.width,
-			get_item_height(widget, menu, SCROLLUP)
+			get_entry_height(widget, menu, SCROLLUP)
 		);
 		XRenderComposite(
 			widget->display,
@@ -1503,16 +1503,16 @@ commitdraw(struct widget *widget, struct menu *menu)
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
-			0, get_item_ypos(widget, menu, SCROLLDOWN),
+			0, get_entry_ypos(widget, menu, SCROLLDOWN),
 			0, 0,
 			0, menu->window_geometry.height
-			- get_item_height(widget, menu, SCROLLDOWN)
+			- get_entry_height(widget, menu, SCROLLDOWN)
 			- widget->inner_border_width,
 			menu->window_geometry.width,
-			get_item_height(widget, menu, SCROLLDOWN)
+			get_entry_height(widget, menu, SCROLLDOWN)
 		);
 	}
-	src_canvas_y = get_item_ypos(widget, menu, menu->selected);
+	src_canvas_y = get_entry_ypos(widget, menu, menu->selected);
 	if (menu->selected == SCROLLDOWN)
 		dst_canvas_y = menu->window_geometry.height
 		             - widget->separatorh - widget->inner_border_width;
@@ -1531,7 +1531,7 @@ commitdraw(struct widget *widget, struct menu *menu)
 			0, 0,
 			0, dst_canvas_y,
 			menu->window_geometry.width,
-			get_item_height(widget, menu, menu->selected)
+			get_entry_height(widget, menu, menu->selected)
 		);
 	}
 	drawshadows(
@@ -1550,12 +1550,12 @@ commitdraw(struct widget *widget, struct menu *menu)
 static void
 selfirst(struct widget *widget, struct menu *menu)
 {
-	menu->curr_screenful.first_item = 0;
+	menu->curr_screenful.first_entry = 0;
 	menu->curr_screenful.offset = 0;
-	for (ssize_t itemc = 0; itemc < (ssize_t)menu->nitems; itemc++) {
-		struct item *item = &menu->items[itemc];
-		if (item->output != NULL || item->nchildren > 0) {
-			menu->selected = itemc;
+	for (ssize_t entryc = 0; entryc < (ssize_t)menu->nentries; entryc++) {
+		struct entry *entry = &menu->entries[entryc];
+		if (entry->output != NULL || entry->nchildren > 0) {
+			menu->selected = entryc;
 			commitdraw(widget, menu);
 			return;
 		}
@@ -1566,10 +1566,10 @@ static void
 sellast(struct widget *widget, struct menu *menu)
 {
 	menu->curr_screenful = menu->last_screenful;
-	for (ssize_t itemc = menu->nitems - 1; itemc >= 0; itemc--) {
-		struct item *item = &menu->items[itemc];
-		if (item->output != NULL || item->nchildren > 0) {
-			menu->selected = itemc;
+	for (ssize_t entryc = menu->nentries - 1; entryc >= 0; entryc--) {
+		struct entry *entry = &menu->entries[entryc];
+		if (entry->output != NULL || entry->nchildren > 0) {
+			menu->selected = entryc;
 			commitdraw(widget, menu);
 			return;
 		}
@@ -1581,9 +1581,9 @@ scrollup(struct widget *widget, struct menu *menu, int diff)
 {
 	int height = 0;
 
-	while (height < diff && menu->curr_screenful.first_item > 0) {
-		height = get_item_height(widget, menu, menu->curr_screenful.first_item);
-		menu->curr_screenful.first_item--;
+	while (height < diff && menu->curr_screenful.first_entry > 0) {
+		height = get_entry_height(widget, menu, menu->curr_screenful.first_entry);
+		menu->curr_screenful.first_entry--;
 		menu->curr_screenful.offset -= height;
 	}
 }
@@ -1597,9 +1597,9 @@ scrolldown(struct widget *widget, struct menu *menu, int diff)
 		menu->curr_screenful = menu->last_screenful;
 		return;
 	}
-	while (height < diff && menu->curr_screenful.first_item + 1 < menu->nitems) {
-		height = get_item_height(widget, menu, menu->curr_screenful.first_item);
-		menu->curr_screenful.first_item++;
+	while (height < diff && menu->curr_screenful.first_entry + 1 < menu->nentries) {
+		height = get_entry_height(widget, menu, menu->curr_screenful.first_entry);
+		menu->curr_screenful.first_entry++;
 		menu->curr_screenful.offset += height;
 	}
 }
@@ -1614,23 +1614,23 @@ selprev(struct widget *widget, struct menu *menu)
 		sellast(widget, menu);
 		return;
 	}
-	scroll_threshold = widget->inner_border_width + get_item_height(widget, menu, SCROLLUP);
+	scroll_threshold = widget->inner_border_width + get_entry_height(widget, menu, SCROLLUP);
 	if (menu->tearable)
-		scroll_threshold += get_item_height(widget, menu, TEAROFF);
-	ypos = get_item_ypos(widget, menu, menu->selected);
-	height = get_item_height(widget, menu, menu->selected);
-	for (ssize_t itemc = menu->selected - 1; itemc >= 0; itemc--) {
-		struct item *item = &menu->items[itemc];
+		scroll_threshold += get_entry_height(widget, menu, TEAROFF);
+	ypos = get_entry_ypos(widget, menu, menu->selected);
+	height = get_entry_height(widget, menu, menu->selected);
+	for (ssize_t entryc = menu->selected - 1; entryc >= 0; entryc--) {
+		struct entry *entry = &menu->entries[entryc];
 
 		if (menu->overflow) {
 			ypos -= height;
-			height = get_item_height(widget, menu, itemc);
+			height = get_entry_height(widget, menu, entryc);
 			if (ypos - menu->curr_screenful.offset < scroll_threshold) {
 				scrollup(widget, menu, height);
 			}
 		}
-		if (item->output != NULL || item->nchildren > 0) {
-			menu->selected = itemc;
+		if (entry->output != NULL || entry->nchildren > 0) {
+			menu->selected = entryc;
 			commitdraw(widget, menu);
 			return;
 		}
@@ -1649,20 +1649,20 @@ selnext(struct widget *widget, struct menu *menu)
 		selfirst(widget, menu);
 		return;
 	}
-	ypos = get_item_ypos(widget, menu, menu->selected);
-	height = get_item_height(widget, menu, menu->selected);
-	for (ssize_t itemc = menu->selected+1; itemc < (ssize_t)menu->nitems; itemc++) {
-		struct item *item = &menu->items[itemc];
+	ypos = get_entry_ypos(widget, menu, menu->selected);
+	height = get_entry_height(widget, menu, menu->selected);
+	for (ssize_t entryc = menu->selected+1; entryc < (ssize_t)menu->nentries; entryc++) {
+		struct entry *entry = &menu->entries[entryc];
 
 		if (menu->overflow) {
 			ypos += height;
-			height = get_item_height(widget, menu, itemc);
+			height = get_entry_height(widget, menu, entryc);
 			if (ypos - menu->curr_screenful.offset > scroll_threshold) {
 				scrolldown(widget, menu, height);
 			}
 		}
-		if (item->output != NULL || item->nchildren > 0) {
-			menu->selected = itemc;
+		if (entry->output != NULL || entry->nchildren > 0) {
+			menu->selected = entryc;
 			commitdraw(widget, menu);
 			return;
 		}
@@ -1671,7 +1671,7 @@ selnext(struct widget *widget, struct menu *menu)
 }
 
 static void
-popupmenu(struct widget *widget, struct item *items, size_t nitems,
+popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 		XRectangle *basis, bool isroot, char const *title)
 {
 	XRectangle *monitor = &widget->monitor;
@@ -1687,8 +1687,8 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 		return;
 	}
 	*menu = (struct menu){
-		.items = items,
-		.nitems = nitems,
+		.entries = entries,
+		.nentries = nentries,
 		.title = title,
 		.selected = -1,
 		.curr_screenful = {0, 0},
@@ -1722,35 +1722,35 @@ popupmenu(struct widget *widget, struct item *items, size_t nitems,
 		menu->total_height += widget->separatorh;
 	menu->window_geometry.height = widget->inner_border_width * 2;
 	menu->nicons = 0;
-	for (size_t itemc = 0; itemc < menu->nitems; itemc++) {
-		struct item *item = &menu->items[itemc];
+	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
+		struct entry *entry = &menu->entries[entryc];
 
-		if (item->label != NULL) {
-			menu->total_height += widget->itemh;
+		if (entry->label != NULL) {
+			menu->total_height += widget->entryh;
 			textw = ctrlfnt_width(
 				widget->fontset,
-				item->label,
-				item->labellen
+				entry->label,
+				entry->labellen
 			);
 		} else {
 			textw = 0;
 			menu->total_height += widget->separatorh;
 		}
-		if (item->file != NULL) {
+		if (entry->file != NULL) {
 			menu->hasicon = true;
 			menu->nicons++;
 		}
-		if (openssubmenu(item))
+		if (openssubmenu(entry))
 			menu->hassubmenu = true;
 		menu->window_geometry.width = MAX(menu->window_geometry.width, textw);
 		if (menu->overflow) {
-			menu->last_screenful.offset += get_item_height(
-				widget, menu, menu->last_screenful.first_item
+			menu->last_screenful.offset += get_entry_height(
+				widget, menu, menu->last_screenful.first_entry
 			);
-			menu->last_screenful.first_item++;
+			menu->last_screenful.first_entry++;
 			continue;
 		}
-		if (menu->total_height + widget->itemh <= max_height) {
+		if (menu->total_height + widget->entryh <= max_height) {
 			menu->window_geometry.height = menu->total_height;
 		} else {
 			menu->overflow = true;
@@ -1890,7 +1890,7 @@ delmenu(struct widget *widget)
 	if ((menu = widget->menus) == NULL)
 		return;
 	//if (menu->directory)
-	//	cleanitems(menu->items, NULL);
+	//	cleanentries(menu->entries, NULL);
 	widget->menus = menu->next;
 	XDestroyWindow(widget->display, menu->window);
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
@@ -1927,7 +1927,7 @@ closepopups(struct widget *widget)
 }
 
 static size_t
-index_item(struct widget *widget, struct menu *menu, long y)
+index_entry(struct widget *widget, struct menu *menu, long y)
 {
 	long h;
 
@@ -1945,21 +1945,21 @@ index_item(struct widget *widget, struct menu *menu, long y)
 	}
 	if (menu->overflow)
 		h += widget->separatorh;
-	for (size_t itemc = menu->curr_screenful.first_item; itemc < menu->nitems; itemc++) {
-		struct item *item = &menu->items[itemc];
-		if (item->label == NULL) {
+	for (size_t entryc = menu->curr_screenful.first_entry; entryc < menu->nentries; entryc++) {
+		struct entry *entry = &menu->entries[entryc];
+		if (entry->label == NULL) {
 			h += widget->separatorh;
 			continue;
 		}
-		if (item->output == NULL && item->nchildren == 0) {
-			h += widget->itemh;
+		if (entry->output == NULL && entry->nchildren == 0) {
+			h += widget->entryh;
 			continue;
 		}
-		if (y >= h && y < (long)h + widget->itemh)
-			return itemc;
-		h += widget->itemh;
+		if (y >= h && y < (long)h + widget->entryh)
+			return entryc;
+		h += widget->entryh;
 		if (menu->overflow &&
-		    h + widget->itemh + widget->inner_border_width >=
+		    h + widget->entryh + widget->inner_border_width >=
 		    menu->window_geometry.height) {
 			break;
 		}
@@ -1967,11 +1967,11 @@ index_item(struct widget *widget, struct menu *menu, long y)
 	return -1;
 }
 
-static struct item *
-get_item(struct menu *menu, ssize_t itemc)
+static struct entry *
+get_entry(struct menu *menu, ssize_t entryc)
 {
-	if (itemc >= 0 && itemc < (ssize_t)menu->nitems)
-		return &menu->items[itemc];
+	if (entryc >= 0 && entryc < (ssize_t)menu->nentries)
+		return &menu->entries[entryc];
 	return NULL;
 }
 
@@ -2014,9 +2014,9 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 			/* fallthrough */
 		case 0:
 			if (down)
-				scrolldown(widget, menu, widget->itemh);
+				scrolldown(widget, menu, widget->entryh);
 			else
-				scrollup(widget, menu, widget->itemh);
+				scrollup(widget, menu, widget->entryh);
 			if (menu->curr_screenful.offset != last_offset)
 				commitdraw(widget, menu);
 			last_offset = menu->curr_screenful.offset;
@@ -2045,7 +2045,7 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 		}
 		*widget = (struct widget){ 0 };
 		widget->display = NULL;
-		options.items = menu->items,
+		options.entries = menu->entries,
 		options.monitor = -1,
 		options.userplaced = true,
 		options.xpercent = options.ypercent = false;
@@ -2080,18 +2080,18 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 //	return strcoll(a->d_name, b->d_name);
 //}
 //
-//static struct item *
+//static struct entry *
 //listdirentries(const char *dirname)
 //{
 //	struct dirent **namelist;
-//	struct item *items, *item, *prev;
+//	struct entry *entries, *entry, *prev;
 //	int nents;
 //	char buf[PATH_MAX + 8];
 //	
 //	nents = scandir(dirname, &namelist, &direntsel, &direntcmp);
 //	if (nents == -1)
 //		return NULL;
-//	items = NULL;
+//	entries = NULL;
 //	prev = NULL;
 //	for (int i = 0; i < nents; i++) {
 //		snprintf(
@@ -2102,22 +2102,22 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 //			dirname,
 //			namelist[i]->d_name
 //		);
-//		item = allocitem(namelist[i]->d_name, buf, NULL);
+//		entry = allocentry(namelist[i]->d_name, buf, NULL);
 //		if (prev == NULL)
-//			items = item;
+//			entries = entry;
 //		else
-//			prev->next = item;
-//		item->prev = prev;
-//		prev = item;
+//			prev->next = entry;
+//		entry->prev = prev;
+//		prev = entry;
 //		free(namelist[i]);
 //	}
 //	free(namelist);
-//	return items;
+//	return entries;
 //	return NULL;
 //}
 
 static void
-printitem(struct widget *widget, const char *str)
+printentry(struct widget *widget, const char *str)
 {
 	(void)printf("%s\n", str);
 	(void)fflush(stdout);
@@ -2125,34 +2125,34 @@ printitem(struct widget *widget, const char *str)
 }
 
 static void
-openitem(struct widget *widget, struct menu *menu, ssize_t nitem, bool alt)
+openentry(struct widget *widget, struct menu *menu, ssize_t nentry, bool alt)
 {
 	XRectangle rect;
-	struct item *item = get_item(menu, nitem);
+	struct entry *entry = get_entry(menu, nentry);
 
-	if (item == NULL)
+	if (entry == NULL)
 		return;
 	rect = menu->window_geometry;
-	rect.y += get_item_ypos(widget, menu, nitem);
-	if (item->children != NULL) {
-		popupmenu(widget, item->children, item->nchildren, &rect, false, item->label);
-	} else if (alt && item->altoutput != NULL) {
-		printitem(widget, item->altoutput);
-	//} else if (item->output != NULL &&
-	//           item->output[0] == '/') {
+	rect.y += get_entry_ypos(widget, menu, nentry);
+	if (entry->children != NULL) {
+		popupmenu(widget, entry->children, entry->nchildren, &rect, false, entry->label);
+	} else if (alt && entry->altoutput != NULL) {
+		printentry(widget, entry->altoutput);
+	//} else if (entry->output != NULL &&
+	//           entry->output[0] == '/') {
 	//	if (alt) {
-	//		snprintf(buf, PATH_MAX, "%s%s", "file:", item->output);
-	//		printitem(widget, buf);
+	//		snprintf(buf, PATH_MAX, "%s%s", "file:", entry->output);
+	//		printentry(widget, buf);
 	//		return;
 	//	}
-	//	items = listdirentries(item->output);
-	//	if (items == NULL)
+	//	entries = listdirentries(entry->output);
+	//	if (entries == NULL)
 	//		return;
-	//	popupmenu(widget, items, &rect, false);
+	//	popupmenu(widget, entries, &rect, false);
 	//	widget->menus->directory = true;
-	//	widget->menus->items = items;
-	} else if (item->output != NULL) {
-		printitem(widget, item->output);
+	//	widget->menus->entries = entries;
+	} else if (entry->output != NULL) {
+		printentry(widget, entry->output);
 	}
 }
 
@@ -2207,7 +2207,7 @@ keypress(struct widget *widget, struct menu *menu, unsigned int state, KeySym ks
 		break;
 	case XK_Right:
 	case XK_Return:
-		openitem(widget, menu, menu->selected, false);
+		openentry(widget, menu, menu->selected, false);
 		break;
 	}
 }
@@ -2217,11 +2217,11 @@ run(struct widget *widget, XRectangle *geometry)
 {
 	XEvent xev;
 	struct menu *menu;
-	struct item *item;
-	ssize_t nitem;
+	struct entry *entry;
+	ssize_t nentry;
 
 	getposition(widget, geometry);
-	popupmenu(widget, options.items, options.nitems, geometry, true, widget->title);
+	popupmenu(widget, options.entries, options.nentries, geometry, true, widget->title);
 #define XNextEvent(dpy, xev) (XNextEvent((dpy),(xev)),(xev)->type)
 	while (widget->menus != NULL) switch (XNextEvent(widget->display, &xev)) {
 	case ButtonPress:
@@ -2232,11 +2232,11 @@ run(struct widget *widget, XRectangle *geometry)
 		}
 		while (widget->menus != menu)
 			delmenu(widget);
-		nitem = index_item(widget, menu, xev.xbutton.y);
-		item = get_item(menu, nitem);
-		if (item != NULL) {
-			if (item->children != NULL) {
-				openitem(widget, menu, nitem, false);
+		nentry = index_entry(widget, menu, xev.xbutton.y);
+		entry = get_entry(menu, nentry);
+		if (entry != NULL) {
+			if (entry->children != NULL) {
+				openentry(widget, menu, nentry, false);
 			}
 		}
 		continue;
@@ -2248,19 +2248,19 @@ run(struct widget *widget, XRectangle *geometry)
 		menu = getmenu(widget, xev.xbutton.window);
 		if (menu == NULL)
 			continue;
-		nitem = index_item(widget, menu, xev.xbutton.y);
-		if (nitem == TEAROFF) {
+		nentry = index_entry(widget, menu, xev.xbutton.y);
+		if (nentry == TEAROFF) {
 			forkandtearoff(widget, menu);
 			continue;
 		}
-		item = get_item(menu, nitem);
-		if (item == NULL)
+		entry = get_entry(menu, nentry);
+		if (entry == NULL)
 			continue;
-		if (item->children != NULL)
+		if (entry->children != NULL)
 			continue;
 		while (widget->menus != menu)
 			delmenu(widget);
-		openitem(widget, menu, nitem, xev.xbutton.button == Button2);
+		openentry(widget, menu, nentry, xev.xbutton.button == Button2);
 		continue;
 	case ClientMessage:
 		if ((Atom)xev.xclient.data.l[0] == XInternAtom(widget->display, "WM_DELETE_WINDOW", False))
@@ -2280,7 +2280,7 @@ run(struct widget *widget, XRectangle *geometry)
 		menu->window_geometry.width = xev.xconfigure.width;
 		menu->window_geometry.height = xev.xconfigure.height;
 		drawmenu(widget, menu);
-		if (get_item(menu, menu->selected) != NULL)
+		if (get_entry(menu, menu->selected) != NULL)
 			commitdraw(widget, menu);
 		continue;
 	case DestroyNotify:
@@ -2303,19 +2303,19 @@ run(struct widget *widget, XRectangle *geometry)
 		menu = getmenu(widget, xev.xmotion.window);
 		if (menu == NULL)
 			continue;
-		nitem = index_item(widget, menu, xev.xbutton.y);
-		if (nitem == SCROLLUP || nitem == SCROLLDOWN)
-			scroll(widget, menu, nitem == SCROLLDOWN);
-		if (nitem == menu->selected)
+		nentry = index_entry(widget, menu, xev.xbutton.y);
+		if (nentry == SCROLLUP || nentry == SCROLLDOWN)
+			scroll(widget, menu, nentry == SCROLLDOWN);
+		if (nentry == menu->selected)
 			continue;
-		item = get_item(menu, nitem);
-		menu->selected = nitem;
+		entry = get_entry(menu, nentry);
+		menu->selected = nentry;
 		commitdraw(widget, menu);
-		if (item != NULL && xev.xmotion.state & (Button1Mask|Button3Mask)) {
+		if (entry != NULL && xev.xmotion.state & (Button1Mask|Button3Mask)) {
 			while (widget->menus != menu)
 				delmenu(widget);
-			if (openssubmenu(item)) {
-				openitem(widget, menu, nitem, false);
+			if (openssubmenu(entry)) {
+				openentry(widget, menu, nentry, false);
 			}
 		}
 		continue;
@@ -2542,8 +2542,8 @@ main(int argc, char *argv[])
 	} else if (options.windowed) {
 		options.rootmode = false;
 	}
-	options.nitems = parsestdin(&options.items, &read_data);
-	if (options.nitems == 0)
+	options.nentries = parsestdin(&options.entries, &read_data);
+	if (options.nentries == 0)
 		errx(EXIT_FAILURE, "no menu generated");
 	(void)setjmp(jmpenv);
 	if (options.userplaced)
@@ -2605,7 +2605,7 @@ main(int argc, char *argv[])
 	cleanup(widget);
 	free(options.iconstring);
 	free(read_data);
-	free(options.items);
+	free(options.entries);
 	XrmDestroyDatabase(cli_xrm);
 	if (display != NULL)
 		XCloseDisplay(display);
