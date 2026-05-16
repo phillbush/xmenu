@@ -112,7 +112,6 @@ struct Options {
 	struct entry *entries;
 	size_t nentries;
 	bool windowed;
-	bool rootmode;
 	bool userplaced;
 	bool xneg, yneg, xpercent, ypercent;
 	bool monplaced;
@@ -121,11 +120,6 @@ struct Options {
 
 	unsigned int button;
 	unsigned int modifier;
-	Window client;
-
-	char *iconstring;
-	char *iconpaths[MAXPATHS];
-	size_t niconpaths;
 
 	XRectangle geometry;
 } options;
@@ -138,6 +132,7 @@ struct widget {
 	int screen;
 	Window rootwin;
 	Window window;
+	Window leader;
 	XRectangle monitor;
 	XrmDatabase cli_xrm;
 	ctrlfnt *fontset;
@@ -238,23 +233,6 @@ parsegeometry(char *geomspec)
 		return;
 error:
 	errx(EXIT_FAILURE, "%s: invalid geometry specification", geomspec);
-}
-
-static void
-parseiconpaths(char *s)
-{
-	options.niconpaths = 0;
-	if (s == NULL)
-		return;
-	if ((options.iconstring = strdup(s)) == NULL) {
-		warn("strdup");
-		return;
-	}
-	for (s = strtok(options.iconstring, ":"); s != NULL; s = strtok(NULL, ":")) {
-		if (options.niconpaths < MAXPATHS) {
-			options.iconpaths[options.niconpaths++] = s;
-		}
-	}
 }
 
 static bool
@@ -1007,22 +985,11 @@ initimlib(struct widget *widget)
 	imlib_context_set_colormap(widget->colormap);
 }
 
-static bool
-isabsolute(const char *s)
-{
-	if (s[0] == '/')
-		return true;
-	if (s[0] == '.' && (s[1] == '/' || (s[1] == '.' && s[2] == '/')))
-		return true;
-	return false;
-}
-
 static Imlib_Image
 loadicon(struct widget *widget, const char *file, int size, int *width_ret, int *height_ret)
 {
 	Imlib_Image icon = NULL;
 	Imlib_Load_Error errcode;
-	char path[PATH_MAX];
 	const char *errstr;
 	int width;
 	int height;
@@ -1034,17 +1001,7 @@ loadicon(struct widget *widget, const char *file, int size, int *width_ret, int 
 		return NULL;
 	}
 	initimlib(widget);
-	if (isabsolute(file))
-		icon = imlib_load_image_with_error_return(file, &errcode);
-	else {
-		for (size_t i = 0; i < options.niconpaths; i++) {
-			snprintf(path, sizeof(path), "%s/%s", options.iconpaths[i], file);
-			icon = imlib_load_image_with_error_return(path, &errcode);
-			if (icon != NULL || errcode != IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST) {
-				break;
-			}
-		}
-	}
+	icon = imlib_load_image_with_error_return(file, &errcode);
 	if (icon == NULL) {
 		switch (errcode) {
 		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
@@ -1813,16 +1770,11 @@ popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
 		override_redirect
 	);
-	if (!options.rootmode && options.client != None) {
+	if (widget->leader != None) {
 		(void)XSetTransientForHint(
 			widget->display,
 			menu->window,
-			options.client
-		);
-		(void)XSelectInput(
-			widget->display,
-			options.client,
-			StructureNotifyMask
+			widget->leader
 		);
 	}
 	(void)XSetWMProtocols(
@@ -2187,7 +2139,7 @@ run(struct widget *widget, XRectangle *geometry)
 			commitdraw(widget, menu, menu->selected);
 		continue;
 	case DestroyNotify:
-		if (options.client != None && xev.xdestroywindow.window == options.client)
+		if (widget->leader != None && xev.xdestroywindow.window == widget->leader)
 			closewidget(widget);
 		continue;
 	case KeyPress:
@@ -2249,8 +2201,6 @@ waitrootclick(struct widget *widget)
 {
 	XEvent xev;
 
-	if (!options.rootmode)
-		return;
 	while (!XNextEvent(widget->display, &xev)) {
 		if (xev.type != ButtonPress)
 			continue;
@@ -2302,7 +2252,7 @@ cleanup(struct widget *widget)
 
 static struct widget *
 setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth,
-		XrmDatabase cli_xrm, char *title, char *name, char *class,
+		Window leader, XrmDatabase cli_xrm, char *title, char *name, char *class,
 		int argc, char *argv[])
 {
 	struct widget *widget;
@@ -2323,6 +2273,7 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.name = name,
 		.class = class,
 		.title = title,
+		.leader = leader,
 
 		/* defaults [for color channels:  RED,  GREEN,   BLUE,  ALPHA] */
 		.colors[COLOR_BG].chans     = {0x3100, 0x3100, 0x3100, 0xFFFF},
@@ -2381,13 +2332,14 @@ main(int argc, char *argv[])
 	char *title = "XMenu";
 	char *read_data = NULL;
 	XrmDatabase cli_xrm = NULL;
+	Window leader = None;
+	bool rootmode = false;
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
 	sigemptyset(&sa.sa_mask);
 	if (sigaction(SIGCHLD, &sa, NULL) == -1)
 		err(EXIT_FAILURE, "sigaction");
-	parseiconpaths(getenv("ICONPATH"));
 
 	if (argv[0] != NULL && argv[0][0] != '\0') {
 		name = strchr(argv[0], '/');
@@ -2402,13 +2354,13 @@ main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "-name") || !strcmp(argv[i], "-N")) {
 			name = argv[++i];
 		} else if (!strcmp(argv[i], "-leader")) {
-			options.client = strtoul(argv[++i], NULL, 0);
+			leader = strtoul(argv[++i], NULL, 0);
 		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p")) {
 			parsegeometry(argv[++i]);
 		} else if (!strcmp(argv[i], "-rootgrab") || !strcmp(argv[i], "-x")) {
 			char *arg = argv[++i];
 			if (setbutton(arg))
-				options.rootmode = true;
+				rootmode = true;
 			setmodifier(arg);
 		} else if (!strcmp(argv[i], "-title")) {
 			title = argv[++i];
@@ -2438,11 +2390,11 @@ main(int argc, char *argv[])
 			goto usage;
 		}
 	}
-	if (options.rootmode) {
-		options.client = None;
+	if (rootmode) {
+		leader = None;
 		options.windowed = false;
 	} else if (options.windowed) {
-		options.rootmode = false;
+		rootmode = false;
 	}
 	options.nentries = parsestdin(&options.entries, &read_data);
 	if (options.nentries == 0)
@@ -2458,7 +2410,7 @@ main(int argc, char *argv[])
 		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
 	if (fcntl(XConnectionNumber(display), F_SETFD, FD_CLOEXEC) == -1)
 		err(EXIT_FAILURE, "connection to display \"%s\"", dpyname);
-	if (options.rootmode) {
+	if (rootmode) {
 		XGrabButton(
 			display,
 			options.button,
@@ -2488,12 +2440,13 @@ main(int argc, char *argv[])
 	}
 	widget = setup(
 		display, DefaultScreen(display), visual, colormap, depth,
-		cli_xrm, title, name, "XMenu", argc, argv
+		leader, cli_xrm, title, name, "XMenu", argc, argv
 	);
 	if (widget == NULL)
 		errx(EXIT_FAILURE, "cannot create widget");
 	do {
-		waitrootclick(widget);
+		if (rootmode)
+			waitrootclick(widget);
 		if (!options.windowed) {
 			if (grabpointer(widget) == RETURN_FAILURE)
 				return EXIT_FAILURE;
@@ -2502,9 +2455,8 @@ main(int argc, char *argv[])
 		}
 		run(widget, &geometry);
 		ungrab(widget);
-	} while (options.rootmode);
+	} while (rootmode);
 	cleanup(widget);
-	free(options.iconstring);
 	free(read_data);
 	free(options.entries);
 	XrmDestroyDatabase(cli_xrm);
