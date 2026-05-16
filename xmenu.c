@@ -1440,7 +1440,7 @@ get_entry_height(struct widget *widget, struct menu *menu, int selected)
 }
 
 static void
-commitdraw(struct widget *widget, struct menu *menu)
+commitdraw(struct widget *widget, struct menu *menu, ssize_t selected)
 {
 	int src_canvas_y, dst_canvas_y;
 
@@ -1507,11 +1507,11 @@ commitdraw(struct widget *widget, struct menu *menu)
 			get_entry_height(widget, menu, SCROLLDOWN)
 		);
 	}
-	src_canvas_y = get_entry_ypos(widget, menu, menu->selected);
-	if (menu->selected == SCROLLDOWN)
+	src_canvas_y = get_entry_ypos(widget, menu, selected);
+	if (selected == SCROLLDOWN)
 		dst_canvas_y = menu->window_geometry.height
 		             - widget->separatorh - widget->inner_border_width;
-	else if (menu->selected == SCROLLUP || menu->selected == TEAROFF)
+	else if (selected == SCROLLUP || selected == TEAROFF)
 		dst_canvas_y = src_canvas_y;
 	else
 		dst_canvas_y = src_canvas_y - menu->curr_screenful.offset;
@@ -1526,7 +1526,7 @@ commitdraw(struct widget *widget, struct menu *menu)
 			0, 0,
 			0, dst_canvas_y,
 			menu->window_geometry.width,
-			get_entry_height(widget, menu, menu->selected)
+			get_entry_height(widget, menu, selected)
 		);
 	}
 	drawshadows(
@@ -1551,7 +1551,7 @@ selfirst(struct widget *widget, struct menu *menu)
 		struct entry *entry = &menu->entries[entryc];
 		if (entry->output != NULL || entry->nchildren > 0) {
 			menu->selected = entryc;
-			commitdraw(widget, menu);
+			commitdraw(widget, menu, menu->selected);
 			return;
 		}
 	}
@@ -1565,7 +1565,7 @@ sellast(struct widget *widget, struct menu *menu)
 		struct entry *entry = &menu->entries[entryc];
 		if (entry->output != NULL || entry->nchildren > 0) {
 			menu->selected = entryc;
-			commitdraw(widget, menu);
+			commitdraw(widget, menu, menu->selected);
 			return;
 		}
 	}
@@ -1626,7 +1626,7 @@ selprev(struct widget *widget, struct menu *menu)
 		}
 		if (entry->output != NULL || entry->nchildren > 0) {
 			menu->selected = entryc;
-			commitdraw(widget, menu);
+			commitdraw(widget, menu, menu->selected);
 			return;
 		}
 	}
@@ -1658,7 +1658,7 @@ selnext(struct widget *widget, struct menu *menu)
 		}
 		if (entry->output != NULL || entry->nchildren > 0) {
 			menu->selected = entryc;
-			commitdraw(widget, menu);
+			commitdraw(widget, menu, menu->selected);
 			return;
 		}
 	}
@@ -1873,7 +1873,7 @@ popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 
 	widget->menus = menu;
 	drawmenu(widget, menu);
-	commitdraw(widget, menu);
+	commitdraw(widget, menu, menu->selected);
 	XMapRaised(widget->display, menu->window);
 }
 
@@ -2013,7 +2013,7 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 			else
 				scrollup(widget, menu, widget->entryh);
 			if (menu->curr_screenful.offset != last_offset)
-				commitdraw(widget, menu);
+				commitdraw(widget, menu, menu->selected);
 			last_offset = menu->curr_screenful.offset;
 			XFlush(widget->display);
 			break;
@@ -2112,6 +2112,18 @@ forkandtearoff(struct widget *widget, struct menu *menu)
 //}
 
 static void
+xsleep(unsigned int usec)
+{
+	struct timespec tm = {
+		.tv_sec = usec / 1000000,
+		.tv_nsec = (usec % 1000000) * 1000,
+	};
+
+	while (nanosleep(&tm, &tm) == -1 && errno == EINTR)
+		;
+}
+
+static void
 openentry(struct widget *widget, struct menu *menu, ssize_t nentry, bool alt)
 {
 	XRectangle rect;
@@ -2124,6 +2136,21 @@ openentry(struct widget *widget, struct menu *menu, ssize_t nentry, bool alt)
 	if (entry->children != NULL) {
 		popupmenu(widget, entry->children, entry->nchildren, &rect, false, entry->label);
 	} else if (entry->output != NULL) {
+		/* blink */
+		commitdraw(widget, menu, -1);
+		XSync(widget->display, False); xsleep(60000);
+		commitdraw(widget, menu, nentry);
+		XSync(widget->display, False); xsleep(60000);
+		commitdraw(widget, menu, -1);
+		XSync(widget->display, False); xsleep(60000);
+		commitdraw(widget, menu, nentry);
+		while (XCheckMaskEvent(
+			widget->display,
+			ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+			&(XEvent){}
+		))
+			;
+
 		(void)printf("%s\n", alt ? entry->altoutput : entry->output);
 		(void)fflush(stdout);
 		closepopups(widget);
@@ -2268,7 +2295,7 @@ run(struct widget *widget, XRectangle *geometry)
 		menu->window_geometry.height = xev.xconfigure.height;
 		drawmenu(widget, menu);
 		if (get_entry(menu, menu->selected) != NULL)
-			commitdraw(widget, menu);
+			commitdraw(widget, menu, menu->selected);
 		continue;
 	case DestroyNotify:
 		if (options.client != None && xev.xdestroywindow.window == options.client)
@@ -2283,7 +2310,7 @@ run(struct widget *widget, XRectangle *geometry)
 	case LeaveNotify:
 		if (getmenu(widget, xev.xcrossing.window) == widget->menus) {
 			widget->menus->selected = -1;
-			commitdraw(widget, widget->menus);
+			commitdraw(widget, widget->menus, menu->selected);
 		}
 		continue;
 	case MotionNotify:
@@ -2297,7 +2324,7 @@ run(struct widget *widget, XRectangle *geometry)
 			continue;
 		entry = get_entry(menu, nentry);
 		menu->selected = nentry;
-		commitdraw(widget, menu);
+		commitdraw(widget, menu, menu->selected);
 		if (entry != NULL && xev.xmotion.state & (Button1Mask|Button3Mask)) {
 			while (widget->menus != menu)
 				delmenu(widget);
@@ -2320,7 +2347,7 @@ run(struct widget *widget, XRectangle *geometry)
 			loadresources(widget, str);
 			free(str);
 			for (menu = widget->menus; menu != NULL; menu = menu->next) {
-				commitdraw(widget, menu);
+				commitdraw(widget, menu, menu->selected);
 			}
 		}
 		continue;
