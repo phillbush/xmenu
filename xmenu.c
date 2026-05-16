@@ -2489,7 +2489,6 @@ main(int argc, char *argv[])
 	int depth;
 	XVisualInfo vinfo;
 	char *name = "xmenu";
-	char *class = "XMenu";
 	char *title = "XMenu";
 	char *read_data = NULL;
 	XrmDatabase cli_xrm = NULL;
@@ -2601,7 +2600,7 @@ main(int argc, char *argv[])
 	}
 	widget = setup(
 		display, DefaultScreen(display), visual, colormap, depth,
-		cli_xrm, title, name, class, argc, argv
+		cli_xrm, title, name, "XMenu", argc, argv
 	);
 	if (widget == NULL)
 		errx(EXIT_FAILURE, "cannot create widget");
