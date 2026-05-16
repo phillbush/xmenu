@@ -8,7 +8,7 @@
 #include <limits.h>
 #include <locale.h>
 #include <poll.h>
-#include <setjmp.h>
+//#include <setjmp.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -171,7 +171,7 @@ struct widget {
 	char *title;
 };
 
-static jmp_buf jmpenv;
+//static jmp_buf jmpenv;
 
 /* unindexable indices for special entries */
 static ssize_t TEAROFF    = -100;
@@ -2021,41 +2021,41 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 	}
 }
 
-static void
-forkandtearoff(struct widget *widget, struct menu *menu)
-{
-	pid_t pid;
-
-	if ((pid = fork()) == -1) {
-		warn("fork");
-		return;
-	}
-	if (pid == 0) {
-		/* child */
-		ctrlfnt_free(widget->fontset);
-		while (close(XConnectionNumber(widget->display)) == -1) {
-			if (errno == EINTR)
-				continue;
-			err(EXIT_FAILURE, "close");
-		}
-		*widget = (struct widget){ 0 };
-		widget->display = NULL;
-		options.entries = menu->entries,
-		options.monitor = -1,
-		options.userplaced = true,
-		options.xpercent = options.ypercent = false;
-		options.windowed = true,
-		options.rootmode = false,
-		options.geometry.x = menu->window_geometry.x,
-		options.geometry.y = menu->window_geometry.y,
-		options.geometry.width = 0,
-		options.geometry.height = 0,
-		longjmp(jmpenv, 1);
-		exit(EXIT_FAILURE);
-	}
-	closepopups(widget);
-}
-
+//static void
+//forkandtearoff(struct widget *widget, struct menu *menu)
+//{
+//	pid_t pid;
+//
+//	if ((pid = fork()) == -1) {
+//		warn("fork");
+//		return;
+//	}
+//	if (pid == 0) {
+//		/* child */
+//		ctrlfnt_free(widget->fontset);
+//		while (close(XConnectionNumber(widget->display)) == -1) {
+//			if (errno == EINTR)
+//				continue;
+//			err(EXIT_FAILURE, "close");
+//		}
+//		*widget = (struct widget){ 0 };
+//		widget->display = NULL;
+//		options.entries = menu->entries,
+//		options.monitor = -1,
+//		options.userplaced = true,
+//		options.xpercent = options.ypercent = false;
+//		options.windowed = true,
+//		options.rootmode = false,
+//		options.geometry.x = menu->window_geometry.x,
+//		options.geometry.y = menu->window_geometry.y,
+//		options.geometry.width = 0,
+//		options.geometry.height = 0,
+//		longjmp(jmpenv, 1);
+//		exit(EXIT_FAILURE);
+//	}
+//	closepopups(widget);
+//}
+//
 //static int
 //direntsel(const struct dirent *dp)
 //{
@@ -2264,7 +2264,7 @@ run(struct widget *widget, XRectangle *geometry)
 			continue;
 		nentry = index_entry(widget, menu, xev.xbutton.y);
 		if (nentry == TEAROFF) {
-			forkandtearoff(widget, menu);
+			//forkandtearoff(widget, menu);
 			continue;
 		}
 		entry = get_entry(menu, nentry);
@@ -2558,7 +2558,7 @@ main(int argc, char *argv[])
 	options.nentries = parsestdin(&options.entries, &read_data);
 	if (options.nentries == 0)
 		errx(EXIT_FAILURE, "no menu generated");
-	(void)setjmp(jmpenv);
+	//(void)setjmp(jmpenv);
 	if (options.userplaced)
 		geometry = options.geometry;
 
