@@ -110,8 +110,6 @@ struct menu {
 };
 
 struct Options {
-	struct entry *entries;
-	size_t nentries;
 	bool windowed;
 	bool userplaced;
 	bool xneg, yneg, xpercent, ypercent;
@@ -121,8 +119,6 @@ struct Options {
 
 	unsigned int button;
 	unsigned int modifier;
-
-	XRectangle geometry;
 } options;
 
 struct widget {
@@ -171,7 +167,7 @@ static ssize_t SCROLLUP   = -200;
 static ssize_t SCROLLDOWN = -300;
 
 static int
-parsegeometry(char *str)
+parsegeometry(char *str, XRectangle *geometry)
 {
 	long n;
 
@@ -182,7 +178,7 @@ parsegeometry(char *str)
 	if (isdigit(*str)) {
 		n = strtoul(str, &str, 10);
 		if (n <= 0 || n > USHRT_MAX) goto error;
-		options.geometry.width = n;
+		geometry->width = n;
 
 		if (*str != 'X' && *str != 'x') goto error;
 		str++;
@@ -190,7 +186,7 @@ parsegeometry(char *str)
 		if (!isdigit(*str)) goto error;
 		n = strtoul(str, &str, 10);
 		if (n <= 0 || n > USHRT_MAX) goto error;
-		options.geometry.height = n;
+		geometry->height = n;
 	}
 
 	/* ([+-][0-9]+[%]?[+-][0-9]+[%]?)? */
@@ -204,7 +200,7 @@ parsegeometry(char *str)
 		} else if (n < 0 || n > SHRT_MAX) {
 			goto error;
 		}
-		options.geometry.x = n;
+		geometry->x = n;
 
 		if (*str != '+' && *str != '-') goto error;
 		options.yneg = *(str++) == '-';
@@ -216,7 +212,7 @@ parsegeometry(char *str)
 		} else if (n < 0 || n > SHRT_MAX) {
 			goto error;
 		}
-		options.geometry.y = n;
+		geometry->y = n;
 
 		options.userplaced = true;
 	}
@@ -1739,8 +1735,8 @@ popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 
 	if (isroot && options.userplaced) {
 		XRectangle screen = *monitor;
-		int x = options.geometry.x;
-		int y = options.geometry.y;
+		int x = basis->x;
+		int y = basis->y;
 
 		if (!options.use_monitor) {
 			screen.x = screen.y = 0;
@@ -2073,15 +2069,14 @@ keypress(struct widget *widget, struct menu *menu, unsigned int state, KeySym ks
 }
 
 static int
-run(struct widget *widget, XRectangle *geometry)
+run(struct widget *widget, struct entry *entries, size_t nentries, XRectangle *geometry)
 {
 	XEvent xev;
 	struct menu *menu;
 	struct entry *entry;
 	ssize_t nentry;
 
-	getposition(widget, geometry);
-	popupmenu(widget, options.entries, options.nentries, geometry, true, widget->title);
+	popupmenu(widget, entries, nentries, geometry, true, widget->title);
 #define XNextEvent(dpy, xev) (XNextEvent((dpy),(xev)),(xev)->type)
 	while (widget->menus != NULL) switch (XNextEvent(widget->display, &xev)) {
 	case ButtonPress:
@@ -2339,6 +2334,8 @@ main(int argc, char *argv[])
 	XrmDatabase cli_xrm = NULL;
 	Window leader = None;
 	bool rootmode = false;
+	struct entry *entries = NULL;
+	size_t nentries = 0;
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
@@ -2361,7 +2358,7 @@ main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "-leader")) {
 			leader = strtoul(argv[++i], NULL, 0);
 		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p")) {
-			if (parsegeometry(argv[++i]) == RETURN_FAILURE) errx(
+			if (parsegeometry(argv[++i], &geometry) == RETURN_FAILURE) errx(
 				EXIT_FAILURE,
 				"%s: invalid geometry specification",
 				argv[i]
@@ -2405,11 +2402,9 @@ main(int argc, char *argv[])
 	} else if (options.windowed) {
 		rootmode = false;
 	}
-	options.nentries = parsestdin(&options.entries, &read_data);
-	if (options.nentries == 0)
+	nentries = parsestdin(&entries, &read_data);
+	if (nentries == 0)
 		errx(EXIT_FAILURE, "no menu generated");
-	if (options.userplaced)
-		geometry = options.geometry;
 
 	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
 		warnx("warning: no locale support for X11");
@@ -2462,12 +2457,13 @@ main(int argc, char *argv[])
 			if (grabkeyboard(widget) == RETURN_FAILURE)
 				return EXIT_FAILURE;
 		}
-		run(widget, &geometry);
+		getposition(widget, &geometry);
+		run(widget, entries, nentries, &geometry);
 		ungrab(widget);
 	} while (rootmode);
 	cleanup(widget);
 	free(read_data);
-	free(options.entries);
+	free(entries);
 	XrmDestroyDatabase(cli_xrm);
 	if (display != NULL)
 		XCloseDisplay(display);
