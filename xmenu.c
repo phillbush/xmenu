@@ -1,6 +1,7 @@
 #include <sys/types.h>
 
 #include <assert.h>
+#include <ctype.h>
 #include <dirent.h>
 #include <err.h>
 #include <errno.h>
@@ -169,54 +170,58 @@ static ssize_t TEAROFF    = -100;
 static ssize_t SCROLLUP   = -200;
 static ssize_t SCROLLDOWN = -300;
 
-static void
-parsegeometry(char *geomspec)
+static int
+parsegeometry(char *str)
 {
-	char *str;
+	long n;
 
-	str = geomspec;
-	if (str == NULL || *str == '\0') return;
+	if (str == NULL || *str == '\0') goto error;
 	if (*str == '=') str++;
 
-	if (*str >= '0' && *str <= '9') {
-		options.geometry.width = strtoul(str, &str, 10);
-		if (*str != 'X' && *str != 'x')
-			goto error;
-		if (options.geometry.width == 0 || options.geometry.width > USHRT_MAX)
-			goto error;
-		str++;
-		if (*str < '0' || *str > '9')
-			goto error;
-		options.geometry.height = strtoul(str, &str, 10);
-		if (options.geometry.height == 0 || options.geometry.height > USHRT_MAX)
-			goto error;
-	}
-	if (*str == '-' || *str == '+') {
-		options.xneg = *(str++) == '-';
-		if (*str < '0' || *str > '9')
-			goto error;
-		options.geometry.x = strtoul(str, &str, 10);
-		if (*str == '%')
-			options.xpercent = *(str++);
-		if (options.xpercent && options.geometry.x > 100)
-			goto error;
-		if (!options.xpercent && options.geometry.x > SHRT_MAX)
-			goto error;
+	/* ([0-9]+[Xx][0-9]+)? */
+	if (isdigit(*str)) {
+		n = strtoul(str, &str, 10);
+		if (n <= 0 || n > USHRT_MAX) goto error;
+		options.geometry.width = n;
 
-		if (*str != '-' && *str != '+')
+		if (*str != 'X' && *str != 'x') goto error;
+		str++;
+
+		if (!isdigit(*str)) goto error;
+		n = strtoul(str, &str, 10);
+		if (n <= 0 || n > USHRT_MAX) goto error;
+		options.geometry.height = n;
+	}
+
+	/* ([+-][0-9]+[%]?[+-][0-9]+[%]?)? */
+	if (*str == '+' || *str == '-') {
+		options.xneg = *(str++) == '-';
+		if (!isdigit(*str)) goto error;
+		n = strtoul(str, &str, 10);
+		if (*str == '%') {
+			options.xpercent = *(str++);
+			if (n < 0 || n > 100) goto error;
+		} else if (n < 0 || n > SHRT_MAX) {
 			goto error;
+		}
+		options.geometry.x = n;
+
+		if (*str != '+' && *str != '-') goto error;
 		options.yneg = *(str++) == '-';
-		if (*str < '0' || *str > '9')
-			goto error;
-		options.geometry.y = strtoul(str, &str, 10);
-		if (*str == '%')
+		if (!isdigit(*str)) goto error;
+		n = strtoul(str, &str, 10);
+		if (*str == '%') {
 			options.ypercent = *(str++);
-		if (options.ypercent && options.geometry.y > 100)
+			if (n < 0 || n > 100) goto error;
+		} else if (n < 0 || n > SHRT_MAX) {
 			goto error;
-		if (!options.ypercent && options.geometry.y > SHRT_MAX)
-			goto error;
+		}
+		options.geometry.y = n;
+
 		options.userplaced = true;
 	}
+
+	/* ([@:].*)? */
 	if (*str == '@' || *str == ':') {
 		str++;
 		options.use_monitor = true;
@@ -224,15 +229,15 @@ parsegeometry(char *geomspec)
 			options.monitor = strtoul(str, &str, 10);
 		} else if (*str == 'c') {
 			options.monitor = -1;
-			return;
+			return RETURN_SUCCESS;
 		} else {
 			goto error;
 		}
 	}
 	if (*str == '\0')
-		return;
+		return RETURN_SUCCESS;
 error:
-	errx(EXIT_FAILURE, "%s: invalid geometry specification", geomspec);
+	return RETURN_FAILURE;
 }
 
 static bool
@@ -2356,7 +2361,11 @@ main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "-leader")) {
 			leader = strtoul(argv[++i], NULL, 0);
 		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p")) {
-			parsegeometry(argv[++i]);
+			if (parsegeometry(argv[++i]) == RETURN_FAILURE) errx(
+				EXIT_FAILURE,
+				"%s: invalid geometry specification",
+				argv[i]
+			);
 		} else if (!strcmp(argv[i], "-rootgrab") || !strcmp(argv[i], "-x")) {
 			char *arg = argv[++i];
 			if (setbutton(arg))
