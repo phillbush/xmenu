@@ -116,9 +116,6 @@ struct Options {
 	bool monplaced;
 	bool use_monitor;
 	int monitor;
-
-	unsigned int button;
-	unsigned int modifier;
 } options;
 
 struct widget {
@@ -166,9 +163,10 @@ static ssize_t TEAROFF    = -100;
 static ssize_t SCROLLUP   = -200;
 static ssize_t SCROLLDOWN = -300;
 
-static int
-parsegeometry(char *str, XRectangle *geometry)
+static void
+parse_geometry(char *geometry_spec, XRectangle *geometry)
 {
+	char *str = geometry_spec;
 	long n;
 
 	if (str == NULL || *str == '\0') goto error;
@@ -225,54 +223,60 @@ parsegeometry(char *str, XRectangle *geometry)
 			options.monitor = strtoul(str, &str, 10);
 		} else if (*str == 'c') {
 			options.monitor = -1;
-			return RETURN_SUCCESS;
+			return;
 		} else {
 			goto error;
 		}
 	}
 	if (*str == '\0')
-		return RETURN_SUCCESS;
+		return;
 error:
-	return RETURN_FAILURE;
-}
-
-static bool
-setbutton(const char *s)
-{
-	size_t len;
-	char c;
-
-	if ((len = strlen(s)) < 1)
-		return false;
-	c = s[len - 1];
-	if (c >= '1' && c <= '9') {
-		options.button = c - '0';
-		return true;
-	}
-	return false;
+	errx(EXIT_FAILURE, "%s: invalid geometry specification", geometry_spec);
 }
 
 static void
-setmodifier(const char *s)
+parse_keychord(char *key_spec, unsigned int *modifier, unsigned int *button)
 {
-	size_t span;
+	static struct {
+		unsigned int mask;
+		char *names[2];
+	} modifiers[] = {
+		{ ShiftMask,    {"shift-", "s-"} },
+		{ ControlMask,  {"ctrl-", "c-"} },
+		{ Mod1Mask,     {"alt-", "a-"} },
+		{ Mod4Mask,     {"super-", "s-"} },
+	};
+	size_t spn = 0;
+	char *str = key_spec;
+	long n;
 
-	if ((span = strcspn(s, "-")) < 1)
-		return;
-	switch (s[span - 1]) {
-	case '1': options.modifier = Mod1Mask; break;
-	case '2': options.modifier = Mod2Mask; break;
-	case '3': options.modifier = Mod3Mask; break;
-	case '4': options.modifier = Mod4Mask; break;
-	case '5': options.modifier = Mod5Mask; break;
-	default:
-		if (strncasecmp(s, "Alt", 3) == 0) {
-			options.modifier = Mod1Mask;
-		} else if (strncasecmp(s, "Super", 5) == 0) {
-			options.modifier = Mod4Mask;
+	*modifier = 0;
+	*button = 0;
+	while (str[spn = strcspn(str, "-")] == '-') {
+		for (size_t i = 0; i < LEN(modifiers); i++) {
+			for (size_t j = 0; j < 2; j++) {
+				size_t len = strlen(modifiers[i].names[j]);
+				if (strncasecmp(str, modifiers[i].names[j], len) == 0) {
+					*modifier |= modifiers[i].mask;
+					goto next;
+				}
+			}
 		}
-		break;
+		goto error;
+	next:
+		str += spn + 1;
 	}
+	if (str[0] == '\0')
+		goto error;
+	n = strtol(str, &str, 10);
+	if (str[0] != '\0')
+		goto error;
+	if (n < 1 || n > 64)
+		goto error;
+	*button = n;
+	return;
+error:
+	errx(EXIT_FAILURE, "%s: invalid keychord specification", key_spec);
 }
 
 static Window
@@ -2077,8 +2081,7 @@ run(struct widget *widget, struct entry *entries, size_t nentries, XRectangle *g
 	ssize_t nentry;
 
 	popupmenu(widget, entries, nentries, geometry, true, widget->title);
-#define XNextEvent(dpy, xev) (XNextEvent((dpy),(xev)),(xev)->type)
-	while (widget->menus != NULL) switch (XNextEvent(widget->display, &xev)) {
+	while (widget->menus != NULL) switch (XNextEvent(widget->display, &xev), xev.type) {
 	case ButtonPress:
 		menu = getmenu(widget, xev.xbutton.window);
 		if (menu == NULL) {
@@ -2197,16 +2200,19 @@ run(struct widget *widget, struct entry *entries, size_t nentries, XRectangle *g
 }
 
 static void
-waitrootclick(struct widget *widget)
+waitrootclick(struct widget *widget, unsigned int modifier, unsigned int button)
 {
 	XEvent xev;
+	static unsigned int MODS = ShiftMask|ControlMask|Mod1Mask|Mod4Mask;
 
-	while (!XNextEvent(widget->display, &xev)) {
+	for (;;) {
+		(void)XNextEvent(widget->display, &xev);
 		if (xev.type != ButtonPress)
 			continue;
-		if ((options.modifier != 0 &&
-		     (xev.xbutton.state & options.modifier)) ||
-		    xev.xbutton.subwindow == None) {
+		if (xev.xbutton.button == button && (
+			(modifier != 0 && modifier == (xev.xbutton.state & MODS)) ||
+			xev.xbutton.subwindow == None
+		)) {
 			XAllowEvents(
 				widget->display,
 				AsyncPointer,
@@ -2336,6 +2342,8 @@ main(int argc, char *argv[])
 	bool rootmode = false;
 	struct entry *entries = NULL;
 	size_t nentries = 0;
+	unsigned int button = 0;
+	unsigned int modifier = 0;
 
 	sa.sa_handler = SIG_IGN;
 	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
@@ -2358,16 +2366,10 @@ main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "-leader")) {
 			leader = strtoul(argv[++i], NULL, 0);
 		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p")) {
-			if (parsegeometry(argv[++i], &geometry) == RETURN_FAILURE) errx(
-				EXIT_FAILURE,
-				"%s: invalid geometry specification",
-				argv[i]
-			);
+			parse_geometry(argv[++i], &geometry);
 		} else if (!strcmp(argv[i], "-rootgrab") || !strcmp(argv[i], "-x")) {
-			char *arg = argv[++i];
-			if (setbutton(arg))
-				rootmode = true;
-			setmodifier(arg);
+			parse_keychord(argv[++i], &modifier, &button);
+			rootmode = true;
 		} else if (!strcmp(argv[i], "-title")) {
 			title = argv[++i];
 		} else if (!strcmp(argv[i], "-xrm")) {
@@ -2417,7 +2419,7 @@ main(int argc, char *argv[])
 	if (rootmode) {
 		XGrabButton(
 			display,
-			options.button,
+			button,
 			AnyModifier,
 			DefaultRootWindow(display),
 			False,
@@ -2450,7 +2452,7 @@ main(int argc, char *argv[])
 		errx(EXIT_FAILURE, "cannot create widget");
 	do {
 		if (rootmode)
-			waitrootclick(widget);
+			waitrootclick(widget, modifier, button);
 		if (!options.windowed) {
 			if (grabpointer(widget) == RETURN_FAILURE)
 				return EXIT_FAILURE;
