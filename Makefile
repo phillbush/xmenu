@@ -14,7 +14,7 @@ all: ${PROG}
 
 ${PROG}: ${OBJS}
 	${CC} -o $@ ${OBJS} \
-	-lfontconfig -lXft -lX11 -lXinerama -lXrender -lImlib2 ${LDLIBS} \
+	-lfontconfig -lXft -lX11 -lXrandr -lXrender -lImlib2 ${LDLIBS} \
 	-L/usr{,/local,/X11R6}/lib ${LDFLAGS}
 
 .PHONY: debug

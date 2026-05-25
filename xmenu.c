@@ -24,7 +24,7 @@
 #include <X11/Xresource.h>
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
-#include <X11/extensions/Xinerama.h>
+#include <X11/extensions/Xrandr.h>
 #include <Imlib2.h>
 
 #include "control/font.h"
@@ -40,7 +40,6 @@
 #define RETURN_SUCCESS          0
 #define MAXPATHS                32
 #define PADDING                 4
-#define INITIAL_DISPLACEMENT    2
 #define MIN_HEIGHT              (16 + PADDING * 2)
 #define TRIANGLE_HEIGHT         8
 #define TRIANGLE_WIDTH          3
@@ -107,16 +106,8 @@ struct menu {
 	bool overflow;
 	bool hasicon;
 	bool hassubmenu;
+	bool tornoff;
 };
-
-struct Options {
-	bool windowed;
-	bool userplaced;
-	bool xneg, yneg, xpercent, ypercent;
-	bool monplaced;
-	bool use_monitor;
-	int monitor;
-} options;
 
 struct widget {
 	Display *display;
@@ -162,77 +153,6 @@ struct widget {
 static ssize_t TEAROFF    = -100;
 static ssize_t SCROLLUP   = -200;
 static ssize_t SCROLLDOWN = -300;
-
-static void
-parse_geometry(char *geometry_spec, XRectangle *geometry)
-{
-	char *str = geometry_spec;
-	long n;
-
-	if (str == NULL || *str == '\0') goto error;
-	if (*str == '=') str++;
-
-	/* ([0-9]+[Xx][0-9]+)? */
-	if (isdigit(*str)) {
-		n = strtoul(str, &str, 10);
-		if (n <= 0 || n > USHRT_MAX) goto error;
-		geometry->width = n;
-
-		if (*str != 'X' && *str != 'x') goto error;
-		str++;
-
-		if (!isdigit(*str)) goto error;
-		n = strtoul(str, &str, 10);
-		if (n <= 0 || n > USHRT_MAX) goto error;
-		geometry->height = n;
-	}
-
-	/* ([+-][0-9]+[%]?[+-][0-9]+[%]?)? */
-	if (*str == '+' || *str == '-') {
-		options.xneg = *(str++) == '-';
-		if (!isdigit(*str)) goto error;
-		n = strtoul(str, &str, 10);
-		if (*str == '%') {
-			options.xpercent = *(str++);
-			if (n < 0 || n > 100) goto error;
-		} else if (n < 0 || n > SHRT_MAX) {
-			goto error;
-		}
-		geometry->x = n;
-
-		if (*str != '+' && *str != '-') goto error;
-		options.yneg = *(str++) == '-';
-		if (!isdigit(*str)) goto error;
-		n = strtoul(str, &str, 10);
-		if (*str == '%') {
-			options.ypercent = *(str++);
-			if (n < 0 || n > 100) goto error;
-		} else if (n < 0 || n > SHRT_MAX) {
-			goto error;
-		}
-		geometry->y = n;
-
-		options.userplaced = true;
-	}
-
-	/* ([@:].*)? */
-	if (*str == '@' || *str == ':') {
-		str++;
-		options.use_monitor = true;
-		if (*str >= '0' && *str <= '9') {
-			options.monitor = strtoul(str, &str, 10);
-		} else if (*str == 'c') {
-			options.monitor = -1;
-			return;
-		} else {
-			goto error;
-		}
-	}
-	if (*str == '\0')
-		return;
-error:
-	errx(EXIT_FAILURE, "%s: invalid geometry specification", geometry_spec);
-}
 
 static void
 parse_keychord(char *key_spec, unsigned int *modifier, unsigned int *button)
@@ -691,51 +611,6 @@ parsestdin(struct entry **entries, char **data)
 		err(EXIT_FAILURE, "calloc");
 
 	return fill_entries(*entries, strspn(*data, "\t"), *data, size, &(size_t){0});
-}
-
-static void
-getposition(struct widget *widget, XRectangle *geometry)
-{
-	XineramaScreenInfo *info = NULL;
-	int nmons;
-	int x, y;
-
-	XQueryPointer(
-		widget->display, widget->rootwin,
-		&(Window){}, &(Window){}, &x, &y,
-		&(int){}, &(int){}, &(unsigned){}
-	);
-	if (!options.userplaced) {
-		geometry->x = x;
-		geometry->y = y;
-	}
-	widget->monitor.x = widget->monitor.y = 0;
-	widget->monitor.width = DisplayWidth(widget->display, widget->screen);
-	widget->monitor.height = DisplayHeight(widget->display, widget->screen);
-	info = XineramaQueryScreens(widget->display, &nmons);
-	if (info == NULL)
-		return;
-	if (options.use_monitor && options.monitor >= 0 && options.monitor < nmons) {
-		widget->monitor.x = info[options.monitor].x_org;
-		widget->monitor.y = info[options.monitor].y_org;
-		widget->monitor.width = info[options.monitor].width;
-		widget->monitor.height = info[options.monitor].height;
-	} else for (int i = 0; i < nmons; i++) {
-		if (x < info[i].x_org)
-			continue;
-		if (y < info[i].y_org)
-			continue;
-		if (x >= info[i].x_org + info[i].width)
-			continue;
-		if (y >= info[i].y_org + info[i].height)
-			continue;
-		widget->monitor.x = info[i].x_org;
-		widget->monitor.y = info[i].y_org;
-		widget->monitor.width = info[i].width;
-		widget->monitor.height = info[i].height;
-		break;
-	}
-	XFree(info);
 }
 
 static int
@@ -1623,15 +1498,14 @@ selnext(struct widget *widget, struct menu *menu)
 
 static void
 popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
-		XRectangle *basis, bool isroot, char const *title)
+		XRectangle *monitor, XRectangle *basis, bool windowed, char const *title)
 {
-	XRectangle *monitor = &widget->monitor;
 	struct menu *menu;
 	Atom type;
 	unsigned int textw;
 	int max_height = monitor->height - widget->outer_border_width * 2;
 	int xgap, ygap;
-	bool override_redirect, tearoff;
+	bool override_redirect;
 
 	if ((menu = malloc(sizeof(*menu))) == NULL) {
 		warn("malloc");
@@ -1645,31 +1519,25 @@ popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 		.curr_screenful = {0, 0},
 		.last_screenful = {0, 0},
 		.next = widget->menus,
-		.tearable = (widget->menus != NULL || !options.windowed) && widget->tearoff,
+		.tearable = widget->menus != NULL && !windowed && widget->tearoff,
+		.tornoff = windowed,
 	};
 	type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
 	override_redirect = true;
-	tearoff = widget->tearoff;
+	xgap = ygap = 0;
 	if (widget->menus != NULL) {
 		xgap = widget->gap + widget->outer_border_width * 2;
 		ygap = -widget->inner_border_width;
-		if (tearoff)
+		if (menu->tearable)
 			ygap -= widget->separatorh;
 		(void)grabpointer(widget);
 		(void)grabkeyboard(widget);
-	} else {
-		if (options.userplaced)
-			xgap = ygap = 0;
-		else
-			xgap = ygap = INITIAL_DISPLACEMENT;
-		if (options.windowed) {
-			tearoff = false;
-			override_redirect = false;
-			type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_MENU", False);
-		}
+	} else if (menu->tornoff) {
+		override_redirect = false;
+		type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_MENU", False);
 	}
 	menu->total_height = widget->inner_border_width * 2;
-	if (tearoff)
+	if (menu->tearable)
 		menu->total_height += widget->separatorh;
 	menu->window_geometry.height = widget->inner_border_width * 2;
 	menu->nicons = 0;
@@ -1735,38 +1603,6 @@ popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 	} else if (monitor->y + max_height > menu->window_geometry.height + ygap) {
 		menu->window_geometry.y = monitor->y + max_height;
 		menu->window_geometry.y -= menu->window_geometry.height;
-	}
-
-	if (isroot && options.userplaced) {
-		XRectangle screen = *monitor;
-		int x = basis->x;
-		int y = basis->y;
-
-		if (!options.use_monitor) {
-			screen.x = screen.y = 0;
-			screen.width = DisplayWidth(widget->display, widget->screen);
-			screen.height = DisplayHeight(widget->display, widget->screen);
-		}
-
-		if (options.xpercent) {
-			if (options.xneg) x = 100 - x;
-			menu->window_geometry.x = screen.x + screen.width * x / 100;
-			menu->window_geometry.x -= menu->window_geometry.width / 2;
-		} else if (options.xneg) {
-			menu->window_geometry.x = screen.x + screen.width - x - menu->window_geometry.width;
-		} else {
-			menu->window_geometry.x = screen.x + x;
-		}
-
-		if (options.ypercent) {
-			if (options.yneg) y = 100 - y;
-			menu->window_geometry.y = screen.y + screen.height * y / 100;
-			menu->window_geometry.y -= menu->window_geometry.height / 2;
-		} else if (options.yneg) {
-			menu->window_geometry.y = screen.y + screen.height - y - menu->window_geometry.height;
-		} else {
-			menu->window_geometry.y = screen.y + y;
-		}
 	}
 
 	menu->window = createwindow(
@@ -1862,7 +1698,7 @@ static void
 closepopups(struct widget *widget)
 {
 	while (widget->menus != NULL) {
-		if (options.windowed && widget->menus->next == NULL) {
+		if (widget->menus->tornoff && widget->menus->next == NULL) {
 			ungrab(widget);
 			break;
 		}
@@ -1983,7 +1819,7 @@ xsleep(unsigned int usec)
 }
 
 static void
-openentry(struct widget *widget, struct menu *menu, ssize_t nentry, bool alt)
+openentry(struct widget *widget, XRectangle *monitor, struct menu *menu, ssize_t nentry, bool alt)
 {
 	XRectangle rect;
 	struct entry *entry = get_entry(menu, nentry);
@@ -1993,7 +1829,10 @@ openentry(struct widget *widget, struct menu *menu, ssize_t nentry, bool alt)
 	rect = menu->window_geometry;
 	rect.y += get_entry_ypos(widget, menu, nentry);
 	if (entry->children != NULL) {
-		popupmenu(widget, entry->children, entry->nchildren, &rect, false, entry->label);
+		popupmenu(
+			widget, entry->children, entry->nchildren,
+			monitor, &rect, false, entry->label
+		);
 	} else if (entry->output != NULL) {
 		/* blink */
 		commitdraw(widget, menu, -1);
@@ -2027,60 +1866,45 @@ getmenu(struct widget *widget, Window window)
 	return NULL;
 }
 
-static void
-keypress(struct widget *widget, struct menu *menu, unsigned int state, KeySym ksym)
-{
-	if (menu == NULL)
-		return;
-	if (ksym == XK_Tab && FLAG(state, ShiftMask))
-		ksym = XK_ISO_Left_Tab;
-	switch (ksym) {
-	case XK_KP_Enter:       ksym = XK_Return;       break;
-	case XK_KP_Home:        ksym = XK_Home;         break;
-	case XK_KP_End:         ksym = XK_End;          break;
-	case XK_KP_Left:        ksym = XK_Left;         break;
-	case XK_KP_Right:       ksym = XK_Right;        break;
-	case XK_KP_Up:          ksym = XK_Up;           break;
-	case XK_KP_Down:        ksym = XK_Down;         break;
-	}
-	switch (ksym) {
-	case XK_Down:
-	case XK_Tab:
-		selnext(widget, menu);
-		break;
-	case XK_Home:
-		selfirst(widget, menu);
-		break;
-	case XK_ISO_Left_Tab:
-	case XK_Up:
-		selprev(widget, menu);
-		break;
-	case XK_End:
-		sellast(widget, menu);
-		break;
-	case XK_Left:
-		if (menu->next == NULL)
-			break;
-		/* fallthrough */
-	case XK_Escape:
-		delmenu(widget);
-		break;
-	case XK_Right:
-	case XK_Return:
-		openentry(widget, menu, menu->selected, false);
-		break;
-	}
-}
-
 static int
-run(struct widget *widget, struct entry *entries, size_t nentries, XRectangle *geometry)
+run(struct widget *widget, struct entry *entries, size_t nentries,
+		XRectangle *geometry, bool windowed)
 {
 	XEvent xev;
 	struct menu *menu;
 	struct entry *entry;
 	ssize_t nentry;
+	XRectangle monitor = {
+		.x = 0,
+		.y = 0,
+		.width = DisplayWidth(widget->display, widget->screen),
+		.height = DisplayHeight(widget->display, widget->screen),
+	};
 
-	popupmenu(widget, entries, nentries, geometry, true, widget->title);
+	{
+		int nmons = 0;
+		XRRMonitorInfo *infos = XRRGetMonitors(
+			widget->display, widget->rootwin, True, &nmons
+		);
+
+		for (int i = 0; i < nmons && infos != NULL; i++) {
+			if (geometry->x < infos[i].x)
+				continue;
+			if (geometry->x >= infos[i].x + infos[i].width)
+				continue;
+			if (geometry->y < infos[i].y)
+				continue;
+			if (geometry->y >= infos[i].y + infos[i].height)
+				continue;
+			monitor.x = infos[i].x;
+			monitor.y = infos[i].y;
+			monitor.width = infos[i].width;
+			monitor.height = infos[i].height;
+			break;
+		}
+		XRRFreeMonitors(infos);
+	}
+	popupmenu(widget, entries, nentries, &monitor, geometry, windowed, widget->title);
 	while (widget->menus != NULL) switch (XNextEvent(widget->display, &xev), xev.type) {
 	case ButtonPress:
 		menu = getmenu(widget, xev.xbutton.window);
@@ -2094,7 +1918,7 @@ run(struct widget *widget, struct entry *entries, size_t nentries, XRectangle *g
 		entry = get_entry(menu, nentry);
 		if (entry != NULL) {
 			if (entry->children != NULL) {
-				openentry(widget, menu, nentry, false);
+				openentry(widget, &monitor, menu, nentry, false);
 			}
 		}
 		continue;
@@ -2118,7 +1942,7 @@ run(struct widget *widget, struct entry *entries, size_t nentries, XRectangle *g
 			continue;
 		while (widget->menus != menu)
 			delmenu(widget);
-		openentry(widget, menu, nentry, xev.xbutton.button == Button2);
+		openentry(widget, &monitor, menu, nentry, xev.xbutton.button == Button2);
 		continue;
 	case ClientMessage:
 		if ((Atom)xev.xclient.data.l[0] == XInternAtom(widget->display, "WM_DELETE_WINDOW", False))
@@ -2146,10 +1970,27 @@ run(struct widget *widget, struct entry *entries, size_t nentries, XRectangle *g
 			closewidget(widget);
 		continue;
 	case KeyPress:
-		keypress(
-			widget, widget->menus, xev.xkey.state,
-			XkbKeycodeToKeysym(widget->display, xev.xkey.keycode, 0, 0)
-		);
+		if (widget->menus == NULL)
+			continue;
+		KeySym ksym = XkbKeycodeToKeysym(widget->display, xev.xkey.keycode, 0, 0);
+
+		if (ksym == XK_Tab && FLAG(xev.xkey.state, ShiftMask))
+			ksym = XK_ISO_Left_Tab;
+		if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab)
+			selprev(widget, widget->menus);
+		if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab)
+			selnext(widget, widget->menus);
+		if (ksym == XK_Home || ksym == XK_KP_Home)
+			selfirst(widget, widget->menus);
+		if (ksym == XK_End || ksym == XK_KP_End)
+			sellast(widget, widget->menus);
+		if (ksym == XK_Right || ksym == XK_Return ||
+		    ksym == XK_KP_Right || ksym == XK_KP_Enter)
+			openentry(widget, &monitor, menu, menu->selected, false);
+		if (ksym == XK_Escape)
+			delmenu(widget);
+		if (ksym == XK_Left || ksym == XK_KP_Left)
+			if (menu->next != NULL) delmenu(widget);
 		continue;
 	case LeaveNotify:
 		if (getmenu(widget, xev.xcrossing.window) == widget->menus) {
@@ -2173,7 +2014,7 @@ run(struct widget *widget, struct entry *entries, size_t nentries, XRectangle *g
 			while (widget->menus != menu)
 				delmenu(widget);
 			if (openssubmenu(entry)) {
-				openentry(widget, menu, nentry, false);
+				openentry(widget, &monitor, menu, nentry, false);
 			}
 		}
 		continue;
@@ -2326,13 +2167,13 @@ int
 main(int argc, char *argv[])
 {
 	char const *dpyname;
-	struct sigaction sa;
 	struct widget *widget = NULL;
 	Display *display = NULL;
-	XRectangle geometry = { 0 };
+	XRectangle geometry = {};
 	Visual *visual;
 	Colormap colormap;
 	int depth;
+	int geometry_flags = 0;
 	XVisualInfo vinfo;
 	char *name = "xmenu";
 	char *title = "XMenu";
@@ -2344,12 +2185,9 @@ main(int argc, char *argv[])
 	size_t nentries = 0;
 	unsigned int button = 0;
 	unsigned int modifier = 0;
-
-	sa.sa_handler = SIG_IGN;
-	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
-	sigemptyset(&sa.sa_mask);
-	if (sigaction(SIGCHLD, &sa, NULL) == -1)
-		err(EXIT_FAILURE, "sigaction");
+	bool windowed = false;
+	bool is_user_placed = false;
+	char *monitor_name;
 
 	if (argv[0] != NULL && argv[0][0] != '\0') {
 		name = strchr(argv[0], '/');
@@ -2360,13 +2198,27 @@ main(int argc, char *argv[])
 	}
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-windowed") || !strcmp(argv[i], "-w")) {
-			options.windowed = true;
-		} else if (!strcmp(argv[i], "-name") || !strcmp(argv[i], "-N")) {
-			name = argv[++i];
+			windowed = true;
 		} else if (!strcmp(argv[i], "-leader")) {
 			leader = strtoul(argv[++i], NULL, 0);
-		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p")) {
-			parse_geometry(argv[++i], &geometry);
+		} else if (!strcmp(argv[i], "-monitor") || !strcmp(argv[i], "-mon")) {
+			monitor_name = argv[++i];
+		} else if (!strcmp(argv[i], "-name") || !strcmp(argv[i], "-N")) {
+			name = argv[++i];
+		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p") ||
+		           !strcmp(argv[i], "-geometry")) {
+			int x, y;
+			unsigned int w, h;
+			geometry_flags = XParseGeometry(argv[++i], &x, &y, &w, &h);
+			if (FLAG(geometry_flags, WidthValue|HeightValue)) {
+				geometry.width = w;
+				geometry.height = h;
+			}
+			if (FLAG(geometry_flags, XValue|YValue)) {
+				geometry.x = x;
+				geometry.y = y;
+				is_user_placed = true;
+			}
 		} else if (!strcmp(argv[i], "-rootgrab") || !strcmp(argv[i], "-x")) {
 			parse_keychord(argv[++i], &modifier, &button);
 			rootmode = true;
@@ -2383,6 +2235,7 @@ main(int argc, char *argv[])
 				stderr,
 				"usage: xmenu"
 				" [-leader WINDOWID]"
+				" [-monitor MONITOR]"
 				" [-name NAME]"
 				" [-position POSITION]"
 				" [-rootgrab BUTTON]"
@@ -2398,12 +2251,10 @@ main(int argc, char *argv[])
 			goto usage;
 		}
 	}
-	if (rootmode) {
+	if (rootmode)
 		leader = None;
-		options.windowed = false;
-	} else if (options.windowed) {
+	else if (windowed)
 		rootmode = false;
-	}
 	nentries = parsestdin(&entries, &read_data);
 	if (nentries == 0)
 		errx(EXIT_FAILURE, "no menu generated");
@@ -2450,17 +2301,59 @@ main(int argc, char *argv[])
 	);
 	if (widget == NULL)
 		errx(EXIT_FAILURE, "cannot create widget");
+	if (is_user_placed) {
+		int nmons = 0;
+		int x = 0;
+		int y = 0;
+		int width = DisplayWidth(display, DefaultScreen(display));
+		int height = DisplayHeight(display, DefaultScreen(display));
+		XRRMonitorInfo *infos = XRRGetMonitors(
+			display, DefaultRootWindow(display),
+			True, &nmons
+		);
+		Atom name = XInternAtom(display, monitor_name, true);
+
+		for (int i = 0; i < nmons && name != None && infos != NULL; i++) {
+			if (infos[i].name == name) {
+				x = infos[i].x;
+				y = infos[i].y;
+				width = infos[i].width;
+				height = infos[i].height;
+				break;
+			}
+		}
+		if (geometry_flags & XNegative)
+			geometry.x = x + width - geometry.width - geometry.x;
+		else
+			geometry.x += x;
+		if (geometry_flags & YNegative)
+			geometry.y = y + height - geometry.height - geometry.y;
+		else
+			geometry.y += y;
+		XRRFreeMonitors(infos);
+	}
 	do {
 		if (rootmode)
 			waitrootclick(widget, modifier, button);
-		if (!options.windowed) {
+		if (!windowed) {
 			if (grabpointer(widget) == RETURN_FAILURE)
 				return EXIT_FAILURE;
 			if (grabkeyboard(widget) == RETURN_FAILURE)
 				return EXIT_FAILURE;
 		}
-		getposition(widget, &geometry);
-		run(widget, entries, nentries, &geometry);
+		if (!is_user_placed) {
+			static const int INITIAL_DISPLACEMENT = 2;
+			int x, y;
+
+			XQueryPointer(
+				display, DefaultRootWindow(display),
+				&(Window){}, &(Window){},
+				&x, &y, &(int){}, &(int){}, &(unsigned){}
+			);
+			geometry.x = x + INITIAL_DISPLACEMENT;
+			geometry.y = y + INITIAL_DISPLACEMENT;
+		}
+		run(widget, entries, nentries, &geometry, windowed);
 		ungrab(widget);
 	} while (rootmode);
 	cleanup(widget);
