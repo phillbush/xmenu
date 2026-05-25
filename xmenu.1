@@ -7,8 +7,9 @@
 .Sh SYNOPSIS
 .Nm xmenu
 .Op Fl leader Ar WINDOWID
+.Op Fl monitor Ar MONITOR
 .Op Fl name Ar NAME
-.Op Fl position Ar POSITION
+.Op Fl position Ns | Ns Fl geometry Ar GEOMETRY
 .Op Fl rootgrab Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON
 .Op Fl title Ar TITLE
 .Op Fl windowed
@@ -130,6 +131,17 @@ This also makes
 close when the
 .Ar WINDOW
 is destroyed.
+.It Fl monitor Ar MONITOR
+Menu placement
+.Po
+as specified by the
+.Fl position
+argument
+.Pc
+is relative to the given monitor,
+rather than relative to the entire X screen.
+For a list of available monitors, run
+.Ql xrandr --listmonitors .
 .It Fl name Ar NAME
 Specifiy the application name under which resources are to be obtained,
 rather than the execultable file name.
@@ -139,68 +151,15 @@ should not contain
 or
 .Dq "*\&"
 characters.
-.It Fl position Xo
-.Cm "±" Ns Ar "X" Ns Op Cm "%" Ns
-.Cm "±" Ns Ar "Y" Ns Op Cm "%" Ns
-.Op Cm "@" Ns Ar MONITOR Oc .
-.Xc
+.It Fl position Ar GEOMETRY , Fl geometry Ar GEOMETRY
 Set the position to open
 .Nm
-at.
-Without this option,
-.Nm
-pops up next to the cursor.
-The
-.Ar X
-and
-.Ar Y
-arguments, and the plus or minus sign preceding them, are obligatory.
-The percent signs, and the part from the at-sign to the end are optional.
-.Bl -bullet -compact -width ""
-.It
-If
-.Ar X
-.Po
-or
-.Ar Y
-.Pc
-is preceded by a plus sign
-.Pq Cm "\&+" ,
-position is from the left (or top) edge of the screen.
-.It
-If
-.Ar X
-.Po
-or
-.Ar Y
-.Pc
-is preceded by a minus sign
-.Pq Cm "\&-" ,
-position is from the right (or bottom) edge.
-.It
-If
-.Ar X
-.Po
-or
-.Ar Y
-.Pc
-is followed by a percent sign
-.Pq Cm "%" ,
-position of the center of the root menu is relative to the width (or height) of the screen.
-With no percent sign,
-position of the left (or top) corner of the menu is relative to the left (or top) corner of the screen.
-.It
-If
-.Ar MONITOR
-is specified and is a number, position is relative to the given monitor number (counting from 0),
-rather than relative to the entire X screen.
-.Ar MONITOR
-can instead be
-.Qq Cm current
-or
-.Qq Cm cursor ,
-specifying the monitor where the cursor is on.
-.El
+at, and (optionally) its size.
+Refer to the
+.Xr X 7
+manual, at the section
+.Sx GEOMETRY SPECIFICATIONS
+for more information on the syntax for this option.
 .It Fl rootgrab Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON
 This option requires an argument of the form
 .Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON ;
