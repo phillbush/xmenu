@@ -7,10 +7,14 @@
 .Sh SYNOPSIS
 .Nm xmenu
 .Op Fl leader Ar WINDOWID
-.Op Fl monitor Ar MONITOR
 .Op Fl name Ar NAME
-.Op Fl position Ns | Ns Fl geometry Ar GEOMETRY
-.Op Fl rootgrab Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON
+.Oo
+.Fl position
+.Cm "±" Ns Ar "X" Ns
+.Cm "±" Ns Ar "Y" Ns
+.Op Cm "@" Ns Ar MONITOR Oc .
+.Oc
+.Op Fl rootgrab Oo Ar MODIFIER Ns Cm -... Oc Ns Ar BUTTON
 .Op Fl title Ar TITLE
 .Op Fl windowed
 .Op Fl xrm Ar RESOURCESTRING
@@ -131,17 +135,6 @@ This also makes
 close when the
 .Ar WINDOW
 is destroyed.
-.It Fl monitor Ar MONITOR
-Menu placement
-.Po
-as specified by the
-.Fl position
-argument
-.Pc
-is relative to the given monitor,
-rather than relative to the entire X screen.
-For a list of available monitors, run
-.Ql xrandr --listmonitors .
 .It Fl name Ar NAME
 Specifiy the application name under which resources are to be obtained,
 rather than the execultable file name.
@@ -152,8 +145,9 @@ or
 .Dq "*\&"
 characters.
 .It Fl position Xo
-.Cm "±" Ns Ar "X"
-.Cm "±" Ns Ar "Y"
+.Cm "±" Ns Ar "X" Ns
+.Cm "±" Ns Ar "Y" Ns
+.Op Cm "@" Ns Ar MONITOR Oc .
 .Xc
 Set the position to open
 .Nm
@@ -165,53 +159,81 @@ The
 .Ar X
 and
 .Ar Y
-arguments, and the plus or minus sign preceding them, are obligatory.
-The percent signs, and the part from the at-sign to the end are optional.
+arguments, and the plus or minus sign preceding each, are obligatory.
+The part from the at-sign to the end is optional.
+.Pp
+If
+.Ar X
+.Po
+or
+.Ar Y
+.Pc
+is preceded by a plus sign
+.Pq Cm "\&+" ,
+position is from the left (or top) edge of the screen.
+.Pp
+If
+.Ar X
+.Po
+or
+.Ar Y
+.Pc
+is preceded by a minus sign
+.Pq Cm "\&-" ,
+position is from the right (or bottom) edge of the screen.
+.Pp
+If
+.Ar MONITOR
+is specified,
+position is relative to the given monitor,
+rather than relative to the entire X screen.
+It can be either:
 .Bl -bullet -compact -width ""
-.It Fl position Ar GEOMETRY , Fl geometry Ar GEOMETRY
-Set the position to open
-.Nm
-at, and (optionally) its size.
-Refer to the
-.Xr X 7
-manual, at the section
-.Sx GEOMETRY SPECIFICATIONS
-for more information on the syntax for this option.
-.It Fl rootgrab Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON
-This option requires an argument of the form
-.Oo Ar MODIFIER Ns Cm - Oc Ns Ar BUTTON ;
-where
-.Ar MODIFIER
-is
-.Cm Mod1
-to
-.Cm Mod5 ,
-or
-.Cm Alt
-(equivalent to
-.Cm Mod1 ) ,
-or
-.Cm Super
-(equivalent to
-.Cm Mod4 ) ;
-and
+.It
+A valid monitor name, as listed by
+.Ql xrandr --listmonitors .
+.It
+A monitor number,
+counting from 0 (the primary monitor).
+.It
+The string
+.Qq Cm cursor ,
+for the monitor where the cursor is on.
+.El
+.It Fl rootgrab Xo
+.Oo
+.Cm ctrl- Ns | Ns Cm shift- Ns | Ns Cm alt- Ns | Ns Cm super- Ns ...
+.Oc Ns
 .Ar BUTTON
-is the number of a mouse button.
-When this option is used,
+.Xc
+Makes
 .Nm
-listens to button presses on the root window,
-and shows the menu when the given button is pressed on the root window
-or when that button is pressed together with the given modifier on any window.
+listen to presses of the specified mouse
+.Ar BUTTON
+(as a number, 1 = left button, 2=middle, etc)
+on the root window.
+When the button is pressed, the menu pops up.
+.Pp
+If one or more modifier
+.Po
+.Cm ctrl- Ns | Ns Cm shift- Ns | Ns Cm alt- Ns | Ns Cm super-
+.Pc
+is specified,
+the menu also pops up when the given button
+is pressed together with the given modifiers
+on any window, not only the root window.
+.Pp
 This option makes
 .Nm
 run continuously;
-so it should be used when
+and it is normally be used when
 .Nm
 is invoked in background on a X11 startup file
 (like
 .Pa "~/.xinitrc"
 or
 .Pa "~/.xsession" ) .
+.Pp
 This option cannot be used together with
 .Fl windowed.
 .It Fl title Ar TITLE

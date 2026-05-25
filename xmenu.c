@@ -153,6 +153,63 @@ static ssize_t TEAROFF    = -100;
 static ssize_t SCROLLUP   = -200;
 static ssize_t SCROLLDOWN = -300;
 
+static int
+parse_geometry(char *geometry_spec, int *x_root, int *y_root, char **monitor_name)
+{
+	char *str = geometry_spec;
+	long n;
+	int retval = XValue|YValue;
+
+	if (str == NULL || *str == '\0') goto error;
+	if (*str == '=') str++;
+
+	/* size /([0-9]+[Xx][0-9]+)?/, compatibile with XParseGeometry(3); ignored */
+	if (isdigit(*str)) {
+		n = strtoul(str, &str, 10);
+		if (n <= 0 || n > USHRT_MAX) goto error;
+
+		if (*str != 'X' && *str != 'x') goto error;
+		str++;
+
+		if (!isdigit(*str)) goto error;
+		n = strtoul(str, &str, 10);
+		if (n <= 0 || n > USHRT_MAX) goto error;
+		retval |= WidthValue|HeightValue;
+	}
+
+	/* x placement /[+-][0-9]+/; obligatory */
+	if (*str != '+' && *str != '-') goto error;
+	if (*(str++) == '-')
+		retval |= XNegative;
+	if (!isdigit(*str)) goto error;
+	n = strtoul(str, &str, 10);
+	if (n < 0 || n > SHRT_MAX) goto error;
+	*x_root = n;
+
+	/* y placement /[+-][0-9]+/; obligatory */
+	if (*str != '+' && *str != '-') goto error;
+	if (*(str++) == '-')
+		retval |= YNegative;
+	if (!isdigit(*str)) goto error;
+	n = strtoul(str, &str, 10);
+	if (n < 0 || n > SHRT_MAX) goto error;
+	*y_root = n;
+
+	/* monitor /([@:].*)?/; optional */
+	*monitor_name = NULL;
+	if (*str == '@' || *str == ':') {
+		str++;
+		if (*str == '\0')
+			goto error;
+		*monitor_name = str;
+		return retval;
+	}
+	if (*str == '\0')
+		return retval;
+error:
+	errx(EXIT_FAILURE, "invalid geometry specification -- %s", geometry_spec);
+}
+
 static void
 parse_keychord(char *key_spec, unsigned int *modifier, unsigned int *button)
 {
@@ -163,7 +220,7 @@ parse_keychord(char *key_spec, unsigned int *modifier, unsigned int *button)
 		{ ShiftMask,    {"shift-", "s-"} },
 		{ ControlMask,  {"ctrl-", "c-"} },
 		{ Mod1Mask,     {"alt-", "a-"} },
-		{ Mod4Mask,     {"super-", "s-"} },
+		{ Mod4Mask,     {"super-", "w-"} },
 	};
 	size_t spn = 0;
 	char *str = key_spec;
@@ -2189,7 +2246,7 @@ main(int argc, char *argv[])
 	unsigned int button = 0;
 	unsigned int modifier = 0;
 	bool windowed = false;
-	char *monitor_name;
+	char *monitor_name = NULL;
 
 	if (argv[0] != NULL && argv[0][0] != '\0') {
 		name = strchr(argv[0], '/');
@@ -2203,14 +2260,11 @@ main(int argc, char *argv[])
 			windowed = true;
 		} else if (!strcmp(argv[i], "-leader")) {
 			leader = strtoul(argv[++i], NULL, 0);
-		} else if (!strcmp(argv[i], "-monitor") || !strcmp(argv[i], "-mon")) {
-			monitor_name = argv[++i];
 		} else if (!strcmp(argv[i], "-name") || !strcmp(argv[i], "-N")) {
 			name = argv[++i];
 		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p")) {
-			geometry_flags = XParseGeometry(
-				argv[++i], &x_root, &y_root,
-				&(unsigned int){}, &(unsigned int){}
+			geometry_flags = parse_geometry(
+				argv[++i], &x_root, &y_root, &monitor_name
 			);
 		} else if (!strcmp(argv[i], "-rootgrab") || !strcmp(argv[i], "-x")) {
 			parse_keychord(argv[++i], &modifier, &button);
@@ -2306,9 +2360,29 @@ main(int argc, char *argv[])
 		);
 		
 		if (monitor_name != NULL) {
-			Atom name = XInternAtom(display, monitor_name, true);
-			for (int i = 0; i < nmons && name != None && infos != NULL; i++) {
-				if (infos[i].name == name) {
+			Atom name = None;
+			long num = -1;
+			int x = -1, y = -1;
+
+			if (strcmp(monitor_name, "cursor") == 0) {
+				XQueryPointer(
+					display, DefaultRootWindow(display),
+					&(Window){}, &(Window){},
+					&x, &y, &(int){}, &(int){}, &(unsigned){}
+				);
+			} else if (isdigit(*monitor_name)) {
+				char *endp;
+				num = strtoul(monitor_name, &endp, 10);
+				if (*endp != '\0' || num < 0 || num > INT_MAX)
+					num = -1;
+			} else {
+				name = XInternAtom(display, monitor_name, true);
+			}
+
+			for (int i = 0; i < nmons && infos != NULL; i++) {
+				if (i == num || infos[i].name == name ||
+				    (x >= infos[i].x && x < infos[i].x + infos[i].width) ||
+				    (y >= infos[i].y && y < infos[i].y + infos[i].height)) {
 					x = infos[i].x;
 					y = infos[i].y;
 					width = infos[i].width;
@@ -2316,7 +2390,7 @@ main(int argc, char *argv[])
 					goto found;
 				}
 			}
-			errx(EXIT_FAILURE, "cannot find monitor -- \"%s\"", monitor_name);
+			errx(EXIT_FAILURE, "cannot find monitor -- %s", monitor_name);
 		}
 	found:
 		if (geometry_flags & XNegative)
