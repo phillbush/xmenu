@@ -365,7 +365,6 @@ drawxftstring(ctrlfnt *fontset, Picture picture, Picture src,
 	size_t nglyphs = 0;
 	size_t nwritten = 0;
 	size_t n = 0;
-	int x = rect.x;
 	int w = 0;
 
 	if (nbytes == 0)
@@ -375,32 +374,20 @@ drawxftstring(ctrlfnt *fontset, Picture picture, Picture src,
 	while (nwritten < nglyphs) {
 		font = getfontforglyph(fontset, glyphs[nwritten]);
 		n = 1 + getfontcoverage(
-			fontset,
-			font,
+			fontset, font,
 			glyphs + nwritten + 1,
 			nglyphs - nwritten - 1
 		);
 		XftTextRender32(
-			fontset->display,
-			PictOpOver,
-			src,
-			font,
-			picture,
+			fontset->display, PictOpOver,
+			src, font, picture,
 			0, 0,
-			x + w,
-			rect.y + rect.height / 2
-			       + font->ascent / 2
-			       - font->descent / 2,
-
-			glyphs + nwritten,
-			n
+			rect.x + w, rect.y + rect.height/2 + font->ascent/2 - font->descent/2,
+			glyphs + nwritten, n
 		);
 		XftTextExtents32(
-			fontset->display,
-			font,
-			glyphs + nwritten,
-			n,
-			&extents
+			fontset->display, font,
+			glyphs + nwritten, n, &extents
 		);
 		w += extents.width;
 		nwritten += n;
@@ -412,17 +399,12 @@ static int
 drawxmbstring(ctrlfnt *fontset, Pixmap pix, GC gc, XRectangle rect,
               const char *text, int nbytes)
 {
-	XRectangle box, dummy;
-	XmbTextExtents(fontset->xlfd_fontset, text, nbytes, &dummy, &box);
+	XRectangle box;
+	XmbTextExtents(fontset->xlfd_fontset, text, nbytes, &(XRectangle){}, &box);
 	XmbDrawString(
-		fontset->display,
-		pix,
-		fontset->xlfd_fontset,
-		gc,
-		- box.x,
-		rect.height / 2 - box.height / 2 - box.y,
-		text,
-		nbytes
+		fontset->display, pix, fontset->xlfd_fontset, gc,
+		- box.x, rect.height/2 - box.height/2 - box.y,
+		text, nbytes
 	);
 	return box.width;
 }
@@ -437,15 +419,10 @@ drawxstring(ctrlfnt *fontset, Pixmap pix, GC gc, XRectangle rect,
 	nglyphs = utf8toxchar2b(glyphs, MAXGLYPHS, text, nbytes);
 	XSetFont(fontset->display, gc, fontset->xlfd_font->fid);
 	XDrawString16(
-		fontset->display,
-		pix,
-		gc,
-		0,
-		rect.height / 2
-		+ fontset->xlfd_font->ascent / 2
-		- fontset->xlfd_font->descent / 2,
-		glyphs,
-		nglyphs
+		fontset->display, pix, gc,
+		0, rect.height/2 + fontset->xlfd_font->ascent/2
+		- fontset->xlfd_font->descent/2,
+		glyphs, nglyphs
 	);
 	return XTextWidth16(fontset->xlfd_font, glyphs, nglyphs);
 }
@@ -462,9 +439,7 @@ drawx(ctrlfnt *fontset, Picture picture, Picture src,
 	pix = XCreatePixmap(
 		fontset->display,
 		RootWindow(fontset->display, fontset->screen),
-		rect.width,
-		rect.height,
-		1
+		rect.width, rect.height, 1
 	);
 	if (pix == None)
 		goto error;
@@ -472,25 +447,14 @@ drawx(ctrlfnt *fontset, Picture picture, Picture src,
 	if (gc == NULL)
 		goto error;
 	mask = XRenderCreatePicture(
-		fontset->display,
-		pix,
-		XRenderFindStandardFormat(
-			fontset->display,
-			PictStandardA1
-		),
+		fontset->display, pix,
+		XRenderFindStandardFormat(fontset->display, PictStandardA1),
 		0, NULL
 	);
 	if (mask == None)
 		goto error;
 	XSetForeground(fontset->display, gc, 0);
-	XFillRectangle(
-		fontset->display,
-		pix,
-		gc,
-		0, 0,
-		rect.width,
-		rect.height
-	);
+	XFillRectangle(fontset->display, pix, gc, 0, 0, rect.width, rect.height);
 	XSetForeground(fontset->display, gc, 1);
 	if (fontset->xlfd_font != NULL)
 		retval = drawxstring(fontset, pix, gc, rect, text, nbytes);
@@ -499,14 +463,9 @@ drawx(ctrlfnt *fontset, Picture picture, Picture src,
 	else
 		goto error;
 	XRenderComposite(
-		fontset->display,
-		PictOpOver,
-		src,
-		mask,
-		picture,
-		0, 0,
-		0, 0,
-		rect.x, rect.y,
+		fontset->display, PictOpOver,
+		src,    mask,   picture,
+		0, 0,   0, 0,   rect.x, rect.y,
 		rect.width, rect.height
 	);
 	XFreeGC(fontset->display, gc);
@@ -542,17 +501,13 @@ widthxftstring(ctrlfnt *fontset, const char *text, int nbytes)
 	while (nwritten < nglyphs) {
 		font = getfontforglyph(fontset, glyphs[nwritten]);
 		n = 1 + getfontcoverage(
-			fontset,
-			font,
+			fontset, font,
 			glyphs + nwritten + 1,
 			nglyphs - nwritten - 1
 		);
 		XftTextExtents32(
-			fontset->display,
-			font,
-			glyphs + nwritten,
-			n,
-			&extents
+			fontset->display, font,
+			glyphs + nwritten, n, &extents
 		);
 		nwritten += n;
 		width += extents.xOff;
@@ -563,9 +518,9 @@ widthxftstring(ctrlfnt *fontset, const char *text, int nbytes)
 static int
 widthxmbstring(ctrlfnt *fontset, const char *text, int nbytes)
 {
-	XRectangle box, dummy;
+	XRectangle box;
 
-	XmbTextExtents(fontset->xlfd_fontset, text, nbytes, &dummy, &box);
+	XmbTextExtents(fontset->xlfd_fontset, text, nbytes, &(XRectangle){}, &box);
 	return box.width;
 }
 
