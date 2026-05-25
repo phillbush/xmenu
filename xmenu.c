@@ -41,9 +41,9 @@
 #define MAXPATHS                32
 #define PADDING                 4
 #define MIN_HEIGHT              (16 + PADDING * 2)
-#define TRIANGLE_HEIGHT         8
-#define TRIANGLE_WIDTH          3
-#define TRIANGLE_PAD            8
+#define TRIANGLE_HEIGHT(wid)    (ctrlfnt_height((wid)->fontset)/2)
+#define TRIANGLE_WIDTH(wid)     (TRIANGLE_HEIGHT(wid)/2)
+#define TRIANGLE_PAD(wid)       TRIANGLE_HEIGHT(wid)
 
 enum {
 	COLOR_BG,
@@ -776,15 +776,15 @@ drawtriangle(struct widget *widget, Picture picture, Picture src, int x, int y, 
 	if (direction == DIR_UP) {
 		triangle.p1 = (XPointFixed){
 			XDoubleToFixed(x),
-			XDoubleToFixed(y + TRIANGLE_WIDTH)
+			XDoubleToFixed(y + TRIANGLE_WIDTH(widget))
 		};
 		triangle.p2 = (XPointFixed){
-			XDoubleToFixed(x + TRIANGLE_HEIGHT / 2),
+			XDoubleToFixed(x + TRIANGLE_HEIGHT(widget) / 2),
 			XDoubleToFixed(y)
 		};
 		triangle.p3 = (XPointFixed){
-			XDoubleToFixed(x + TRIANGLE_HEIGHT),
-			XDoubleToFixed(y + TRIANGLE_WIDTH)
+			XDoubleToFixed(x + TRIANGLE_HEIGHT(widget)),
+			XDoubleToFixed(y + TRIANGLE_WIDTH(widget))
 		};
 	} else if (direction == DIR_DOWN) {
 		triangle.p1 = (XPointFixed){
@@ -792,25 +792,25 @@ drawtriangle(struct widget *widget, Picture picture, Picture src, int x, int y, 
 			XDoubleToFixed(y)
 		};
 		triangle.p2 = (XPointFixed){
-			XDoubleToFixed(x + TRIANGLE_HEIGHT / 2),
-			XDoubleToFixed(y + TRIANGLE_WIDTH)
+			XDoubleToFixed(x + TRIANGLE_HEIGHT(widget) / 2),
+			XDoubleToFixed(y + TRIANGLE_WIDTH(widget))
 		};
 		triangle.p3 = (XPointFixed){
-			XDoubleToFixed(x + TRIANGLE_HEIGHT),
+			XDoubleToFixed(x + TRIANGLE_HEIGHT(widget)),
 			XDoubleToFixed(y)
 		};
 	} else if (direction == DIR_LEFT) {
 		triangle.p1 = (XPointFixed){
-			XDoubleToFixed(x + TRIANGLE_WIDTH),
+			XDoubleToFixed(x + TRIANGLE_WIDTH(widget)),
 			XDoubleToFixed(y)
 		};
 		triangle.p2 = (XPointFixed){
-			XDoubleToFixed(x - TRIANGLE_WIDTH),
-			XDoubleToFixed(y + TRIANGLE_HEIGHT / 2)
+			XDoubleToFixed(x - TRIANGLE_WIDTH(widget)),
+			XDoubleToFixed(y + TRIANGLE_HEIGHT(widget) / 2)
 		};
 		triangle.p3 = (XPointFixed){
 			XDoubleToFixed(x),
-			XDoubleToFixed(y + TRIANGLE_HEIGHT)
+			XDoubleToFixed(y + TRIANGLE_HEIGHT(widget))
 		};
 	} else {
 		triangle.p1 = (XPointFixed){
@@ -818,12 +818,12 @@ drawtriangle(struct widget *widget, Picture picture, Picture src, int x, int y, 
 			XDoubleToFixed(y)
 		};
 		triangle.p2 = (XPointFixed){
-			XDoubleToFixed(x + TRIANGLE_WIDTH),
-			XDoubleToFixed(y + TRIANGLE_HEIGHT / 2)
+			XDoubleToFixed(x + TRIANGLE_WIDTH(widget)),
+			XDoubleToFixed(y + TRIANGLE_HEIGHT(widget) / 2)
 		};
 		triangle.p3 = (XPointFixed){
 			XDoubleToFixed(x),
-			XDoubleToFixed(y + TRIANGLE_HEIGHT)
+			XDoubleToFixed(y + TRIANGLE_HEIGHT(widget))
 		};
 	}
 	XRenderCompositeTriangles(
@@ -1068,16 +1068,16 @@ drawmenu(struct widget *widget, struct menu *menu)
 				widget,
 				menu->canvas[CANVAS_NORMAL].picture,
 				widget->colors[COLOR_FG].pict,
-				entry_geometry.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
-				entry_geometry.y + widget->entryh/2 - TRIANGLE_HEIGHT/2,
+				entry_geometry.width - PADDING - TRIANGLE_WIDTH(widget) - TRIANGLE_PAD(widget)/2,
+				entry_geometry.y + widget->entryh/2 - TRIANGLE_HEIGHT(widget)/2,
 				DIR_RIGHT
 			);
 			drawtriangle(
 				widget,
 				menu->canvas[CANVAS_SELECT].picture,
 				widget->colors[COLOR_SELFG].pict,
-				entry_geometry.width - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD/2,
-				entry_geometry.y + widget->entryh/2 - TRIANGLE_HEIGHT/2,
+				entry_geometry.width - PADDING - TRIANGLE_WIDTH(widget) - TRIANGLE_PAD(widget)/2,
+				entry_geometry.y + widget->entryh/2 - TRIANGLE_HEIGHT(widget)/2,
 				DIR_RIGHT
 			);
 		}
@@ -1087,7 +1087,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 			entry->labellen
 		);
 		if (widget->alignment == ALIGN_RIGHT && menu->hassubmenu)
-			textx = entry_geometry.width - textw - PADDING - TRIANGLE_WIDTH - TRIANGLE_PAD;
+			textx = entry_geometry.width - textw - PADDING - TRIANGLE_WIDTH(widget) - TRIANGLE_PAD(widget);
 		else if (widget->alignment == ALIGN_RIGHT)
 			textx = entry_geometry.width - textw - PADDING;
 		else if (widget->alignment == ALIGN_CENTER)
@@ -1198,17 +1198,17 @@ next:
 				widget,
 				menu->canvas[i].picture,
 				widget->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
-				menu->window_geometry.width / 2 - TRIANGLE_HEIGHT / 2,
-				y + widget->separatorh /2 - TRIANGLE_WIDTH / 2,
+				menu->window_geometry.width / 2 - TRIANGLE_HEIGHT(widget) / 2,
+				y + widget->separatorh /2 - TRIANGLE_WIDTH(widget) / 2,
 				DIR_UP
 			);
 			drawtriangle(
 				widget,
 				menu->canvas[i].picture,
 				widget->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
-				menu->window_geometry.width / 2 - TRIANGLE_HEIGHT / 2,
+				menu->window_geometry.width / 2 - TRIANGLE_HEIGHT(widget) / 2,
 				menu->total_height - widget->separatorh /2
-				- TRIANGLE_WIDTH / 2,
+				- TRIANGLE_WIDTH(widget) / 2,
 				DIR_DOWN
 			);
 		}
@@ -1583,7 +1583,7 @@ popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 	if (menu->hasicon)
 		menu->window_geometry.width += widget->iconsize + PADDING;
 	if (menu->hassubmenu)
-		menu->window_geometry.width += TRIANGLE_WIDTH + TRIANGLE_PAD + PADDING;
+		menu->window_geometry.width += TRIANGLE_WIDTH(widget) + TRIANGLE_PAD(widget) + PADDING;
 	menu->window_geometry.width = MIN(menu->window_geometry.width, monitor->width/2);
 
 	/* place menu to align with parent menu and be visible on monitor */
