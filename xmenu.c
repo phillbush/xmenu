@@ -1519,7 +1519,7 @@ popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 		.curr_screenful = {0, 0},
 		.last_screenful = {0, 0},
 		.next = widget->menus,
-		.tearable = widget->menus != NULL && !windowed && widget->tearoff,
+		.tearable = !windowed && widget->tearoff,
 		.tornoff = windowed,
 	};
 	type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
