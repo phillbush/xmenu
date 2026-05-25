@@ -118,7 +118,6 @@ struct widget {
 	Window rootwin;
 	Window window;
 	Window leader;
-	XRectangle monitor;
 	XrmDatabase cli_xrm;
 	ctrlfnt *fontset;
 	struct menu *menus;
@@ -1868,7 +1867,7 @@ getmenu(struct widget *widget, Window window)
 
 static int
 run(struct widget *widget, struct entry *entries, size_t nentries,
-		XRectangle *geometry, bool windowed)
+		int x_root, int y_root, bool windowed)
 {
 	XEvent xev;
 	struct menu *menu;
@@ -1888,13 +1887,13 @@ run(struct widget *widget, struct entry *entries, size_t nentries,
 		);
 
 		for (int i = 0; i < nmons && infos != NULL; i++) {
-			if (geometry->x < infos[i].x)
+			if (x_root < infos[i].x)
 				continue;
-			if (geometry->x >= infos[i].x + infos[i].width)
+			if (x_root >= infos[i].x + infos[i].width)
 				continue;
-			if (geometry->y < infos[i].y)
+			if (y_root < infos[i].y)
 				continue;
-			if (geometry->y >= infos[i].y + infos[i].height)
+			if (y_root >= infos[i].y + infos[i].height)
 				continue;
 			monitor.x = infos[i].x;
 			monitor.y = infos[i].y;
@@ -1904,7 +1903,11 @@ run(struct widget *widget, struct entry *entries, size_t nentries,
 		}
 		XRRFreeMonitors(infos);
 	}
-	popupmenu(widget, entries, nentries, &monitor, geometry, windowed, widget->title);
+	popupmenu(
+		widget, entries, nentries,
+		&monitor, &(XRectangle){x_root, y_root, 0, 0},
+		windowed, widget->title
+	);
 	while (widget->menus != NULL) switch (XNextEvent(widget->display, &xev), xev.type) {
 	case ButtonPress:
 		menu = getmenu(widget, xev.xbutton.window);
@@ -2169,10 +2172,10 @@ main(int argc, char *argv[])
 	char const *dpyname;
 	struct widget *widget = NULL;
 	Display *display = NULL;
-	XRectangle geometry = {};
 	Visual *visual;
 	Colormap colormap;
 	int depth;
+	int x_root, y_root;
 	int geometry_flags = 0;
 	XVisualInfo vinfo;
 	char *name = "xmenu";
@@ -2186,7 +2189,6 @@ main(int argc, char *argv[])
 	unsigned int button = 0;
 	unsigned int modifier = 0;
 	bool windowed = false;
-	bool is_user_placed = false;
 	char *monitor_name;
 
 	if (argv[0] != NULL && argv[0][0] != '\0') {
@@ -2205,20 +2207,11 @@ main(int argc, char *argv[])
 			monitor_name = argv[++i];
 		} else if (!strcmp(argv[i], "-name") || !strcmp(argv[i], "-N")) {
 			name = argv[++i];
-		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p") ||
-		           !strcmp(argv[i], "-geometry")) {
-			int x, y;
-			unsigned int w, h;
-			geometry_flags = XParseGeometry(argv[++i], &x, &y, &w, &h);
-			if (FLAG(geometry_flags, WidthValue|HeightValue)) {
-				geometry.width = w;
-				geometry.height = h;
-			}
-			if (FLAG(geometry_flags, XValue|YValue)) {
-				geometry.x = x;
-				geometry.y = y;
-				is_user_placed = true;
-			}
+		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p")) {
+			geometry_flags = XParseGeometry(
+				argv[++i], &x_root, &y_root,
+				&(unsigned int){}, &(unsigned int){}
+			);
 		} else if (!strcmp(argv[i], "-rootgrab") || !strcmp(argv[i], "-x")) {
 			parse_keychord(argv[++i], &modifier, &button);
 			rootmode = true;
@@ -2301,7 +2294,7 @@ main(int argc, char *argv[])
 	);
 	if (widget == NULL)
 		errx(EXIT_FAILURE, "cannot create widget");
-	if (is_user_placed) {
+	if (FLAG(geometry_flags, XValue|YValue)) {
 		int nmons = 0;
 		int x = 0;
 		int y = 0;
@@ -2311,27 +2304,32 @@ main(int argc, char *argv[])
 			display, DefaultRootWindow(display),
 			True, &nmons
 		);
-		Atom name = XInternAtom(display, monitor_name, true);
-
-		for (int i = 0; i < nmons && name != None && infos != NULL; i++) {
-			if (infos[i].name == name) {
-				x = infos[i].x;
-				y = infos[i].y;
-				width = infos[i].width;
-				height = infos[i].height;
-				break;
+		
+		if (monitor_name != NULL) {
+			Atom name = XInternAtom(display, monitor_name, true);
+			for (int i = 0; i < nmons && name != None && infos != NULL; i++) {
+				if (infos[i].name == name) {
+					x = infos[i].x;
+					y = infos[i].y;
+					width = infos[i].width;
+					height = infos[i].height;
+					goto found;
+				}
 			}
+			errx(EXIT_FAILURE, "cannot find monitor -- \"%s\"", monitor_name);
 		}
+	found:
 		if (geometry_flags & XNegative)
-			geometry.x = x + width - geometry.width - geometry.x;
+			x_root = x + width - x_root;
 		else
-			geometry.x += x;
+			x_root += x;
 		if (geometry_flags & YNegative)
-			geometry.y = y + height - geometry.height - geometry.y;
+			y_root = y + height - y_root;
 		else
-			geometry.y += y;
+			y_root += y;
 		XRRFreeMonitors(infos);
 	}
+
 	do {
 		if (rootmode)
 			waitrootclick(widget, modifier, button);
@@ -2341,19 +2339,18 @@ main(int argc, char *argv[])
 			if (grabkeyboard(widget) == RETURN_FAILURE)
 				return EXIT_FAILURE;
 		}
-		if (!is_user_placed) {
+		if (!FLAG(geometry_flags, XValue|YValue)) {
 			static const int INITIAL_DISPLACEMENT = 2;
-			int x, y;
 
 			XQueryPointer(
 				display, DefaultRootWindow(display),
 				&(Window){}, &(Window){},
-				&x, &y, &(int){}, &(int){}, &(unsigned){}
+				&x_root, &y_root, &(int){}, &(int){}, &(unsigned){}
 			);
-			geometry.x = x + INITIAL_DISPLACEMENT;
-			geometry.y = y + INITIAL_DISPLACEMENT;
+			x_root += INITIAL_DISPLACEMENT;
+			y_root += INITIAL_DISPLACEMENT;
 		}
-		run(widget, entries, nentries, &geometry, windowed);
+		run(widget, entries, nentries, x_root, y_root, windowed);
 		ungrab(widget);
 	} while (rootmode);
 	cleanup(widget);

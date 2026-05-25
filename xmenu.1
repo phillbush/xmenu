@@ -151,6 +151,23 @@ should not contain
 or
 .Dq "*\&"
 characters.
+.It Fl position Xo
+.Cm "±" Ns Ar "X"
+.Cm "±" Ns Ar "Y"
+.Xc
+Set the position to open
+.Nm
+at.
+Without this option,
+.Nm
+pops up next to the cursor.
+The
+.Ar X
+and
+.Ar Y
+arguments, and the plus or minus sign preceding them, are obligatory.
+The percent signs, and the part from the at-sign to the end are optional.
+.Bl -bullet -compact -width ""
 .It Fl position Ar GEOMETRY , Fl geometry Ar GEOMETRY
 Set the position to open
 .Nm
