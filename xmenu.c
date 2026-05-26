@@ -84,7 +84,7 @@ struct entry {
 };
 
 struct menu {
-	struct menu *next;
+	struct menu *parent;
 	struct entry *entries;
 	size_t nentries;
 	ssize_t selected;
@@ -119,7 +119,6 @@ struct widget {
 	Window leader;
 	XrmDatabase cli_xrm;
 	ctrlfnt *fontset;
-	struct menu *menus;
 	unsigned int fonth;
 	int entryh, separatorh;
 	int inner_border_width;  /* part of window content, for shadow/relief */
@@ -492,7 +491,6 @@ loadresources(struct widget *widget, const char *str)
 		MK_RES("font", "Font", &fontspec, CTRLRES_SETSTR),
 		MK_RES("fontSize", "FontSize", &fontsize, parse_double),
 		MK_RES("foreground", "Foreground", &widget->colors[COLOR_FG], parse_color),
-		MK_RES("gap", "Gap", &widget->gap, parse_width),
 		MK_RES("maxItems", "MaxItems", &widget->maxentries, parse_width),
 		MK_RES("opacity", "Opacity", NULL, parse_opacity),
 		MK_RES("shadowThickness", "ShadowThickness", &widget->inner_border_width, parse_width),
@@ -1551,21 +1549,14 @@ selnext(struct widget *widget, struct menu *menu)
 	selfirst(widget, menu);
 }
 
-static void
-menu_new(struct widget *widget, struct entry *entries, size_t nentries,
+static int
+menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
+		struct entry *entries, size_t nentries,
 		XRectangle *monitor, XRectangle *basis, bool windowed, char const *title)
 {
-	struct menu *menu;
-	Atom type;
-	unsigned int textw;
 	int max_height = monitor->height - widget->outer_border_width * 2;
 	int xgap, ygap;
-	bool override_redirect;
 
-	if ((menu = malloc(sizeof(*menu))) == NULL) {
-		warn("malloc");
-		return;
-	}
 	*menu = (struct menu){
 		.entries = entries,
 		.nentries = nentries,
@@ -1573,30 +1564,21 @@ menu_new(struct widget *widget, struct entry *entries, size_t nentries,
 		.selected = -1,
 		.curr_screenful = {0, 0},
 		.last_screenful = {0, 0},
-		.next = widget->menus,
+		.parent = parent,
 		.tearable = !windowed && widget->tearoff,
 		.tornoff = windowed,
 	};
-	type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
-	override_redirect = true;
-	xgap = ygap = 0;
-	if (widget->menus != NULL) {
-		xgap = widget->gap + widget->outer_border_width * 2;
-		ygap = -widget->inner_border_width;
-		if (menu->tearable)
-			ygap -= widget->separatorh;
-		(void)grabpointer(widget);
-		(void)grabkeyboard(widget);
-	} else if (menu->tornoff) {
-		override_redirect = false;
-		type = XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE_MENU", False);
-	}
+	xgap = widget->gap + widget->outer_border_width * 2;
+	ygap = -widget->inner_border_width;
+	if (menu->tearable)
+		ygap -= widget->separatorh;
 	menu->total_height = widget->inner_border_width * 2;
 	if (menu->tearable)
 		menu->total_height += widget->separatorh;
 	menu->window_geometry.height = widget->inner_border_width * 2;
 	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
 		struct entry *entry = &menu->entries[entryc];
+		unsigned int textw;
 
 		if (entry->label != NULL) {
 			menu->total_height += widget->entryh;
@@ -1639,7 +1621,7 @@ menu_new(struct widget *widget, struct entry *entries, size_t nentries,
 	menu->window_geometry.width = MIN(menu->window_geometry.width, monitor->width/2);
 
 	/* place menu to align with parent menu and be visible on monitor */
-	if (menu->overflow && widget->menus != NULL)
+	if (menu->overflow && menu->parent != NULL)
 		ygap -= widget->separatorh;
 	menu->window_geometry.x = monitor->x;
 	menu->window_geometry.y = monitor->y;
@@ -1661,7 +1643,7 @@ menu_new(struct widget *widget, struct entry *entries, size_t nentries,
 		widget, &menu->window_geometry,
 		KeyPressMask | StructureNotifyMask | LeaveWindowMask |
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-		override_redirect
+		menu->tornoff ? false : true
 	);
 	if (widget->leader != None) {
 		(void)XSetTransientForHint(
@@ -1706,24 +1688,26 @@ menu_new(struct widget *widget, struct entry *entries, size_t nentries,
 		XA_ATOM,
 		32,
 		PropModeReplace,
-		(unsigned char *)&type,
-		1
+		(void *)(Atom[]){XInternAtom(
+			widget->display,
+			menu->tornoff
+			? "_NET_WM_WINDOW_TYPE_MENU"
+			: "_NET_WM_WINDOW_TYPE_POPUP_MENU",
+			False
+		)}, 1
 	);
 
-	widget->menus = menu;
 	drawmenu(widget, menu);
 	commitdraw(widget, menu, menu->selected);
 	XMapRaised(widget->display, menu->window);
+	return 0;
 }
 
 static void
-delmenu(struct widget *widget)
+menu_destroy(struct widget *widget, struct menu *menu)
 {
-	struct menu *menu;
-
-	if ((menu = widget->menus) == NULL)
+	if (menu == NULL)
 		return;
-	widget->menus = menu->next;
 	XDestroyWindow(widget->display, menu->window);
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		XRenderFreePicture(widget->display, menu->canvas[i].picture);
@@ -1741,21 +1725,8 @@ ungrab(struct widget *widget)
 static void
 closewidget(struct widget *widget)
 {
-	while (widget->menus != NULL)
-		delmenu(widget);
 	ungrab(widget);
-}
-
-static void
-closepopups(struct widget *widget)
-{
-	while (widget->menus != NULL) {
-		if (widget->menus->tornoff && widget->menus->next == NULL) {
-			ungrab(widget);
-			break;
-		}
-		delmenu(widget);
-	}
+	free(widget);
 }
 
 static size_t
@@ -1871,208 +1842,187 @@ xsleep(unsigned int usec)
 }
 
 static void
-openentry(struct widget *widget, XRectangle *monitor, struct menu *menu, ssize_t nentry, bool alt)
+blink_entry(struct widget *widget, struct menu *menu, ssize_t nentry)
 {
-	XRectangle rect;
-	struct entry *entry = get_entry(menu, nentry);
-
-	if (entry == NULL)
-		return;
-	rect = menu->window_geometry;
-	rect.y += get_entry_ypos(widget, menu, nentry);
-	if (entry->children != NULL) {
-		menu_new(
-			widget, entry->children, entry->nchildren,
-			monitor, &rect, false, entry->label
-		);
-	} else if (entry->output != NULL) {
-		/* blink */
-		commitdraw(widget, menu, -1);
-		XSync(widget->display, False); xsleep(60000);
-		commitdraw(widget, menu, nentry);
-		XSync(widget->display, False); xsleep(60000);
-		commitdraw(widget, menu, -1);
-		XSync(widget->display, False); xsleep(60000);
-		commitdraw(widget, menu, nentry);
-		while (XCheckMaskEvent(
-			widget->display,
-			ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-			&(XEvent){}
-		))
-			;
-
-		(void)printf("%s\n", alt ? entry->altoutput : entry->output);
-		(void)fflush(stdout);
-		closepopups(widget);
-	}
+	commitdraw(widget, menu, -1);
+	XSync(widget->display, False); xsleep(60000);
+	commitdraw(widget, menu, nentry);
+	XSync(widget->display, False); xsleep(60000);
+	commitdraw(widget, menu, -1);
+	XSync(widget->display, False); xsleep(60000);
+	commitdraw(widget, menu, nentry);
+	while (XCheckMaskEvent(
+		widget->display,
+		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+		&(XEvent){}
+	))
+		;
 }
 
-static struct menu *
-getmenu(struct widget *widget, Window window)
+static void
+menu_popup(struct widget *widget, struct menu *parent,
+		struct entry *entries, size_t nentries,
+		int x_root, int y_root, int x_gap, bool windowed)
 {
-	struct menu *menu;
-
-	for (menu = widget->menus; menu != NULL; menu = menu->next)
-		if (window == menu->window)
-			return menu;
-	return NULL;
-}
-
-static int
-menu_popup(struct widget *widget, struct entry *entries, size_t nentries,
-		int x_root, int y_root, bool windowed)
-{
+	static int call_depth = 0;
 	XEvent xev;
-	struct menu *menu;
+	struct menu menu;
 	struct entry *entry;
 	ssize_t nentry;
-	XRectangle monitor = {
-		.x = 0,
-		.y = 0,
-		.width = DisplayWidth(widget->display, widget->screen),
-		.height = DisplayHeight(widget->display, widget->screen),
-	};
+	int nmons = 0;
+	XRectangle monitor;
+	XRRMonitorInfo *infos;
 
-	{
-		int nmons = 0;
-		XRRMonitorInfo *infos = XRRGetMonitors(
-			widget->display, widget->rootwin, True, &nmons
-		);
-
-		for (int i = 0; i < nmons && infos != NULL; i++) {
-			if (x_root < infos[i].x)
-				continue;
-			if (x_root >= infos[i].x + infos[i].width)
-				continue;
-			if (y_root < infos[i].y)
-				continue;
-			if (y_root >= infos[i].y + infos[i].height)
-				continue;
-			monitor.x = infos[i].x;
-			monitor.y = infos[i].y;
-			monitor.width = infos[i].width;
-			monitor.height = infos[i].height;
-			break;
-		}
-		XRRFreeMonitors(infos);
+	monitor.x = 0;
+	monitor.y = 0;
+	monitor.width = DisplayWidth(widget->display, widget->screen);
+	monitor.height = DisplayHeight(widget->display, widget->screen);
+	infos = XRRGetMonitors(widget->display, widget->rootwin, True, &nmons);
+	for (int i = 0; i < nmons && infos != NULL; i++) {
+		if (x_root < infos[i].x)
+			continue;
+		if (x_root >= infos[i].x + infos[i].width)
+			continue;
+		if (y_root < infos[i].y)
+			continue;
+		if (y_root >= infos[i].y + infos[i].height)
+			continue;
+		monitor.x = infos[i].x;
+		monitor.y = infos[i].y;
+		monitor.width = infos[i].width;
+		monitor.height = infos[i].height;
+		break;
 	}
+	XRRFreeMonitors(infos);
 	menu_new(
-		widget, entries, nentries,
-		&monitor, &(XRectangle){x_root, y_root, 0, 0},
+		widget, &menu, parent, entries, nentries,
+		&monitor, &(XRectangle){x_root, y_root, x_gap, 0},
 		windowed, widget->title
 	);
-	while (widget->menus != NULL) switch (XNextEvent(widget->display, &xev), xev.type) {
+	if (call_depth++ == 0) {
+		(void)grabpointer(widget);
+		(void)grabkeyboard(widget);
+	}
+	while (call_depth > 0) switch (XNextEvent(widget->display, &xev), xev.type) {
 	case ButtonPress:
-		menu = getmenu(widget, xev.xbutton.window);
-		if (menu == NULL) {
-			closepopups(widget);
-			continue;
+		if (xev.xbutton.window != menu.window) {
+			XPutBackEvent(widget->display, &xev);
+			goto done;
 		}
-		while (widget->menus != menu)
-			delmenu(widget);
-		nentry = index_entry(widget, menu, xev.xbutton.y);
-		entry = get_entry(menu, nentry);
-		if (entry != NULL) {
-			if (entry->children != NULL) {
-				openentry(widget, &monitor, menu, nentry, false);
-			}
-		}
-		continue;
+		menu.selected = index_entry(widget, &menu, xev.xbutton.y);
+		goto enter;
 	case ButtonRelease:
+		if (xev.xbutton.window != menu.window) {
+			XPutBackEvent(widget->display, &xev);
+			goto done;
+		}
 		if (xev.xbutton.button != Button1 &&
 		    xev.xbutton.button != Button2 &&
 		    xev.xbutton.button != Button3)
 			continue;
-		menu = getmenu(widget, xev.xbutton.window);
-		if (menu == NULL)
-			continue;
-		nentry = index_entry(widget, menu, xev.xbutton.y);
-		if (nentry == TEAROFF) {
+		menu.selected = index_entry(widget, &menu, xev.xbutton.y);
+		if (menu.selected == TEAROFF) {
 #warning reimplement tearing off
 			continue;
 		}
-		entry = get_entry(menu, nentry);
+	enter:
+		commitdraw(widget, &menu, menu.selected);
+		entry = get_entry(&menu, menu.selected);
 		if (entry == NULL)
 			continue;
-		if (entry->children != NULL)
-			continue;
-		while (widget->menus != menu)
-			delmenu(widget);
-		openentry(widget, &monitor, menu, nentry, xev.xbutton.button == Button2);
+		if (entry->children != NULL) {
+			menu_popup(
+				widget, &menu, entry->children, entry->nchildren,
+				menu.window_geometry.x,
+				menu.window_geometry.y + get_entry_ypos(widget, &menu, menu.selected),
+				menu.window_geometry.width,
+				false
+			);
+		} else if (entry->output != NULL) {
+			if (xev.type == ButtonPress || xev.type == MotionNotify)
+				continue;
+			blink_entry(widget, &menu, menu.selected);
+			if ((xev.type == KeyPress && (xev.xkey.state & ShiftMask)) ||
+			    (xev.xbutton.state & ShiftMask) ||
+			    (xev.xbutton.button == Button2))
+				(void)printf("%s\n", entry->altoutput);
+			else
+				(void)printf("%s\n", entry->output);
+			(void)fflush(stdout);
+			call_depth = 0;
+			goto done;
+		}
 		continue;
 	case ClientMessage:
 		if ((Atom)xev.xclient.data.l[0] == XInternAtom(widget->display, "WM_DELETE_WINDOW", False))
 			closewidget(widget);
 		continue;
 	case ConfigureNotify:
-		for (menu = widget->menus; menu != NULL; menu = menu->next)
-			if (menu->window == xev.xconfigure.window)
-				break;
-		if (menu == NULL)
+		if (xev.xconfigure.window != menu.window)
 			continue;
-		menu->window_geometry.x = xev.xconfigure.x;
-		menu->window_geometry.y = xev.xconfigure.y;
-		if (menu->window_geometry.width  == xev.xconfigure.width &&
-		    menu->window_geometry.height == xev.xconfigure.height)
+		menu.window_geometry.x = xev.xconfigure.x;
+		menu.window_geometry.y = xev.xconfigure.y;
+		if (menu.window_geometry.width  == xev.xconfigure.width &&
+		    menu.window_geometry.height == xev.xconfigure.height)
 			continue;       /* size not changed */
-		menu->window_geometry.width = xev.xconfigure.width;
-		menu->window_geometry.height = xev.xconfigure.height;
-		drawmenu(widget, menu);
-		if (get_entry(menu, menu->selected) != NULL)
-			commitdraw(widget, menu, menu->selected);
+		menu.window_geometry.width = xev.xconfigure.width;
+		menu.window_geometry.height = xev.xconfigure.height;
+		drawmenu(widget, &menu);
+		if (get_entry(&menu, menu.selected) != NULL)
+			commitdraw(widget, &menu, menu.selected);
 		continue;
 	case DestroyNotify:
 		if (widget->leader != None && xev.xdestroywindow.window == widget->leader)
 			closewidget(widget);
 		continue;
 	case KeyPress:
-		if (widget->menus == NULL)
-			continue;
 		KeySym ksym = XkbKeycodeToKeysym(widget->display, xev.xkey.keycode, 0, 0);
 
 		if (ksym == XK_Tab && FLAG(xev.xkey.state, ShiftMask))
 			ksym = XK_ISO_Left_Tab;
 		if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab)
-			selprev(widget, widget->menus);
+			selprev(widget, &menu);
 		if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab)
-			selnext(widget, widget->menus);
+			selnext(widget, &menu);
 		if (ksym == XK_Home || ksym == XK_KP_Home)
-			selfirst(widget, widget->menus);
+			selfirst(widget, &menu);
 		if (ksym == XK_End || ksym == XK_KP_End)
-			sellast(widget, widget->menus);
+			sellast(widget, &menu);
 		if (ksym == XK_Right || ksym == XK_Return ||
 		    ksym == XK_KP_Right || ksym == XK_KP_Enter)
-			openentry(widget, &monitor, menu, menu->selected, false);
-		if (ksym == XK_Escape)
-			delmenu(widget);
+			goto enter;
+		if (ksym == XK_Escape) {
+			call_depth = 0;
+			goto done;
+		}
 		if (ksym == XK_Left || ksym == XK_KP_Left)
-			if (menu->next != NULL) delmenu(widget);
+			goto done;
 		continue;
 	case LeaveNotify:
-		if (getmenu(widget, xev.xcrossing.window) == widget->menus) {
-			widget->menus->selected = -1;
-			commitdraw(widget, widget->menus, menu->selected);
+		if (xev.xcrossing.window == menu.window) {
+			menu.selected = -1;
+			commitdraw(widget, &menu, menu.selected);
 		}
 		continue;
 	case MotionNotify:
-		menu = getmenu(widget, xev.xmotion.window);
-		if (menu == NULL)
+		//for (struct menu *m = menu.parent; m != NULL; m = m->parent) {
+		//	if (xev.xmotion.window == m->window) {
+		//		XPutBackEvent(widget->display, &xev);
+		//		goto done;
+		//	}
+		//}
+		if (xev.xmotion.window != menu.window)
 			continue;
-		nentry = index_entry(widget, menu, xev.xbutton.y);
+		nentry = index_entry(widget, &menu, xev.xbutton.y);
 		if (nentry == SCROLLUP || nentry == SCROLLDOWN)
-			scroll(widget, menu, nentry == SCROLLDOWN);
-		if (nentry == menu->selected)
+			scroll(widget, &menu, nentry == SCROLLDOWN);
+		if (nentry == menu.selected)
 			continue;
-		entry = get_entry(menu, nentry);
-		menu->selected = nentry;
-		commitdraw(widget, menu, menu->selected);
-		if (entry != NULL && xev.xmotion.state & (Button1Mask|Button3Mask)) {
-			while (widget->menus != menu)
-				delmenu(widget);
-			if (openssubmenu(entry)) {
-				openentry(widget, &monitor, menu, nentry, false);
-			}
-		}
+		entry = get_entry(&menu, nentry);
+		menu.selected = nentry;
+		commitdraw(widget, &menu, menu.selected);
+		if (entry != NULL && xev.xmotion.state & (Button1Mask|Button3Mask))
+			goto enter;
 		continue;
 	case PropertyNotify:
 		if (xev.xproperty.state == PropertyNewValue &&
@@ -2087,13 +2037,15 @@ menu_popup(struct widget *widget, struct entry *entries, size_t nentries,
 				continue;
 			loadresources(widget, str);
 			free(str);
-			for (menu = widget->menus; menu != NULL; menu = menu->next) {
-				commitdraw(widget, menu, menu->selected);
+			for (struct menu *m = &menu; m != NULL; m = m->parent) {
+				commitdraw(widget, m, m->selected);
 			}
 		}
 		continue;
 	}
-	return RETURN_SUCCESS;
+done:
+	menu_destroy(widget, &menu);
+	return;
 }
 
 static void
@@ -2420,7 +2372,7 @@ main(int argc, char *argv[])
 			x_root += INITIAL_DISPLACEMENT;
 			y_root += INITIAL_DISPLACEMENT;
 		}
-		menu_popup(widget, entries, nentries, x_root, y_root, windowed);
+		menu_popup(widget, NULL, entries, nentries, x_root, y_root, 0, windowed);
 		ungrab(widget);
 	} while (rootmode);
 	cleanup(widget);
