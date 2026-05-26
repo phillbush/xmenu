@@ -101,7 +101,6 @@ struct menu {
 		Pixmap pixmap;
 		Picture picture;
 	} canvas[CANVAS_LAST];
-	size_t nicons;
 	bool tearable;
 	bool overflow;
 	bool hasicon;
@@ -1596,7 +1595,6 @@ popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 	if (menu->tearable)
 		menu->total_height += widget->separatorh;
 	menu->window_geometry.height = widget->inner_border_width * 2;
-	menu->nicons = 0;
 	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
 		struct entry *entry = &menu->entries[entryc];
 
@@ -1611,10 +1609,8 @@ popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
 			textw = 0;
 			menu->total_height += widget->separatorh;
 		}
-		if (entry->file != NULL) {
+		if (entry->file != NULL)
 			menu->hasicon = true;
-			menu->nicons++;
-		}
 		if (openssubmenu(entry))
 			menu->hassubmenu = true;
 		menu->window_geometry.width = MAX(menu->window_geometry.width, textw);
