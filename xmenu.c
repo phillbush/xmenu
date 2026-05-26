@@ -1426,33 +1426,31 @@ commitdraw(struct widget *widget, struct menu *menu, ssize_t selected)
 	XClearWindow(widget->display, menu->window);
 }
 
-static void
-selfirst(struct widget *widget, struct menu *menu)
+static ssize_t
+selfirst(struct widget *, struct menu *menu)
 {
 	menu->curr_screenful.first_entry = 0;
 	menu->curr_screenful.offset = 0;
 	for (ssize_t entryc = 0; entryc < (ssize_t)menu->nentries; entryc++) {
 		struct entry *entry = &menu->entries[entryc];
 		if (entry->output != NULL || entry->nchildren > 0) {
-			menu->selected = entryc;
-			commitdraw(widget, menu, menu->selected);
-			return;
+			return entryc;
 		}
 	}
+	return -1;
 }
 
-static void
-sellast(struct widget *widget, struct menu *menu)
+static ssize_t
+sellast(struct widget *, struct menu *menu)
 {
 	menu->curr_screenful = menu->last_screenful;
 	for (ssize_t entryc = menu->nentries - 1; entryc >= 0; entryc--) {
 		struct entry *entry = &menu->entries[entryc];
 		if (entry->output != NULL || entry->nchildren > 0) {
-			menu->selected = entryc;
-			commitdraw(widget, menu, menu->selected);
-			return;
+			return entryc;
 		}
 	}
+	return -1;
 }
 
 static void
@@ -1483,22 +1481,20 @@ scrolldown(struct widget *widget, struct menu *menu, int diff)
 	}
 }
 
-static void
-selprev(struct widget *widget, struct menu *menu)
+static ssize_t
+selprev(struct widget *widget, struct menu *menu, ssize_t selected)
 {
 	int ypos, height;
 	int scroll_threshold;
 
-	if (menu->selected < 0) {
-		sellast(widget, menu);
-		return;
-	}
+	if (selected < 0)
+		return sellast(widget, menu);
 	scroll_threshold = widget->inner_border_width + get_entry_height(widget, menu, SCROLLUP);
 	if (menu->tearable)
 		scroll_threshold += get_entry_height(widget, menu, TEAROFF);
-	ypos = get_entry_ypos(widget, menu, menu->selected);
-	height = get_entry_height(widget, menu, menu->selected);
-	for (ssize_t entryc = menu->selected - 1; entryc >= 0; entryc--) {
+	ypos = get_entry_ypos(widget, menu, selected);
+	height = get_entry_height(widget, menu, selected);
+	for (ssize_t entryc = selected - 1; entryc >= 0; entryc--) {
 		struct entry *entry = &menu->entries[entryc];
 
 		if (menu->overflow) {
@@ -1509,28 +1505,24 @@ selprev(struct widget *widget, struct menu *menu)
 			}
 		}
 		if (entry->output != NULL || entry->nchildren > 0) {
-			menu->selected = entryc;
-			commitdraw(widget, menu, menu->selected);
-			return;
+			return entryc;
 		}
 	}
-	sellast(widget, menu);
+	return sellast(widget, menu);
 }
 
-static void
-selnext(struct widget *widget, struct menu *menu)
+static ssize_t
+selnext(struct widget *widget, struct menu *menu, ssize_t selected)
 {
 	int ypos, height;
 	int scroll_threshold = menu->window_geometry.height
 	                     - widget->separatorh - widget->inner_border_width;
 
-	if (menu->selected < 0) {
-		selfirst(widget, menu);
-		return;
-	}
-	ypos = get_entry_ypos(widget, menu, menu->selected);
-	height = get_entry_height(widget, menu, menu->selected);
-	for (ssize_t entryc = menu->selected+1; entryc < (ssize_t)menu->nentries; entryc++) {
+	if (selected < 0)
+		return selfirst(widget, menu);
+	ypos = get_entry_ypos(widget, menu, selected);
+	height = get_entry_height(widget, menu, selected);
+	for (ssize_t entryc = selected+1; entryc < (ssize_t)menu->nentries; entryc++) {
 		struct entry *entry = &menu->entries[entryc];
 
 		if (menu->overflow) {
@@ -1541,12 +1533,10 @@ selnext(struct widget *widget, struct menu *menu)
 			}
 		}
 		if (entry->output != NULL || entry->nchildren > 0) {
-			menu->selected = entryc;
-			commitdraw(widget, menu, menu->selected);
-			return;
+			return entryc;
 		}
 	}
-	selfirst(widget, menu);
+	return selfirst(widget, menu);
 }
 
 static int
@@ -1698,7 +1688,7 @@ menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
 	);
 
 	drawmenu(widget, menu);
-	commitdraw(widget, menu, menu->selected);
+	commitdraw(widget, menu, -1);
 	XMapRaised(widget->display, menu->window);
 	return 0;
 }
@@ -1821,7 +1811,7 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 			else
 				scrollup(widget, menu, widget->entryh);
 			if (menu->curr_screenful.offset != last_offset)
-				commitdraw(widget, menu, menu->selected);
+				commitdraw(widget, menu, -1);
 			last_offset = menu->curr_screenful.offset;
 			XFlush(widget->display);
 			break;
@@ -1980,23 +1970,27 @@ menu_popup(struct widget *widget, struct menu *parent,
 
 		if (ksym == XK_Tab && FLAG(xev.xkey.state, ShiftMask))
 			ksym = XK_ISO_Left_Tab;
-		if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab)
-			selprev(widget, &menu);
-		if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab)
-			selnext(widget, &menu);
-		if (ksym == XK_Home || ksym == XK_KP_Home)
-			selfirst(widget, &menu);
-		if (ksym == XK_End || ksym == XK_KP_End)
-			sellast(widget, &menu);
-		if (ksym == XK_Right || ksym == XK_Return ||
-		    ksym == XK_KP_Right || ksym == XK_KP_Enter)
+		if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab) {
+			menu.selected = selprev(widget, &menu, menu.selected);
+		} else if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab) {
+			menu.selected = selnext(widget, &menu, menu.selected);
+		} else if (ksym == XK_Home || ksym == XK_KP_Home) {
+			menu.selected = selfirst(widget, &menu);
+		} else if (ksym == XK_End || ksym == XK_KP_End) {
+			menu.selected = sellast(widget, &menu);
+		} else if (ksym == XK_Right || ksym == XK_KP_Right) {
 			goto enter;
-		if (ksym == XK_Escape) {
+		} else if (ksym == XK_Return || ksym == XK_KP_Enter) {
+			goto enter;
+		} else if (ksym == XK_Escape) {
 			call_depth = 0;
 			goto done;
-		}
-		if (ksym == XK_Left || ksym == XK_KP_Left)
+		} else if (ksym == XK_Left || ksym == XK_KP_Left) {
 			goto done;
+		} else {
+			continue;
+		}
+		commitdraw(widget, &menu, menu.selected);
 		continue;
 	case LeaveNotify:
 		if (xev.xcrossing.window == menu.window) {
