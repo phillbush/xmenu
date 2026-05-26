@@ -4,6 +4,9 @@ SRCS = ${OBJS:.o=.c}
 MAN = ${PROG:=.1}
 DOC = README.md
 
+_cflags = -std=c2x -D_XOPEN_SOURCE=800 -D_BSD_SOURCE -D_GNU_SOURCE \
+	-I./ -I/usr{,/local,/X11R6}/include{,/freetype2} ${CPPFLAGS} ${CFLAGS}
+
 PREFIX ?= /usr/local
 MANPREFIX ?= ${PREFIX}/share/man
 bindir = ${DESTDIR}${PREFIX}/bin
@@ -24,9 +27,7 @@ debug:
 	${PROG}
 
 .c.o:
-	${CC} -std=c2x -D_XOPEN_SOURCE=800 -D_BSD_SOURCE -D_GNU_SOURCE \
-	-I./ -I/usr{,/local,/X11R6}/include{,/freetype2} \
-	${CPPFLAGS} ${CFLAGS} -o $@ -c $<
+	${CC} ${_cflags} -o $@ -c $<
 
 xmenu.o control/font.o: control/font.h
 
@@ -37,7 +38,7 @@ tags: ${SRCS}
 .PHONY: lint
 lint: ${SRCS}
 	-mandoc -T lint -W warning ${MAN}
-	-clang-tidy ${SRCS} -- -std=c99 ${DEFS} ${INCS} ${CPPFLAGS}
+	-clang-tidy ${SRCS} -- ${_cflags}
 
 .PHONY: clean
 clean:
