@@ -1542,10 +1542,37 @@ selnext(struct widget *widget, struct menu *menu, ssize_t selected)
 static int
 menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
 		struct entry *entries, size_t nentries,
-		XRectangle *monitor, XRectangle *basis, bool windowed, char const *title)
+		int x_root, int y_root, unsigned int x_diff,
+		bool windowed, char const *title)
 {
-	int max_height = monitor->height - widget->outer_border_width * 2;
+	int max_height;
 	int xgap, ygap;
+	XRectangle monitor;
+	XRRMonitorInfo *infos;
+	int nmons = 0;
+
+	monitor.x = 0;
+	monitor.y = 0;
+	monitor.width = DisplayWidth(widget->display, widget->screen);
+	monitor.height = DisplayHeight(widget->display, widget->screen);
+	infos = XRRGetMonitors(widget->display, widget->rootwin, True, &nmons);
+	for (int i = 0; i < nmons && infos != NULL; i++) {
+		if (x_root < infos[i].x)
+			continue;
+		if (x_root >= infos[i].x + infos[i].width)
+			continue;
+		if (y_root < infos[i].y)
+			continue;
+		if (y_root >= infos[i].y + infos[i].height)
+			continue;
+		monitor.x = infos[i].x;
+		monitor.y = infos[i].y;
+		monitor.width = infos[i].width;
+		monitor.height = infos[i].height;
+		break;
+	}
+	XRRFreeMonitors(infos);
+	max_height = monitor.height - widget->outer_border_width * 2;
 
 	*menu = (struct menu){
 		.entries = entries,
@@ -1608,24 +1635,24 @@ menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
 		menu->window_geometry.width += widget->iconsize + PADDING;
 	if (menu->hassubmenu)
 		menu->window_geometry.width += TRIANGLE_WIDTH(widget) + TRIANGLE_PAD(widget) + PADDING;
-	menu->window_geometry.width = MIN(menu->window_geometry.width, monitor->width/2);
+	menu->window_geometry.width = MIN(menu->window_geometry.width, monitor.width/2);
 
 	/* place menu to align with parent menu and be visible on monitor */
 	if (menu->overflow && menu->parent != NULL)
 		ygap -= widget->separatorh;
-	menu->window_geometry.x = monitor->x;
-	menu->window_geometry.y = monitor->y;
-	if (monitor->x + monitor->width - (basis->x + basis->width + xgap)
+	menu->window_geometry.x = monitor.x;
+	menu->window_geometry.y = monitor.y;
+	if (monitor.x + monitor.width - (x_root + x_diff + xgap)
 	    >= menu->window_geometry.width) {
-		menu->window_geometry.x = basis->x + basis->width + xgap;
-	} else if (basis->x > (long)menu->window_geometry.width + xgap) {
-		menu->window_geometry.x = basis->x - menu->window_geometry.width - xgap;
+		menu->window_geometry.x = x_root + x_diff + xgap;
+	} else if (x_root > (long)menu->window_geometry.width + xgap) {
+		menu->window_geometry.x = x_root - menu->window_geometry.width - xgap;
 	}
-	if (monitor->y + max_height - (basis->y + ygap)
+	if (monitor.y + max_height - (y_root + ygap)
 	    >= menu->window_geometry.height) {
-		menu->window_geometry.y = basis->y + ygap;
-	} else if (monitor->y + max_height > menu->window_geometry.height + ygap) {
-		menu->window_geometry.y = monitor->y + max_height;
+		menu->window_geometry.y = y_root + ygap;
+	} else if (monitor.y + max_height > menu->window_geometry.height + ygap) {
+		menu->window_geometry.y = monitor.y + max_height;
 		menu->window_geometry.y -= menu->window_geometry.height;
 	}
 
@@ -1859,35 +1886,10 @@ menu_popup(struct widget *widget, struct menu *parent,
 	struct menu menu;
 	struct entry *entry;
 	ssize_t nentry;
-	int nmons = 0;
-	XRectangle monitor;
-	XRRMonitorInfo *infos;
 
-	monitor.x = 0;
-	monitor.y = 0;
-	monitor.width = DisplayWidth(widget->display, widget->screen);
-	monitor.height = DisplayHeight(widget->display, widget->screen);
-	infos = XRRGetMonitors(widget->display, widget->rootwin, True, &nmons);
-	for (int i = 0; i < nmons && infos != NULL; i++) {
-		if (x_root < infos[i].x)
-			continue;
-		if (x_root >= infos[i].x + infos[i].width)
-			continue;
-		if (y_root < infos[i].y)
-			continue;
-		if (y_root >= infos[i].y + infos[i].height)
-			continue;
-		monitor.x = infos[i].x;
-		monitor.y = infos[i].y;
-		monitor.width = infos[i].width;
-		monitor.height = infos[i].height;
-		break;
-	}
-	XRRFreeMonitors(infos);
 	menu_new(
 		widget, &menu, parent, entries, nentries,
-		&monitor, &(XRectangle){x_root, y_root, x_gap, 0},
-		windowed, widget->title
+		x_root, y_root, x_gap, windowed, widget->title
 	);
 	if (call_depth++ == 0) {
 		(void)grabpointer(widget);
