@@ -1542,7 +1542,7 @@ selnext(struct widget *widget, struct menu *menu, ssize_t selected)
 static int
 menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
 		struct entry *entries, size_t nentries,
-		int x_root, int y_root, unsigned int x_diff,
+		int x_root, int y_root, unsigned int button_width,
 		bool windowed, char const *title)
 {
 	int max_height;
@@ -1642,9 +1642,9 @@ menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
 		ygap -= widget->separatorh;
 	menu->window_geometry.x = monitor.x;
 	menu->window_geometry.y = monitor.y;
-	if (monitor.x + monitor.width - (x_root + x_diff + xgap)
+	if (monitor.x + monitor.width - (x_root + button_width + xgap)
 	    >= menu->window_geometry.width) {
-		menu->window_geometry.x = x_root + x_diff + xgap;
+		menu->window_geometry.x = x_root + button_width + xgap;
 	} else if (x_root > (long)menu->window_geometry.width + xgap) {
 		menu->window_geometry.x = x_root - menu->window_geometry.width - xgap;
 	}
