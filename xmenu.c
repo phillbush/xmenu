@@ -1552,7 +1552,7 @@ selnext(struct widget *widget, struct menu *menu)
 }
 
 static void
-popupmenu(struct widget *widget, struct entry *entries, size_t nentries,
+menu_new(struct widget *widget, struct entry *entries, size_t nentries,
 		XRectangle *monitor, XRectangle *basis, bool windowed, char const *title)
 {
 	struct menu *menu;
@@ -1881,7 +1881,7 @@ openentry(struct widget *widget, XRectangle *monitor, struct menu *menu, ssize_t
 	rect = menu->window_geometry;
 	rect.y += get_entry_ypos(widget, menu, nentry);
 	if (entry->children != NULL) {
-		popupmenu(
+		menu_new(
 			widget, entry->children, entry->nchildren,
 			monitor, &rect, false, entry->label
 		);
@@ -1919,7 +1919,7 @@ getmenu(struct widget *widget, Window window)
 }
 
 static int
-run(struct widget *widget, struct entry *entries, size_t nentries,
+menu_popup(struct widget *widget, struct entry *entries, size_t nentries,
 		int x_root, int y_root, bool windowed)
 {
 	XEvent xev;
@@ -1956,7 +1956,7 @@ run(struct widget *widget, struct entry *entries, size_t nentries,
 		}
 		XRRFreeMonitors(infos);
 	}
-	popupmenu(
+	menu_new(
 		widget, entries, nentries,
 		&monitor, &(XRectangle){x_root, y_root, 0, 0},
 		windowed, widget->title
@@ -2420,7 +2420,7 @@ main(int argc, char *argv[])
 			x_root += INITIAL_DISPLACEMENT;
 			y_root += INITIAL_DISPLACEMENT;
 		}
-		run(widget, entries, nentries, x_root, y_root, windowed);
+		menu_popup(widget, entries, nentries, x_root, y_root, windowed);
 		ungrab(widget);
 	} while (rootmode);
 	cleanup(widget);
