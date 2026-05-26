@@ -123,7 +123,7 @@ struct widget {
 	int entryh, separatorh;
 	int inner_border_width;  /* part of window content, for shadow/relief */
 	int outer_border_width;  /* X11 border, not counted on window size */
-	int iconsize, gap;
+	int iconsize;
 	int maxentries;
 	bool initimlib;
 	bool tearoff;
@@ -1585,7 +1585,7 @@ menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
 		.tearable = !windowed && widget->tearoff,
 		.tornoff = windowed,
 	};
-	xgap = widget->gap + widget->outer_border_width * 2;
+	xgap = widget->outer_border_width * 2;
 	ygap = -widget->inner_border_width;
 	if (menu->tearable)
 		ygap -= widget->separatorh;
