@@ -561,7 +561,6 @@ static size_t
 fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
 {
 	size_t nentries;
-	size_t linelen;
 	size_t maxentries = 0;
 	struct entry *prev_entry = NULL;
 
@@ -576,14 +575,13 @@ fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t da
 			maxentries++;
 	}
 
-	linelen = 0;
 	nentries = 0;
 	while (*from < datasize) {
 		struct entry *entry = &entries[nentries];
 		size_t entry_indentlvl;
 		char *line = data + *from;
+		size_t linelen = strcspn(line, "\n");
 
-		linelen = strcspn(line, "\n");
 		entry_indentlvl = strspn(line, "\t");
 		if (entry_indentlvl < menu_indentlvl) {
 			break;
@@ -2038,7 +2036,6 @@ menu_run(struct widget *widget, struct menu *menu)
 				scroll(widget, menu, nentry == SCROLLDOWN);
 			if (nentry == menu->selected)
 				break;
-			entry = get_entry(menu, nentry);
 			menu->selected = nentry;
 			break;
 		case PropertyNotify:
