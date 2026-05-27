@@ -675,7 +675,8 @@ grabpointer(struct widget *widget)
 	for (int i = 0; i < 1000; i++) {
 		if (XGrabPointer(
 			widget->display, widget->rootwin, True,
-			ButtonPressMask, GrabModeAsync, GrabModeAsync,
+			ButtonPressMask|PointerMotionMask,
+			GrabModeAsync, GrabModeAsync,
 			None, None, CurrentTime
 		) == GrabSuccess) return RETURN_SUCCESS;
 		nanosleep(&ts, NULL);
@@ -1539,12 +1540,13 @@ selnext(struct widget *widget, struct menu *menu, ssize_t selected)
 	return selfirst(widget, menu);
 }
 
-static int
-menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
+static struct menu *
+menu_new(struct widget *widget, struct menu *parent,
 		struct entry *entries, size_t nentries,
 		int x_root, int y_root, unsigned int button_width,
 		bool windowed, char const *title)
 {
+	struct menu *menu;
 	int max_height;
 	int xgap, ygap;
 	XRectangle monitor;
@@ -1574,6 +1576,8 @@ menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
 	XRRFreeMonitors(infos);
 	max_height = monitor.height - widget->outer_border_width * 2;
 
+	if ((menu = malloc(sizeof(*menu))) == NULL)
+		return NULL;
 	*menu = (struct menu){
 		.entries = entries,
 		.nentries = nentries,
@@ -1658,7 +1662,8 @@ menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
 
 	menu->window = createwindow(
 		widget, &menu->window_geometry,
-		KeyPressMask | StructureNotifyMask | LeaveWindowMask |
+		KeyPressMask | StructureNotifyMask |
+		EnterWindowMask | LeaveWindowMask |
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
 		menu->tornoff ? false : true
 	);
@@ -1717,11 +1722,11 @@ menu_new(struct widget *widget, struct menu *menu, struct menu *parent,
 	drawmenu(widget, menu);
 	commitdraw(widget, menu, -1);
 	XMapRaised(widget->display, menu->window);
-	return 0;
+	return menu;
 }
 
 static void
-menu_destroy(struct widget *widget, struct menu *menu)
+menu_free(struct widget *widget, struct menu *menu)
 {
 	if (menu == NULL)
 		return;
@@ -1730,6 +1735,7 @@ menu_destroy(struct widget *widget, struct menu *menu)
 		XRenderFreePicture(widget->display, menu->canvas[i].picture);
 		XFreePixmap(widget->display, menu->canvas[i].pixmap);
 	}
+	free(menu);
 }
 
 static void
@@ -1737,13 +1743,6 @@ ungrab(struct widget *widget)
 {
 	XUngrabPointer(widget->display, CurrentTime);
 	XUngrabKeyboard(widget->display, CurrentTime);
-}
-
-static void
-closewidget(struct widget *widget)
-{
-	ungrab(widget);
-	free(widget);
 }
 
 static size_t
@@ -1877,171 +1876,208 @@ blink_entry(struct widget *widget, struct menu *menu, ssize_t nentry)
 }
 
 static void
-menu_popup(struct widget *widget, struct menu *parent,
-		struct entry *entries, size_t nentries,
-		int x_root, int y_root, int x_gap, bool windowed)
+menu_run(struct widget *widget, struct menu *menu)
 {
+	struct menu *submenu = NULL;
 	static int call_depth = 0;
 	XEvent xev;
-	struct menu menu;
 	struct entry *entry;
 	ssize_t nentry;
 
-	menu_new(
-		widget, &menu, parent, entries, nentries,
-		x_root, y_root, x_gap, windowed, widget->title
-	);
 	if (call_depth++ == 0) {
 		(void)grabpointer(widget);
 		(void)grabkeyboard(widget);
 	}
-	while (call_depth > 0) switch (XNextEvent(widget->display, &xev), xev.type) {
-	case ButtonPress:
-		if (xev.xbutton.window != menu.window) {
-			XPutBackEvent(widget->display, &xev);
-			goto done;
-		}
-		menu.selected = index_entry(widget, &menu, xev.xbutton.y);
-		goto enter;
-	case ButtonRelease:
-		if (xev.xbutton.window != menu.window) {
-			XPutBackEvent(widget->display, &xev);
-			goto done;
-		}
-		if (xev.xbutton.button != Button1 &&
-		    xev.xbutton.button != Button2 &&
-		    xev.xbutton.button != Button3)
-			continue;
-		menu.selected = index_entry(widget, &menu, xev.xbutton.y);
-		if (menu.selected == TEAROFF) {
+	while (call_depth > 0) {
+		switch (XNextEvent(widget->display, &xev), xev.type) {
+		case ButtonPress:
+		case ButtonRelease:
+			if (xev.xbutton.window != menu->window) {
+				XPutBackEvent(widget->display, &xev);
+				goto done;
+			}
+			if (xev.xbutton.button != Button1 &&
+			    xev.xbutton.button != Button2 &&
+			    xev.xbutton.button != Button3)
+				break;
+			menu->selected = index_entry(widget, menu, xev.xbutton.y);
+			if (menu->selected == TEAROFF) {
 #warning reimplement tearing off
-			continue;
-		}
-	enter:
-		commitdraw(widget, &menu, menu.selected);
-		entry = get_entry(&menu, menu.selected);
-		if (entry == NULL)
-			continue;
-		if (entry->children != NULL) {
-			menu_popup(
-				widget, &menu, entry->children, entry->nchildren,
-				menu.window_geometry.x,
-				menu.window_geometry.y + get_entry_ypos(widget, &menu, menu.selected),
-				menu.window_geometry.width,
-				false
-			);
-		} else if (entry->output != NULL) {
-			if (xev.type == ButtonPress || xev.type == MotionNotify)
-				continue;
-			blink_entry(widget, &menu, menu.selected);
-			if ((xev.type == KeyPress && (xev.xkey.state & ShiftMask)) ||
-			    (xev.xbutton.state & ShiftMask) ||
-			    (xev.xbutton.button == Button2))
-				(void)printf("%s\n", entry->altoutput);
-			else
-				(void)printf("%s\n", entry->output);
-			(void)fflush(stdout);
+				break;
+			}
+		enter:
+			commitdraw(widget, menu, menu->selected);
+			entry = get_entry(menu, menu->selected);
+			if (entry == NULL)
+				break;
+			if (entry->children != NULL)
+				break;
+			if (entry->output != NULL) {
+				if (xev.type == ButtonPress || xev.type == MotionNotify)
+					break;
+				blink_entry(widget, menu, menu->selected);
+				if ((xev.type == KeyPress && (xev.xkey.state & ShiftMask)) ||
+				    (xev.xbutton.state & ShiftMask) ||
+				    (xev.xbutton.button == Button2))
+					(void)printf("%s\n", entry->altoutput);
+				else
+					(void)printf("%s\n", entry->output);
+				(void)fflush(stdout);
+				call_depth = 0;
+				goto done;
+			}
+			break;
+		case ClientMessage:
+			if ((Atom)xev.xclient.data.l[0] == XInternAtom(widget->display, "WM_DELETE_WINDOW", False)) {
+				call_depth = 0;
+				goto done;
+			}
+			break;
+		case ConfigureNotify:
+			if (xev.xconfigure.window != menu->window)
+				break;
+			menu->window_geometry.x = xev.xconfigure.x;
+			menu->window_geometry.y = xev.xconfigure.y;
+			if (menu->window_geometry.width  == xev.xconfigure.width &&
+			    menu->window_geometry.height == xev.xconfigure.height)
+				break;       /* size not changed */
+			menu->window_geometry.width = xev.xconfigure.width;
+			menu->window_geometry.height = xev.xconfigure.height;
+			drawmenu(widget, menu);
+			if (get_entry(menu, menu->selected) != NULL)
+				commitdraw(widget, menu, menu->selected);
+			break;
+		case UnmapNotify:
+			if (widget->leader == None)
+				break;
+			if (xev.xdestroywindow.window != widget->leader)
+				break;
 			call_depth = 0;
 			goto done;
-		}
-		continue;
-	case ClientMessage:
-		if ((Atom)xev.xclient.data.l[0] == XInternAtom(widget->display, "WM_DELETE_WINDOW", False))
-			closewidget(widget);
-		continue;
-	case ConfigureNotify:
-		if (xev.xconfigure.window != menu.window)
-			continue;
-		menu.window_geometry.x = xev.xconfigure.x;
-		menu.window_geometry.y = xev.xconfigure.y;
-		if (menu.window_geometry.width  == xev.xconfigure.width &&
-		    menu.window_geometry.height == xev.xconfigure.height)
-			continue;       /* size not changed */
-		menu.window_geometry.width = xev.xconfigure.width;
-		menu.window_geometry.height = xev.xconfigure.height;
-		drawmenu(widget, &menu);
-		if (get_entry(&menu, menu.selected) != NULL)
-			commitdraw(widget, &menu, menu.selected);
-		continue;
-	case DestroyNotify:
-		if (widget->leader != None && xev.xdestroywindow.window == widget->leader)
-			closewidget(widget);
-		continue;
-	case KeyPress:
-		KeySym ksym = XkbKeycodeToKeysym(widget->display, xev.xkey.keycode, 0, 0);
+		case KeyPress:
+			KeySym ksym = XkbKeycodeToKeysym(widget->display, xev.xkey.keycode, 0, 0);
 
-		if (ksym == XK_Tab && FLAG(xev.xkey.state, ShiftMask))
-			ksym = XK_ISO_Left_Tab;
-		if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab) {
-			menu.selected = selprev(widget, &menu, menu.selected);
-		} else if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab) {
-			menu.selected = selnext(widget, &menu, menu.selected);
-		} else if (ksym == XK_Home || ksym == XK_KP_Home) {
-			menu.selected = selfirst(widget, &menu);
-		} else if (ksym == XK_End || ksym == XK_KP_End) {
-			menu.selected = sellast(widget, &menu);
-		} else if (ksym == XK_Right || ksym == XK_KP_Right) {
-			goto enter;
-		} else if (ksym == XK_Return || ksym == XK_KP_Enter) {
-			goto enter;
-		} else if (ksym == XK_Escape) {
-			call_depth = 0;
-			goto done;
-		} else if (ksym == XK_Left || ksym == XK_KP_Left) {
-			goto done;
-		} else {
-			continue;
-		}
-		commitdraw(widget, &menu, menu.selected);
-		continue;
-	case LeaveNotify:
-		if (xev.xcrossing.window == menu.window) {
-			menu.selected = -1;
-			commitdraw(widget, &menu, menu.selected);
-		}
-		continue;
-	case MotionNotify:
-		//for (struct menu *m = menu.parent; m != NULL; m = m->parent) {
-		//	if (xev.xmotion.window == m->window) {
-		//		XPutBackEvent(widget->display, &xev);
-		//		goto done;
-		//	}
-		//}
-		if (xev.xmotion.window != menu.window)
-			continue;
-		nentry = index_entry(widget, &menu, xev.xbutton.y);
-		if (nentry == SCROLLUP || nentry == SCROLLDOWN)
-			scroll(widget, &menu, nentry == SCROLLDOWN);
-		if (nentry == menu.selected)
-			continue;
-		entry = get_entry(&menu, nentry);
-		menu.selected = nentry;
-		commitdraw(widget, &menu, menu.selected);
-		if (entry != NULL && xev.xmotion.state & (Button1Mask|Button3Mask))
-			goto enter;
-		continue;
-	case PropertyNotify:
-		if (xev.xproperty.state == PropertyNewValue &&
-		    xev.xproperty.window == widget->rootwin &&
-		    xev.xproperty.atom == XA_RESOURCE_MANAGER) {
+			if (ksym == XK_Tab && FLAG(xev.xkey.state, ShiftMask))
+				ksym = XK_ISO_Left_Tab;
+			if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab) {
+				menu->selected = selprev(widget, menu, menu->selected);
+			} else if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab) {
+				menu->selected = selnext(widget, menu, menu->selected);
+			} else if (ksym == XK_Home || ksym == XK_KP_Home) {
+				menu->selected = selfirst(widget, menu);
+			} else if (ksym == XK_End || ksym == XK_KP_End) {
+				menu->selected = sellast(widget, menu);
+			} else if (ksym == XK_Right || ksym == XK_KP_Right) {
+				goto enter;
+			} else if (ksym == XK_Return || ksym == XK_KP_Enter) {
+				goto enter;
+			} else if (ksym == XK_Escape) {
+				call_depth = 0;
+				goto done;
+			} else if (ksym == XK_Left || ksym == XK_KP_Left) {
+				goto done;
+			} else {
+				break;
+			}
+			commitdraw(widget, menu, menu->selected);
+			break;
+		case EnterNotify:
+			if (submenu != NULL && xev.xcrossing.window == submenu->window)
+				menu_run(widget, submenu);
+			break;
+		case MotionNotify:
+			for (struct menu *m = menu; m->parent != NULL; m = m->parent) {
+				struct entry *above;
+				if (xev.xmotion.window != m->parent->window)
+					continue;
+				above = get_entry(m->parent, index_entry(
+					widget, m->parent, xev.xmotion.y
+				));
+				if (above != NULL && above->children == m->entries)
+					break;
+				/*
+				 * pointer over ancestor menu, over entry
+				 * which does not spawn current menu chain
+				 */
+				XPutBackEvent(widget->display, &xev);
+				goto done;
+			}
+			if (xev.xmotion.window != menu->window) {
+				if (submenu == NULL) {
+					menu->selected = -1;
+					commitdraw(widget, menu, menu->selected);
+				}
+				break;
+			}
+			nentry = index_entry(widget, menu, xev.xbutton.y);
+			if (nentry == SCROLLUP || nentry == SCROLLDOWN)
+				scroll(widget, menu, nentry == SCROLLDOWN);
+			if (nentry == menu->selected)
+				break;
+			entry = get_entry(menu, nentry);
+			menu->selected = nentry;
+			commitdraw(widget, menu, menu->selected);
+			if (entry == NULL || entry->children == NULL)
+				break;
+			if ((xev.xmotion.state & (Button1Mask|Button3Mask)) == 0)
+				break;
+			break;
+		case PropertyNotify:
+			if (xev.xproperty.state != PropertyNewValue ||
+			    xev.xproperty.window != widget->rootwin ||
+			    xev.xproperty.atom != XA_RESOURCE_MANAGER)
+				break;
 			char *str = gettextprop(
 				widget->display,
 				widget->rootwin,
 				XA_RESOURCE_MANAGER
 			);
 			if (str == NULL)
-				continue;
+				break;
 			loadresources(widget, str);
 			free(str);
-			for (struct menu *m = &menu; m != NULL; m = m->parent) {
-				commitdraw(widget, m, m->selected);
+			for (struct menu *ancestor = menu;
+			     ancestor != NULL;
+			     ancestor = ancestor->parent) {
+				commitdraw(widget, ancestor, ancestor->selected);
 			}
+			break;
 		}
-		continue;
+		entry = get_entry(menu, menu->selected);
+		if (submenu != NULL && entry != NULL && submenu->entries == entry->children)
+			continue;
+		if (submenu != NULL)
+			menu_free(widget, submenu);
+		submenu = NULL;
+		if (entry != NULL && entry->children != NULL) {
+			submenu = menu_new(
+				widget, menu, entry->children, entry->nchildren,
+				menu->window_geometry.x,
+				menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
+				menu->window_geometry.width,
+				false, entry->label
+			);
+		}
 	}
 done:
-	menu_destroy(widget, &menu);
+	if (submenu != NULL)
+		menu_free(widget, submenu);
+	menu->selected = -1;
+	commitdraw(widget, menu, menu->selected);
 	return;
+}
+
+static void
+run(struct widget *widget, struct entry *entries, size_t nentries,
+		int x_root, int y_root, bool windowed)
+{
+	struct menu *menu;
+	menu = menu_new(
+		widget, NULL, entries, nentries,
+		x_root, y_root, 0, windowed, widget->title
+	);
+	menu_run(widget, menu);
+	menu_free(widget, menu);
 }
 
 static void
@@ -2137,7 +2173,6 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.colors[COLOR_OPACITY].chans = {.alpha = 0xFFFF},
 		.outer_border_width = 1,
 		.iconsize = 16,
-		.gap = 0,
 		.alignment = ALIGN_LEFT,
 	};
 	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
@@ -2368,7 +2403,7 @@ main(int argc, char *argv[])
 			x_root += INITIAL_DISPLACEMENT;
 			y_root += INITIAL_DISPLACEMENT;
 		}
-		menu_popup(widget, NULL, entries, nentries, x_root, y_root, 0, windowed);
+		run(widget, entries, nentries, x_root, y_root, windowed);
 		ungrab(widget);
 	} while (rootmode);
 	cleanup(widget);
