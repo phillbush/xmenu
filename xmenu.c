@@ -2405,12 +2405,6 @@ main(int argc, char *argv[])
 	do {
 		if (rootmode)
 			waitrootclick(widget, modifier, button);
-		if (!windowed) {
-			if (grabpointer(widget) == RETURN_FAILURE)
-				return EXIT_FAILURE;
-			if (grabkeyboard(widget) == RETURN_FAILURE)
-				return EXIT_FAILURE;
-		}
 		if (!FLAG(geometry_flags, XValue|YValue)) {
 			static const int INITIAL_DISPLACEMENT = 2;
 
