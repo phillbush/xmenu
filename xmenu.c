@@ -1912,10 +1912,7 @@ menu_run(struct widget *widget, struct menu *menu)
 	struct entry *entry;
 	ssize_t nentry, prevselected = menu->selected;
 
-	if (call_depth++ == 0) {
-		(void)grabpointer(widget);
-		(void)grabkeyboard(widget);
-	}
+	call_depth++;
 	while (call_depth > 0) {
 		XNextEvent(widget->display, &xev);
 		switch (xev.type) {
@@ -2105,8 +2102,11 @@ run(struct widget *widget, struct entry *entries, size_t nentries,
 		widget, NULL, entries, nentries,
 		x_root, y_root, 0, windowed, widget->title
 	);
+	(void)grabpointer(widget);
+	(void)grabkeyboard(widget);
 	menu_run(widget, menu);
 	menu_free(widget, menu);
+	ungrab(widget);
 }
 
 static void
@@ -2423,7 +2423,6 @@ main(int argc, char *argv[])
 			);
 		}
 		run(widget, entries, nentries, x_root, y_root, windowed);
-		ungrab(widget);
 	} while (rootmode);
 	cleanup(widget);
 	free(read_data);
