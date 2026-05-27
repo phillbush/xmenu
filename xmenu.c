@@ -24,6 +24,7 @@
 #include <X11/Xresource.h>
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
+#include <X11/cursorfont.h>
 #include <X11/extensions/Xrandr.h>
 #include <Imlib2.h>
 
@@ -670,6 +671,10 @@ static int
 grabpointer(struct widget *widget)
 {
 	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000  };
+	Cursor cursor;
+
+	/* set cursor so it does not change to whatever the window below uses */
+	cursor = XCreateFontCursor(widget->display, XC_left_ptr);
 
 	/* we may have to wait for another process to ungrab */
 	for (int i = 0; i < 1000; i++) {
@@ -677,11 +682,17 @@ grabpointer(struct widget *widget)
 			widget->display, widget->rootwin, True,
 			ButtonPressMask|PointerMotionMask,
 			GrabModeAsync, GrabModeAsync,
-			None, None, CurrentTime
-		) == GrabSuccess) return RETURN_SUCCESS;
+			None, cursor, CurrentTime
+		) == GrabSuccess) {
+			if (cursor != None)
+				XFreeCursor(widget->display, cursor);
+			return RETURN_SUCCESS;
+		}
 		nanosleep(&ts, NULL);
 	}
-	warnx("cannot grab pointer");
+	if (cursor != None)
+		XFreeCursor(widget->display, cursor);
+	warnx("cannot grab keyboard");
 	return RETURN_FAILURE;
 }
 
