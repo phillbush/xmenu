@@ -1975,8 +1975,6 @@ menu_run(struct widget *widget, struct menu *menu)
 				goto done;
 			} else if (ksym == XK_Left || ksym == XK_KP_Left) {
 				goto done;
-			} else {
-				break;
 			}
 			break;
 		case EnterNotify:
@@ -2012,10 +2010,6 @@ menu_run(struct widget *widget, struct menu *menu)
 				break;
 			entry = get_entry(menu, nentry);
 			menu->selected = nentry;
-			if (entry == NULL || entry->children == NULL)
-				break;
-			if ((xev.xmotion.state & (Button1Mask|Button3Mask)) == 0)
-				break;
 			break;
 		case PropertyNotify:
 			if (xev.xproperty.state != PropertyNewValue ||
