@@ -1809,7 +1809,6 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 	static struct timespec last_time = {};
 	struct timespec ts;
 	time_t elapsed;
-	int ret;
 	int last_offset = menu->curr_screenful.offset;
 	struct pollfd pfd = {
 		.fd = XConnectionNumber(widget->display),
@@ -1820,7 +1819,7 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 		static int const SCROLL_TIME = 32;
 		if (XPending(widget->display) > 0)
 			break;
-		switch ((ret = poll(&pfd, 1, SCROLL_TIME))) {
+		switch (poll(&pfd, 1, SCROLL_TIME)) {
 		case -1:
 			if (errno == EINTR)
 				continue;
