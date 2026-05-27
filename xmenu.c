@@ -1585,6 +1585,17 @@ menu_new(struct widget *widget, struct menu *parent,
 	XRRFreeMonitors(infos);
 	max_height = monitor.height - widget->outer_border_width * 2;
 
+	/*
+	 * If popup position is not a button, make an initial displacement
+	 * to avoid pointer stay above an entry when menu pops up.
+	 */
+	if (button_width == 0) {
+		if (x_root + (int)button_width + 1 < monitor.x + monitor.width)
+			button_width = 1;
+		if (x_root > monitor.x)
+			x_root--;
+	}
+
 	if ((menu = malloc(sizeof(*menu))) == NULL)
 		return NULL;
 	*menu = (struct menu){
@@ -2405,15 +2416,11 @@ main(int argc, char *argv[])
 		if (rootmode)
 			waitrootclick(widget, modifier, button);
 		if (!FLAG(geometry_flags, XValue|YValue)) {
-			static const int INITIAL_DISPLACEMENT = 2;
-
 			XQueryPointer(
 				display, DefaultRootWindow(display),
 				&(Window){}, &(Window){},
 				&x_root, &y_root, &(int){}, &(int){}, &(unsigned){}
 			);
-			x_root += INITIAL_DISPLACEMENT;
-			y_root += INITIAL_DISPLACEMENT;
 		}
 		run(widget, entries, nentries, x_root, y_root, windowed);
 		ungrab(widget);
