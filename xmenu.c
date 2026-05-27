@@ -1858,8 +1858,11 @@ xsleep(unsigned int usec)
 }
 
 static void
-blink_entry(struct widget *widget, struct menu *menu, ssize_t nentry)
+activate_entry(struct widget *widget, struct menu *menu, ssize_t nentry, bool alt)
 {
+	struct entry *entry;
+
+	/* blink */
 	commitdraw(widget, menu, -1);
 	XSync(widget->display, False); xsleep(60000);
 	commitdraw(widget, menu, nentry);
@@ -1873,6 +1876,12 @@ blink_entry(struct widget *widget, struct menu *menu, ssize_t nentry)
 		&(XEvent){}
 	))
 		;
+
+	entry = get_entry(menu, menu->selected);
+	if (entry != NULL && entry->output != NULL) {
+		(void)printf("%s\n", alt ? entry->altoutput : entry->output);
+		(void)fflush(stdout);
+	}
 }
 
 static void
@@ -1882,7 +1891,7 @@ menu_run(struct widget *widget, struct menu *menu)
 	static int call_depth = 0;
 	XEvent xev;
 	struct entry *entry;
-	ssize_t nentry, prevselected = -1;
+	ssize_t nentry, prevselected = menu->selected;
 
 	if (call_depth++ == 0) {
 		(void)grabpointer(widget);
@@ -1892,6 +1901,11 @@ menu_run(struct widget *widget, struct menu *menu)
 		XNextEvent(widget->display, &xev);
 		switch (xev.type) {
 		case ButtonPress:
+			if (xev.xbutton.window == widget->rootwin) {
+				call_depth = 0;
+				goto done;
+			}
+			break;
 		case ButtonRelease:
 			if (xev.xbutton.window != menu->window) {
 				XPutBackEvent(widget->display, &xev);
@@ -1906,24 +1920,18 @@ menu_run(struct widget *widget, struct menu *menu)
 #warning reimplement tearing off
 				break;
 			}
-		enter:
 			commitdraw(widget, menu, menu->selected);
 			entry = get_entry(menu, menu->selected);
 			if (entry == NULL)
 				break;
-			if (entry->children != NULL)
+			if (entry->children != NULL) {
 				break;
-			if (entry->output != NULL) {
-				if (xev.type == ButtonPress || xev.type == MotionNotify)
-					break;
-				blink_entry(widget, menu, menu->selected);
-				if ((xev.type == KeyPress && (xev.xkey.state & ShiftMask)) ||
-				    (xev.xbutton.state & ShiftMask) ||
-				    (xev.xbutton.button == Button2))
-					(void)printf("%s\n", entry->altoutput);
-				else
-					(void)printf("%s\n", entry->output);
-				(void)fflush(stdout);
+			} else if (entry->output != NULL) {
+				activate_entry(
+					widget, menu, menu->selected,
+					(xev.xbutton.state & ShiftMask) ||
+					(xev.xbutton.button == Button2)
+				);
 				call_depth = 0;
 				goto done;
 			}
@@ -1967,10 +1975,20 @@ menu_run(struct widget *widget, struct menu *menu)
 				menu->selected = selfirst(widget, menu);
 			} else if (ksym == XK_End || ksym == XK_KP_End) {
 				menu->selected = sellast(widget, menu);
-			} else if (ksym == XK_Right || ksym == XK_KP_Right) {
-				goto enter;
-			} else if (ksym == XK_Return || ksym == XK_KP_Enter) {
-				goto enter;
+			} else if (ksym == XK_Right || ksym == XK_KP_Right ||
+			           ksym == XK_Return || ksym == XK_KP_Enter) {
+				if (submenu != NULL) {
+					submenu->selected = 0;
+					commitdraw(widget, submenu, submenu->selected);
+					menu_run(widget, submenu);
+				} else {
+					activate_entry(
+						widget, menu, menu->selected,
+						xev.xkey.state & ShiftMask
+					);
+					call_depth = 0;
+					goto done;
+				}
 			} else if (ksym == XK_Escape) {
 				call_depth = 0;
 				goto done;
