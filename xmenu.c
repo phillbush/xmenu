@@ -1889,7 +1889,8 @@ menu_run(struct widget *widget, struct menu *menu)
 		(void)grabkeyboard(widget);
 	}
 	while (call_depth > 0) {
-		switch (XNextEvent(widget->display, &xev), xev.type) {
+		XNextEvent(widget->display, &xev);
+		switch (xev.type) {
 		case ButtonPress:
 		case ButtonRelease:
 			if (xev.xbutton.window != menu->window) {
