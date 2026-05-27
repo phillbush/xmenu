@@ -1882,7 +1882,7 @@ menu_run(struct widget *widget, struct menu *menu)
 	static int call_depth = 0;
 	XEvent xev;
 	struct entry *entry;
-	ssize_t nentry;
+	ssize_t nentry, prevselected = -1;
 
 	if (call_depth++ == 0) {
 		(void)grabpointer(widget);
@@ -1944,8 +1944,7 @@ menu_run(struct widget *widget, struct menu *menu)
 			menu->window_geometry.width = xev.xconfigure.width;
 			menu->window_geometry.height = xev.xconfigure.height;
 			drawmenu(widget, menu);
-			if (get_entry(menu, menu->selected) != NULL)
-				commitdraw(widget, menu, menu->selected);
+			commitdraw(widget, menu, menu->selected);
 			break;
 		case UnmapNotify:
 			if (widget->leader == None)
@@ -1979,7 +1978,6 @@ menu_run(struct widget *widget, struct menu *menu)
 			} else {
 				break;
 			}
-			commitdraw(widget, menu, menu->selected);
 			break;
 		case EnterNotify:
 			if (submenu != NULL && xev.xcrossing.window == submenu->window)
@@ -2003,10 +2001,8 @@ menu_run(struct widget *widget, struct menu *menu)
 				goto done;
 			}
 			if (xev.xmotion.window != menu->window) {
-				if (submenu == NULL) {
+				if (submenu == NULL)
 					menu->selected = -1;
-					commitdraw(widget, menu, menu->selected);
-				}
 				break;
 			}
 			nentry = index_entry(widget, menu, xev.xbutton.y);
@@ -2016,7 +2012,6 @@ menu_run(struct widget *widget, struct menu *menu)
 				break;
 			entry = get_entry(menu, nentry);
 			menu->selected = nentry;
-			commitdraw(widget, menu, menu->selected);
 			if (entry == NULL || entry->children == NULL)
 				break;
 			if ((xev.xmotion.state & (Button1Mask|Button3Mask)) == 0)
@@ -2043,6 +2038,9 @@ menu_run(struct widget *widget, struct menu *menu)
 			}
 			break;
 		}
+		if (menu->selected != prevselected)
+			commitdraw(widget, menu, menu->selected);
+		prevselected = menu->selected;
 		entry = get_entry(menu, menu->selected);
 		if (submenu != NULL && entry != NULL && submenu->entries == entry->children)
 			continue;
