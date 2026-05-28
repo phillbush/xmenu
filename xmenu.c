@@ -561,7 +561,7 @@ static size_t
 fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
 {
 	size_t nentries;
-	size_t maxentries = 0;
+	struct entry *next_entry = entries;
 	struct entry *prev_entry = NULL;
 
 	for (size_t len = *from; len < datasize; len++) {
@@ -572,7 +572,7 @@ fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t da
 		if (entry_indentlvl < menu_indentlvl)
 			break;
 		if (entry_indentlvl == menu_indentlvl)
-			maxentries++;
+			next_entry++;
 	}
 
 	nentries = 0;
@@ -587,12 +587,13 @@ fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t da
 			break;
 		} else if (entry_indentlvl > menu_indentlvl) {
 			assert(prev_entry != NULL);
-			prev_entry->children = entries+maxentries,
+			prev_entry->children = next_entry;
 			prev_entry->nchildren = fill_entries(
 				prev_entry->children,
 				entry_indentlvl,
 				data, datasize, from
 			);
+			next_entry += prev_entry->nchildren;
 		} else {
 			line[linelen] = '\0';
 			*from += linelen + 1;
