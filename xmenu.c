@@ -1821,6 +1821,8 @@ timed_poll(int fd, int timeout)
 	struct timespec ts;
 	int elapsed;
 
+	if (timeout <= 0)
+		return 0;
 	switch (poll(&(struct pollfd){.fd = fd, .events = POLLIN}, 1, timeout)) {
 	case -1:
 		if (errno != EINTR) {
