@@ -1814,43 +1814,48 @@ get_entry(struct menu *menu, ssize_t entryc)
 	return NULL;
 }
 
-static void
-scroll(struct widget *widget, struct menu *menu, bool down)
+static int
+timed_poll(int fd, int timeout)
 {
 	static struct timespec last_time = {};
 	struct timespec ts;
-	time_t elapsed;
+	int elapsed;
+
+	switch (poll(&(struct pollfd){.fd = fd, .events = POLLIN}, 1, timeout)) {
+	case -1:
+		if (errno != EINTR) {
+			warn("poll");
+			return -1;
+		}
+		/* fallthrough */
+	default:
+		if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
+			warn("clock_gettime");
+			return -1;
+		}
+		elapsed = (ts.tv_sec - last_time.tv_sec) * 1000;
+		elapsed += ts.tv_nsec / 1000000;
+		elapsed -= last_time.tv_nsec / 1000000;
+		last_time = ts;
+		if (timeout > elapsed)
+			return timeout - elapsed;
+		/* fallthrough */
+	case 0:
+		return 0;
+	}
+}
+
+static void
+scroll(struct widget *widget, struct menu *menu, bool down)
+{
+	static time_t const SCROLL_TIME = 32;
+	time_t timeout = SCROLL_TIME;
 	int last_offset = menu->curr_screenful.offset;
-	struct pollfd pfd = {
-		.fd = XConnectionNumber(widget->display),
-		.events = POLLIN,
-	};
 
 	for (;;) {
-		static int const SCROLL_TIME = 32;
 		if (XPending(widget->display) > 0)
 			break;
-		switch (poll(&pfd, 1, SCROLL_TIME)) {
-		case -1:
-			if (errno == EINTR)
-				continue;
-			return;
-		default:
-			if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
-				warn("clock_gettime");
-				return;
-			}
-			elapsed = (ts.tv_sec - last_time.tv_sec) * 1000;
-			elapsed += ts.tv_nsec / 1000000;
-			elapsed -= last_time.tv_nsec / 1000000;
-			if (elapsed < SCROLL_TIME)
-				return;
-			if (clock_gettime(CLOCK_MONOTONIC, &last_time) == -1) {
-				warn("clock_gettime");
-				return;
-			}
-			/* fallthrough */
-		case 0:
+		if (timed_poll(XConnectionNumber(widget->display), timeout) == 0) {
 			if (down)
 				scrolldown(widget, menu, widget->entryh);
 			else
@@ -1859,7 +1864,6 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 				commitdraw(widget, menu, -1);
 			last_offset = menu->curr_screenful.offset;
 			XFlush(widget->display);
-			break;
 		}
 	}
 }
