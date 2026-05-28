@@ -2106,8 +2106,10 @@ menu_run(struct widget *widget, struct menu *menu)
 			}
 			break;
 		}
-		if (menu->selected != prevselected)
+		if (menu->selected != prevselected) {
+			timeout = POPUP_TIMEOUT;
 			commitdraw(widget, menu, menu->selected);
+		}
 		prevselected = menu->selected;
 		entry = get_entry(menu, menu->selected);
 		if (submenu != NULL && entry != NULL && submenu->entries == entry->children)
