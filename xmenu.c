@@ -1914,11 +1914,13 @@ activate_entry(struct widget *widget, struct menu *menu, ssize_t nentry, bool al
 static void
 menu_run(struct widget *widget, struct menu *menu)
 {
+	static int POPUP_TIMEOUT = 1500;
 	struct menu *submenu = NULL;
 	static int call_depth = 0;
 	XEvent xev;
 	struct entry *entry;
 	ssize_t nentry, prevselected = menu->selected;
+	int timeout = POPUP_TIMEOUT;
 
 	call_depth++;
 	while (call_depth > 0) {
@@ -2084,6 +2086,13 @@ menu_run(struct widget *widget, struct menu *menu)
 			menu_free(widget, submenu);
 		submenu = NULL;
 		if (entry != NULL && entry->children != NULL) {
+
+			if (XPending(widget->display) > 0)
+				continue;
+			timeout = timed_poll(XConnectionNumber(widget->display), timeout);
+			if (timeout > 0)
+				continue;
+			timeout = POPUP_TIMEOUT;
 			submenu = menu_new(
 				widget, menu, entry->children, entry->nchildren,
 				menu->window_geometry.x,
