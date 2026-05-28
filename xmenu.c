@@ -1917,13 +1917,15 @@ activate_entry(struct widget *widget, struct menu *menu, ssize_t nentry, bool al
 static void
 menu_run(struct widget *widget, struct menu *menu)
 {
-	static int POPUP_TIMEOUT = 500;
+	static int INITIAL_TIMEOUT = 500;
 	struct menu *submenu = NULL;
 	static int call_depth = 0;
 	XEvent xev;
 	struct entry *entry;
 	ssize_t nentry, prevselected = menu->selected;
-	int timeout = POPUP_TIMEOUT;
+	int popup_timeout = INITIAL_TIMEOUT;
+	int motion_timeout = INITIAL_TIMEOUT;
+	int last_x = 0, last_y = 0;
 
 	call_depth++;
 	while (call_depth > 0) {
@@ -2080,9 +2082,10 @@ menu_run(struct widget *widget, struct menu *menu)
 			nentry = index_entry(widget, menu, xev.xbutton.y);
 			if (nentry == SCROLLUP || nentry == SCROLLDOWN)
 				scroll(widget, menu, nentry == SCROLLDOWN);
-			if (nentry == menu->selected)
-				break;
-			menu->selected = nentry;
+			if (submenu == NULL || xev.xbutton.x < last_x)
+				menu->selected = nentry;
+			last_x = xev.xbutton.x;
+			last_y = xev.xbutton.y;
 			break;
 		case PropertyNotify:
 			if (xev.xproperty.state != PropertyNewValue ||
@@ -2105,8 +2108,30 @@ menu_run(struct widget *widget, struct menu *menu)
 			}
 			break;
 		}
+
+		/*
+		 * When a submenu is being previewed, allows moving the
+		 * pointer rightwards and not unmap the submenu, even if
+		 * the pointer pass over another entry.
+		 */
+		if (submenu != NULL && menu->selected == prevselected) {
+			nentry = index_entry(widget, menu, last_y);
+			if (nentry == menu->selected)
+				continue;
+			if (XPending(widget->display) > 0)
+				continue;
+			motion_timeout = timed_poll(
+				XConnectionNumber(widget->display),
+				motion_timeout
+			);
+			if (motion_timeout > 0)
+				continue;
+			menu->selected = index_entry(widget, menu, last_y);
+		}
+		motion_timeout = INITIAL_TIMEOUT;
+
 		if (menu->selected != prevselected) {
-			timeout = POPUP_TIMEOUT;
+			popup_timeout = INITIAL_TIMEOUT;
 			commitdraw(widget, menu, menu->selected);
 		}
 		prevselected = menu->selected;
@@ -2119,10 +2144,13 @@ menu_run(struct widget *widget, struct menu *menu)
 		if (entry != NULL && entry->children != NULL) {
 			if (XPending(widget->display) > 0)
 				continue;
-			timeout = timed_poll(XConnectionNumber(widget->display), timeout);
-			if (timeout > 0)
+			popup_timeout = timed_poll(
+				XConnectionNumber(widget->display),
+				popup_timeout
+			);
+			if (popup_timeout > 0)
 				continue;
-			timeout = POPUP_TIMEOUT;
+			popup_timeout = INITIAL_TIMEOUT;
 			submenu = menu_new(
 				widget, menu, entry->children, entry->nchildren,
 				menu->window_geometry.x,
