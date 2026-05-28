@@ -1925,7 +1925,7 @@ menu_run(struct widget *widget, struct menu *menu)
 	ssize_t nentry, prevselected = menu->selected;
 	int popup_timeout = INITIAL_TIMEOUT;
 	int motion_timeout = INITIAL_TIMEOUT;
-	int last_x = 0, last_y = 0;
+	int last_x = -1, last_y = -1;
 
 	call_depth++;
 	while (call_depth > 0) {
