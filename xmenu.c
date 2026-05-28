@@ -1848,8 +1848,8 @@ timed_poll(int fd, int timeout)
 static void
 scroll(struct widget *widget, struct menu *menu, bool down)
 {
-	static time_t const SCROLL_TIME = 32;
-	time_t timeout = SCROLL_TIME;
+	static int const SCROLL_TIME = 32;
+	int timeout = SCROLL_TIME;
 	int last_offset = menu->curr_screenful.offset;
 
 	for (;;) {
