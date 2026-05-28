@@ -1916,7 +1916,7 @@ activate_entry(struct widget *widget, struct menu *menu, ssize_t nentry, bool al
 static void
 menu_run(struct widget *widget, struct menu *menu)
 {
-	static int POPUP_TIMEOUT = 1500;
+	static int POPUP_TIMEOUT = 500;
 	struct menu *submenu = NULL;
 	static int call_depth = 0;
 	XEvent xev;
