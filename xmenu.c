@@ -1855,7 +1855,9 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 	for (;;) {
 		if (XPending(widget->display) > 0)
 			break;
-		if (timed_poll(XConnectionNumber(widget->display), timeout) == 0) {
+		timeout = timed_poll(XConnectionNumber(widget->display), timeout);
+		if (timeout == 0) {
+			timeout = SCROLL_TIME;
 			if (down)
 				scrolldown(widget, menu, widget->entryh);
 			else
