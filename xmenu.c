@@ -1924,9 +1924,6 @@ menu_run(struct widget *widget, struct menu *menu)
 	struct entry *entry;
 	ssize_t nentry, prevselected = menu->selected;
 	int timeout = POPUP_TIMEOUT;
-	int x_root = menu->window_geometry.x;
-	int y_root = menu->window_geometry.y;
-	int button_width = menu->window_geometry.width;
 
 	call_depth++;
 	while (call_depth > 0) {
@@ -1962,9 +1959,10 @@ menu_run(struct widget *widget, struct menu *menu)
 						menu_free(widget, submenu);
 					submenu = menu_new(
 						widget, menu, entry->children, entry->nchildren,
-						x_root,
-						y_root + get_entry_ypos(widget, menu, menu->selected),
-						button_width, false, entry->label
+						menu->window_geometry.x,
+						menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
+						menu->window_geometry.width,
+						false, entry->label
 					);
 				}
 				menu_run(widget, submenu);
@@ -2029,9 +2027,10 @@ menu_run(struct widget *widget, struct menu *menu)
 						submenu = menu_new(
 							widget, menu,
 							entry->children, entry->nchildren,
-							x_root,
-							y_root + get_entry_ypos(widget, menu, menu->selected),
-							button_width, false, entry->label
+							menu->window_geometry.x,
+							menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
+							menu->window_geometry.width,
+							false, entry->label
 						);
 					}
 					submenu->selected = 0;
@@ -2118,7 +2117,6 @@ menu_run(struct widget *widget, struct menu *menu)
 			menu_free(widget, submenu);
 		submenu = NULL;
 		if (entry != NULL && entry->children != NULL) {
-
 			if (XPending(widget->display) > 0)
 				continue;
 			timeout = timed_poll(XConnectionNumber(widget->display), timeout);
@@ -2127,8 +2125,10 @@ menu_run(struct widget *widget, struct menu *menu)
 			timeout = POPUP_TIMEOUT;
 			submenu = menu_new(
 				widget, menu, entry->children, entry->nchildren,
-				x_root, y_root + get_entry_ypos(widget, menu, menu->selected),
-				button_width, false, entry->label
+				menu->window_geometry.x,
+				menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
+				menu->window_geometry.width,
+				false, entry->label
 			);
 		}
 	}
