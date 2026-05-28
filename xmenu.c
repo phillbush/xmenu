@@ -1817,12 +1817,15 @@ get_entry(struct menu *menu, ssize_t entryc)
 static int
 timed_poll(int fd, int timeout)
 {
-	static struct timespec last_time = {};
-	struct timespec ts;
+	struct timespec then, now;
 	int elapsed;
 
 	if (timeout <= 0)
 		return 0;
+	if (clock_gettime(CLOCK_MONOTONIC, &then) == -1) {
+		warn("clock_gettime");
+		return -1;
+	}
 	switch (poll(&(struct pollfd){.fd = fd, .events = POLLIN}, 1, timeout)) {
 	case -1:
 		if (errno != EINTR) {
@@ -1831,14 +1834,13 @@ timed_poll(int fd, int timeout)
 		}
 		/* fallthrough */
 	default:
-		if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
+		if (clock_gettime(CLOCK_MONOTONIC, &now) == -1) {
 			warn("clock_gettime");
 			return -1;
 		}
-		elapsed = (ts.tv_sec - last_time.tv_sec) * 1000;
-		elapsed += ts.tv_nsec / 1000000;
-		elapsed -= last_time.tv_nsec / 1000000;
-		last_time = ts;
+		elapsed = (now.tv_sec - then.tv_sec) * 1000;
+		elapsed += now.tv_nsec / 1000000;
+		elapsed -= then.tv_nsec / 1000000;
 		if (timeout > elapsed)
 			return timeout - elapsed;
 		/* fallthrough */
