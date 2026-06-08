@@ -2110,9 +2110,9 @@ menu_run(struct widget *widget, struct menu *menu)
 		}
 
 		/*
-		 * When a submenu is being previewed, allows moving the
-		 * pointer rightwards and not unmap the submenu, even if
-		 * the pointer pass over another entry.
+		 * When a submenu is being previewed, allow moving the
+		 * pointer rightwards for a while and not unmap the
+		 * submenu, even if the pointer pass over another entry.
 		 */
 		if (submenu != NULL && menu->selected == prevselected) {
 			nentry = index_entry(widget, menu, last_y);
