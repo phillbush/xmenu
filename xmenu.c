@@ -2068,8 +2068,8 @@ menu_run(struct widget *widget, struct menu *menu)
 				if (above != NULL && above->children == m->entries)
 					break;
 				/*
-				 * pointer over ancestor menu, over entry
-				 * which does not spawn current menu chain
+				 * Pointer on ancestor menu, over entry which
+				 * does not descends into current menu.
 				 */
 				XPutBackEvent(widget->display, &xev);
 				goto done;
