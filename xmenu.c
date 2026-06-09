@@ -2082,7 +2082,7 @@ menu_run(struct widget *widget, struct menu *menu)
 			nentry = index_entry(widget, menu, xev.xbutton.y);
 			if (nentry == SCROLLUP || nentry == SCROLLDOWN)
 				scroll(widget, menu, nentry == SCROLLDOWN);
-			if (submenu == NULL || xev.xbutton.x < last_x)
+			if (submenu == NULL || xev.xbutton.x <= last_x)
 				menu->selected = nentry;
 			last_x = xev.xbutton.x;
 			last_y = xev.xbutton.y;
