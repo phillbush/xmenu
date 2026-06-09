@@ -2169,7 +2169,7 @@ done:
 }
 
 static void
-run(struct widget *widget, struct entry *entries, size_t nentries,
+menu_popup(struct widget *widget, struct entry *entries, size_t nentries,
 		int x_root, int y_root, bool windowed)
 {
 	struct menu *menu;
@@ -2497,7 +2497,7 @@ main(int argc, char *argv[])
 				&x_root, &y_root, &(int){}, &(int){}, &(unsigned){}
 			);
 		}
-		run(widget, entries, nentries, x_root, y_root, windowed);
+		menu_popup(widget, entries, nentries, x_root, y_root, windowed);
 	} while (rootmode);
 	cleanup(widget);
 	free(read_data);
