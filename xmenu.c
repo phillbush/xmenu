@@ -1890,8 +1890,21 @@ scroll(struct widget *widget, struct menu *menu, ssize_t nentry)
 	int last_offset = menu->curr_screenful.offset;
 
 	for (;;) {
-		if (XPending(widget->display) > 0)
+		XEvent event;
+
+		while (XPending(widget->display)) switch (next_event(widget->display, &event)) {
+		case MotionNotify: case ButtonPress: case ButtonRelease:
+			if (event.xmotion.window != menu->window)
+				return;
+			if (index_entry(widget, menu, event.xmotion.y) != nentry) {
+				XPutBackEvent(widget->display, &event);
+				return;
+			}
 			break;
+		default:
+			return;
+		}
+
 		timeout = timed_poll(XConnectionNumber(widget->display), timeout);
 		if (timeout == 0) {
 			timeout = SCROLL_TIME;
