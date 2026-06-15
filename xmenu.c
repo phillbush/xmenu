@@ -587,6 +587,7 @@ fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t da
 			break;
 		} else if (entry_indentlvl > menu_indentlvl) {
 			assert(prev_entry != NULL);
+			prev_entry->output = NULL;
 			prev_entry->children = next_entry;
 			prev_entry->nchildren = fill_entries(
 				prev_entry->children,
