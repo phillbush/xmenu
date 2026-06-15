@@ -1767,7 +1767,7 @@ ungrab(struct widget *widget)
 	XUngrabKeyboard(widget->display, CurrentTime);
 }
 
-static size_t
+static ssize_t
 index_entry(struct widget *widget, struct menu *menu, long y)
 {
 	long h;
