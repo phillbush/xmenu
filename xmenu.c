@@ -1851,6 +1851,37 @@ timed_poll(int fd, int timeout)
 	}
 }
 
+static int
+next_event(Display *display, XEvent *event)
+{
+	for (;;) {
+		static Time const DELAY_MOUSE = 32;
+		static Time last_motion = 0;
+
+		XNextEvent(display, event);
+
+		if (event->type != MotionNotify)
+			return event->type;
+
+		/* compress sequential motion events into a single one */
+		while (XPending(display)) {
+			XEvent next;
+			XPeekEvent(display, &next);
+			if (next.type != MotionNotify)
+				break;
+			if (next.xmotion.window != event->xmotion.window)
+				break;
+			if (next.xmotion.subwindow != event->xmotion.subwindow)
+				break;
+			XNextEvent(display, event);
+		}
+		if (event->xmotion.time - last_motion >= DELAY_MOUSE) {
+			last_motion = event->xmotion.time;
+			return MotionNotify;
+		}
+	}
+}
+
 static void
 scroll(struct widget *widget, struct menu *menu, bool down)
 {
@@ -1930,8 +1961,7 @@ menu_run(struct widget *widget, struct menu *menu)
 
 	call_depth++;
 	while (call_depth > 0) {
-		XNextEvent(widget->display, &xev);
-		switch (xev.type) {
+		switch (next_event(widget->display, &xev)) {
 		case ButtonPress:
 			if (xev.xbutton.window == widget->rootwin) {
 				call_depth = 0;
