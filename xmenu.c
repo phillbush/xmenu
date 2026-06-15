@@ -1883,7 +1883,7 @@ next_event(Display *display, XEvent *event)
 }
 
 static void
-scroll(struct widget *widget, struct menu *menu, bool down)
+scroll(struct widget *widget, struct menu *menu, ssize_t nentry)
 {
 	static int const SCROLL_TIME = 32;
 	int timeout = SCROLL_TIME;
@@ -1895,12 +1895,12 @@ scroll(struct widget *widget, struct menu *menu, bool down)
 		timeout = timed_poll(XConnectionNumber(widget->display), timeout);
 		if (timeout == 0) {
 			timeout = SCROLL_TIME;
-			if (down)
+			if (nentry == SCROLLDOWN)
 				scrolldown(widget, menu, widget->entryh);
 			else
 				scrollup(widget, menu, widget->entryh);
 			if (menu->curr_screenful.offset != last_offset)
-				commitdraw(widget, menu, -1);
+				commitdraw(widget, menu, nentry);
 			last_offset = menu->curr_screenful.offset;
 			XFlush(widget->display);
 		}
@@ -2112,7 +2112,7 @@ menu_run(struct widget *widget, struct menu *menu)
 			}
 			nentry = index_entry(widget, menu, xev.xbutton.y);
 			if (nentry == SCROLLUP || nentry == SCROLLDOWN)
-				scroll(widget, menu, nentry == SCROLLDOWN);
+				scroll(widget, menu, nentry);
 			if (submenu == NULL || xev.xbutton.x <= last_x)
 				menu->selected = nentry;
 			last_x = xev.xbutton.x;
