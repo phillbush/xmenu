@@ -1960,11 +1960,11 @@ menu_run(struct widget *widget, struct menu *menu)
 	static int INITIAL_TIMEOUT = 500;
 	struct menu submenu = {};
 	XEvent xev;
+	XMotionEvent last_motion = {0};
 	struct entry *entry;
 	ssize_t nentry, prevselected = menu->selected;
 	int popup_timeout = INITIAL_TIMEOUT;
 	int motion_timeout = INITIAL_TIMEOUT;
-	int last_x = -1, last_y = -1;
 
 	for (;;) {
 		switch (next_event(widget->display, &xev)) {
@@ -2119,13 +2119,14 @@ menu_run(struct widget *widget, struct menu *menu)
 					menu->selected = -1;
 				break;
 			}
-			nentry = index_entry(widget, menu, xev.xbutton.y);
+			nentry = index_entry(widget, menu, xev.xmotion.y);
 			if (nentry == SCROLLUP || nentry == SCROLLDOWN)
 				scroll(widget, menu, nentry);
-			if (submenu.window == None || xev.xbutton.x <= last_x)
+			if (submenu.window == None ||
+			    (double)(xev.xmotion.x - last_motion.x)/
+			    (xev.xmotion.time - last_motion.time) < 0.1)
 				menu->selected = nentry;
-			last_x = xev.xbutton.x;
-			last_y = xev.xbutton.y;
+			last_motion = xev.xmotion;
 			break;
 		case PropertyNotify:
 			if (xev.xproperty.state != PropertyNewValue ||
@@ -2155,7 +2156,7 @@ menu_run(struct widget *widget, struct menu *menu)
 		 * submenu, even if the pointer pass over another entry.
 		 */
 		if (submenu.window != None && menu->selected == prevselected) {
-			nentry = index_entry(widget, menu, last_y);
+			nentry = index_entry(widget, menu, last_motion.y);
 			if (nentry == menu->selected)
 				continue;
 			if (XPending(widget->display) > 0)
