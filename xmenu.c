@@ -1984,9 +1984,7 @@ menu_run(struct widget *widget, struct menu *menu)
 				XPutBackEvent(widget->display, &xev);
 				goto done;
 			}
-			if (xev.xbutton.button != Button1 &&
-			    xev.xbutton.button != Button2 &&
-			    xev.xbutton.button != Button3)
+			if (xev.xbutton.button > Button3)
 				break;
 			menu->selected = index_entry(widget, menu, xev.xbutton.y);
 			if (menu->selected == TEAROFF) {
