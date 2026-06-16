@@ -1964,7 +1964,6 @@ menu_run(struct widget *widget, struct menu *menu)
 {
 	static int INITIAL_TIMEOUT = 500;
 	struct menu *submenu = NULL;
-	static int call_depth = 0;
 	XEvent xev;
 	struct entry *entry;
 	ssize_t nentry, prevselected = menu->selected;
@@ -1972,12 +1971,11 @@ menu_run(struct widget *widget, struct menu *menu)
 	int motion_timeout = INITIAL_TIMEOUT;
 	int last_x = -1, last_y = -1;
 
-	call_depth++;
-	while (call_depth > 0) {
+	for (;;) {
 		switch (next_event(widget->display, &xev)) {
 		case ButtonPress:
 			if (xev.xbutton.window == widget->rootwin) {
-				call_depth = 0;
+				XPutBackEvent(widget->display, &xev);
 				goto done;
 			}
 			break;
@@ -2018,13 +2016,13 @@ menu_run(struct widget *widget, struct menu *menu)
 					(xev.xbutton.state & ShiftMask) ||
 					(xev.xbutton.button == Button2)
 				);
-				call_depth = 0;
+				XPutBackEvent(widget->display, &xev);
 				goto done;
 			}
 			break;
 		case ClientMessage:
 			if ((Atom)xev.xclient.data.l[0] == XInternAtom(widget->display, "WM_DELETE_WINDOW", False)) {
-				call_depth = 0;
+				XPutBackEvent(widget->display, &xev);
 				goto done;
 			}
 			break;
@@ -2046,7 +2044,7 @@ menu_run(struct widget *widget, struct menu *menu)
 				break;
 			if (xev.xdestroywindow.window != widget->leader)
 				break;
-			call_depth = 0;
+			XPutBackEvent(widget->display, &xev);
 			goto done;
 		case KeyPress:
 			KeySym ksym = XkbKeycodeToKeysym(widget->display, xev.xkey.keycode, 0, 0);
@@ -2087,11 +2085,15 @@ menu_run(struct widget *widget, struct menu *menu)
 						widget, menu, menu->selected,
 						xev.xkey.state & ShiftMask
 					);
-					call_depth = 0;
+					xev.xkey.keycode = XKeysymToKeycode(
+						widget->display,
+						XK_Escape
+					);
+					XPutBackEvent(widget->display, &xev);
 					goto done;
 				}
 			} else if (ksym == XK_Escape) {
-				call_depth = 0;
+				XPutBackEvent(widget->display, &xev);
 				goto done;
 			} else if (ksym == XK_Left || ksym == XK_KP_Left) {
 				goto done;
