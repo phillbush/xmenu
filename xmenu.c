@@ -2017,8 +2017,8 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 	for (;;) {
 		switch (next_event(widget->display, &xev)) {
 		case ButtonPress:
-			if (xev.xbutton.window == widget->rootwin) {
-				close_all = true;
+			if (xev.xbutton.window != menu->window) {
+				XPutBackEvent(widget->display, &xev);
 				goto done;
 			}
 			break;
