@@ -2167,6 +2167,14 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 			if (close_all)
 				goto done;
 			break;
+		case LeaveNotify:
+			if (grabbed)
+				break;
+			if (xev.xcrossing.window == submenu.window ||
+			    xev.xcrossing.window == menu->window) {
+				goto done;
+			}
+			break;
 		case MotionNotify:
 			for (struct menu *m = menu; m->next != NULL; m = m->next) {
 				struct entry *above;
