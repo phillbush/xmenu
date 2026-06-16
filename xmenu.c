@@ -85,7 +85,7 @@ struct entry {
 };
 
 struct menu {
-	struct menu *parent;
+	struct menu *next;
 	struct entry *entries;
 	size_t nentries;
 	ssize_t selected;
@@ -1604,7 +1604,7 @@ menu_set(struct widget *widget, struct menu *parent, struct menu *menu,
 		.selected = -1,
 		.curr_screenful = {0, 0},
 		.last_screenful = {0, 0},
-		.parent = parent,
+		.next = parent,
 		.tearable = !windowed && widget->tearoff,
 		.tornoff = windowed,
 	};
@@ -1661,7 +1661,7 @@ menu_set(struct widget *widget, struct menu *parent, struct menu *menu,
 	menu->window_geometry.width = MIN(menu->window_geometry.width, monitor.width/2);
 
 	/* place menu to align with parent menu and be visible on monitor */
-	if (menu->overflow && menu->parent != NULL)
+	if (menu->overflow && menu->next != NULL)
 		ygap -= widget->separatorh;
 	menu->window_geometry.x = monitor.x;
 	menu->window_geometry.y = monitor.y;
@@ -2098,12 +2098,12 @@ menu_run(struct widget *widget, struct menu *menu)
 				menu_run(widget, &submenu);
 			break;
 		case MotionNotify:
-			for (struct menu *m = menu; m->parent != NULL; m = m->parent) {
+			for (struct menu *m = menu; m->next != NULL; m = m->next) {
 				struct entry *above;
-				if (xev.xmotion.window != m->parent->window)
+				if (xev.xmotion.window != m->next->window)
 					continue;
-				above = get_entry(m->parent, index_entry(
-					widget, m->parent, xev.xmotion.y
+				above = get_entry(m->next, index_entry(
+					widget, m->next, xev.xmotion.y
 				));
 				if (above != NULL && above->children == m->entries)
 					break;
@@ -2144,7 +2144,7 @@ menu_run(struct widget *widget, struct menu *menu)
 			free(str);
 			for (struct menu *ancestor = menu;
 			     ancestor != NULL;
-			     ancestor = ancestor->parent) {
+			     ancestor = ancestor->next) {
 				commitdraw(widget, ancestor, ancestor->selected);
 			}
 			break;
