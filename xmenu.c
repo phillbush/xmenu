@@ -2166,15 +2166,16 @@ menu_run(struct widget *widget, struct menu *menu)
 			);
 			if (motion_timeout > 0)
 				continue;
-			menu->selected = index_entry(widget, menu, last_y);
+			menu->selected = nentry;
 		}
 		motion_timeout = INITIAL_TIMEOUT;
 
 		if (menu->selected != prevselected) {
 			popup_timeout = INITIAL_TIMEOUT;
 			commitdraw(widget, menu, menu->selected);
+			prevselected = menu->selected;
 		}
-		prevselected = menu->selected;
+
 		entry = get_entry(menu, menu->selected);
 		if (submenu.window != None && entry != NULL && submenu.entries == entry->children)
 			continue;
