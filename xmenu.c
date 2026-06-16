@@ -1551,13 +1551,12 @@ selnext(struct widget *widget, struct menu *menu, ssize_t selected)
 	return selfirst(widget, menu);
 }
 
-static struct menu *
-menu_new(struct widget *widget, struct menu *parent,
+static void
+menu_set(struct widget *widget, struct menu *parent, struct menu *menu,
 		struct entry *entries, size_t nentries,
 		int x_root, int y_root, unsigned int button_width,
 		bool windowed, char const *title)
 {
-	struct menu *menu;
 	int max_height;
 	int xgap, ygap;
 	XRectangle monitor;
@@ -1598,8 +1597,6 @@ menu_new(struct widget *widget, struct menu *parent,
 			x_root--;
 	}
 
-	if ((menu = malloc(sizeof(*menu))) == NULL)
-		return NULL;
 	*menu = (struct menu){
 		.entries = entries,
 		.nentries = nentries,
@@ -1744,11 +1741,10 @@ menu_new(struct widget *widget, struct menu *parent,
 	drawmenu(widget, menu);
 	commitdraw(widget, menu, -1);
 	XMapRaised(widget->display, menu->window);
-	return menu;
 }
 
 static void
-menu_free(struct widget *widget, struct menu *menu)
+menu_destroy(struct widget *widget, struct menu *menu)
 {
 	if (menu == NULL)
 		return;
@@ -1757,7 +1753,6 @@ menu_free(struct widget *widget, struct menu *menu)
 		XRenderFreePicture(widget->display, menu->canvas[i].picture);
 		XFreePixmap(widget->display, menu->canvas[i].pixmap);
 	}
-	free(menu);
 }
 
 static void
@@ -1963,7 +1958,7 @@ static void
 menu_run(struct widget *widget, struct menu *menu)
 {
 	static int INITIAL_TIMEOUT = 500;
-	struct menu *submenu = NULL;
+	struct menu submenu = {};
 	XEvent xev;
 	struct entry *entry;
 	ssize_t nentry, prevselected = menu->selected;
@@ -1996,18 +1991,19 @@ menu_run(struct widget *widget, struct menu *menu)
 			if (entry == NULL)
 				break;
 			if (entry->children != NULL) {
-				if (submenu == NULL || submenu->entries != entry->children) {
-					if (submenu != NULL)
-						menu_free(widget, submenu);
-					submenu = menu_new(
-						widget, menu, entry->children, entry->nchildren,
+				if (submenu.entries != entry->children) {
+					if (submenu.window != None)
+						menu_destroy(widget, &submenu);
+					menu_set(
+						widget, menu, &submenu,
+						entry->children, entry->nchildren,
 						menu->window_geometry.x,
 						menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
 						menu->window_geometry.width,
 						false, entry->label
 					);
 				}
-				menu_run(widget, submenu);
+				menu_run(widget, &submenu);
 			} else if (entry->output != NULL) {
 				activate_entry(
 					widget, menu, menu->selected,
@@ -2063,11 +2059,11 @@ menu_run(struct widget *widget, struct menu *menu)
 				if (entry == NULL)
 					break;
 				if (entry->children != NULL) {
-					if (submenu == NULL || submenu->entries != entry->children) {
-						if (submenu != NULL)
-							menu_free(widget, submenu);
-						submenu = menu_new(
-							widget, menu,
+					if (submenu.entries != entry->children) {
+						if (submenu.window != None)
+							menu_destroy(widget, &submenu);
+						menu_set(
+							widget, menu, &submenu,
 							entry->children, entry->nchildren,
 							menu->window_geometry.x,
 							menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
@@ -2075,9 +2071,9 @@ menu_run(struct widget *widget, struct menu *menu)
 							false, entry->label
 						);
 					}
-					submenu->selected = 0;
-					commitdraw(widget, submenu, submenu->selected);
-					menu_run(widget, submenu);
+					submenu.selected = 0;
+					commitdraw(widget, &submenu, submenu.selected);
+					menu_run(widget, &submenu);
 				} else {
 					activate_entry(
 						widget, menu, menu->selected,
@@ -2098,8 +2094,8 @@ menu_run(struct widget *widget, struct menu *menu)
 			}
 			break;
 		case EnterNotify:
-			if (submenu != NULL && xev.xcrossing.window == submenu->window)
-				menu_run(widget, submenu);
+			if (submenu.window != None && xev.xcrossing.window == submenu.window)
+				menu_run(widget, &submenu);
 			break;
 		case MotionNotify:
 			for (struct menu *m = menu; m->parent != NULL; m = m->parent) {
@@ -2119,14 +2115,14 @@ menu_run(struct widget *widget, struct menu *menu)
 				goto done;
 			}
 			if (xev.xmotion.window != menu->window) {
-				if (submenu == NULL)
+				if (submenu.window == None)
 					menu->selected = -1;
 				break;
 			}
 			nentry = index_entry(widget, menu, xev.xbutton.y);
 			if (nentry == SCROLLUP || nentry == SCROLLDOWN)
 				scroll(widget, menu, nentry);
-			if (submenu == NULL || xev.xbutton.x <= last_x)
+			if (submenu.window == None || xev.xbutton.x <= last_x)
 				menu->selected = nentry;
 			last_x = xev.xbutton.x;
 			last_y = xev.xbutton.y;
@@ -2158,7 +2154,7 @@ menu_run(struct widget *widget, struct menu *menu)
 		 * pointer rightwards for a while and not unmap the
 		 * submenu, even if the pointer pass over another entry.
 		 */
-		if (submenu != NULL && menu->selected == prevselected) {
+		if (submenu.window != None && menu->selected == prevselected) {
 			nentry = index_entry(widget, menu, last_y);
 			if (nentry == menu->selected)
 				continue;
@@ -2180,11 +2176,14 @@ menu_run(struct widget *widget, struct menu *menu)
 		}
 		prevselected = menu->selected;
 		entry = get_entry(menu, menu->selected);
-		if (submenu != NULL && entry != NULL && submenu->entries == entry->children)
+		if (submenu.window != None && entry != NULL && submenu.entries == entry->children)
 			continue;
-		if (submenu != NULL)
-			menu_free(widget, submenu);
-		submenu = NULL;
+		if (submenu.window != None)
+			menu_destroy(widget, &submenu);
+		submenu = (struct menu){
+			.window = None,
+			.entries = NULL,
+		};
 		if (entry != NULL && entry->children != NULL) {
 			if (XPending(widget->display) > 0)
 				continue;
@@ -2195,8 +2194,9 @@ menu_run(struct widget *widget, struct menu *menu)
 			if (popup_timeout > 0)
 				continue;
 			popup_timeout = INITIAL_TIMEOUT;
-			submenu = menu_new(
-				widget, menu, entry->children, entry->nchildren,
+			menu_set(
+				widget, menu, &submenu,
+				entry->children, entry->nchildren,
 				menu->window_geometry.x,
 				menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
 				menu->window_geometry.width,
@@ -2205,8 +2205,8 @@ menu_run(struct widget *widget, struct menu *menu)
 		}
 	}
 done:
-	if (submenu != NULL)
-		menu_free(widget, submenu);
+	if (submenu.window != None)
+		menu_destroy(widget, &submenu);
 	menu->selected = -1;
 	commitdraw(widget, menu, menu->selected);
 	return;
@@ -2216,15 +2216,15 @@ static void
 menu_popup(struct widget *widget, struct entry *entries, size_t nentries,
 		int x_root, int y_root, bool windowed)
 {
-	struct menu *menu;
-	menu = menu_new(
-		widget, NULL, entries, nentries,
+	struct menu menu;
+	menu_set(
+		widget, NULL, &menu, entries, nentries,
 		x_root, y_root, 0, windowed, widget->title
 	);
 	(void)grabpointer(widget);
 	(void)grabkeyboard(widget);
-	menu_run(widget, menu);
-	menu_free(widget, menu);
+	menu_run(widget, &menu);
+	menu_destroy(widget, &menu);
 	ungrab(widget);
 }
 
