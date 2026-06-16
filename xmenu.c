@@ -2004,7 +2004,7 @@ menu_tear_off(struct widget *widget, struct menu *menu)
 static int
 menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 {
-	static int INITIAL_TIMEOUT = 500;
+	static int INITIAL_TIMEOUT = 300;
 	struct menu submenu = {};
 	XEvent xev;
 	XMotionEvent last_motion = {0};
@@ -2194,7 +2194,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				scroll(widget, menu, nentry);
 			if (submenu.window == None ||
 			    (double)(xev.xmotion.x - last_motion.x)/
-			    (xev.xmotion.time - last_motion.time) < 0.1)
+			    (xev.xmotion.time - last_motion.time) < 0.01)
 				menu->selected = nentry;
 			last_motion = xev.xmotion;
 			break;
@@ -2226,8 +2226,8 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 			if (motion_timeout > 0)
 				continue;
 			menu->selected = nentry;
+			motion_timeout = INITIAL_TIMEOUT;
 		}
-		motion_timeout = INITIAL_TIMEOUT;
 
 		if (menu->selected != prevselected) {
 			popup_timeout = INITIAL_TIMEOUT;
@@ -2238,8 +2238,10 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 		entry = get_entry(menu, menu->selected);
 		if (submenu.window != None && entry != NULL && submenu.entries == entry->children)
 			continue;
-		if (submenu.window != None)
+		if (submenu.window != None) {
 			menu_unmap(widget, &submenu, !grabbed);
+			popup_timeout = INITIAL_TIMEOUT;
+		}
 		submenu = (struct menu){
 			.window = None,
 			.entries = NULL,
