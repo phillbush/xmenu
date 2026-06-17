@@ -113,6 +113,7 @@ struct widget {
 	Display *display;
 	Visual *visual;
 	Colormap colormap;
+	Cursor cursor;
 	int depth;
 	int screen;
 	Window rootwin;
@@ -672,10 +673,6 @@ static int
 grabpointer(struct widget *widget)
 {
 	struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000, };
-	Cursor cursor;
-
-	/* set cursor so it does not change to whatever the window below uses */
-	cursor = XCreateFontCursor(widget->display, XC_left_ptr);
 
 	/* we may have to wait for another process to ungrab */
 	for (int i = 0; i < 1000; i++) {
@@ -683,16 +680,11 @@ grabpointer(struct widget *widget)
 			widget->display, widget->rootwin, True,
 			ButtonPressMask|PointerMotionMask,
 			GrabModeAsync, GrabModeAsync,
-			None, cursor, CurrentTime
-		) == GrabSuccess) {
-			if (cursor != None)
-				XFreeCursor(widget->display, cursor);
+			None, widget->cursor, CurrentTime
+		) == GrabSuccess)
 			return RETURN_SUCCESS;
-		}
 		nanosleep(&ts, NULL);
 	}
-	if (cursor != None)
-		XFreeCursor(widget->display, cursor);
 	warnx("cannot grab keyboard");
 	return RETURN_FAILURE;
 }
@@ -1559,7 +1551,7 @@ static void
 menu_map(struct widget *widget, struct menu *parent, struct menu *menu,
 		struct entry *entries, size_t nentries,
 		int x_root, int y_root, unsigned int button_width,
-		bool windowed, bool grab, char const *title)
+		bool windowed, Time time, char const *title)
 {
 	int max_height;
 	int xgap, ygap;
@@ -1567,10 +1559,18 @@ menu_map(struct widget *widget, struct menu *parent, struct menu *menu,
 	XRRMonitorInfo *infos;
 	int nmons = 0;
 
-	if (grab) {
-		if (grabpointer(widget) == RETURN_FAILURE)
+	if (!windowed) {
+		if (XGrabPointer(
+			widget->display, widget->rootwin, True,
+			ButtonPressMask|PointerMotionMask,
+			GrabModeAsync, GrabModeAsync,
+			None, widget->cursor, time
+		) != GrabSuccess)
 			return;
-		if (grabkeyboard(widget) == RETURN_FAILURE)
+		if (XGrabKeyboard(
+			widget->display, widget->rootwin, True,
+			GrabModeAsync, GrabModeAsync, time
+		) != GrabSuccess)
 			return;
 	}
 	monitor.x = 0;
@@ -1761,12 +1761,10 @@ ungrab(struct widget *widget)
 }
 
 static void
-menu_unmap(struct widget *widget, struct menu *menu, bool grabbed)
+menu_unmap(struct widget *widget, struct menu *menu)
 {
 	if (menu == NULL || menu->tornoff)
 		return;
-	if (grabbed)
-		ungrab(widget);
 	XDestroyWindow(widget->display, menu->window);
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		XRenderFreePicture(widget->display, menu->canvas[i].picture);
@@ -2043,14 +2041,14 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 			if (entry->children != NULL) {
 				if (submenu.entries != entry->children) {
 					if (submenu.window != None)
-						menu_unmap(widget, &submenu, !grabbed);
+						menu_unmap(widget, &submenu);
 					menu_map(
 						widget, menu, &submenu,
 						entry->children, entry->nchildren,
 						menu->window_geometry.x,
 						menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
 						menu->window_geometry.width,
-						false, !grabbed, entry->label
+						false, xev.xbutton.time, entry->label
 					);
 				}
 				goto recurse;
@@ -2077,12 +2075,12 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				widget->display, "WM_DELETE_WINDOW", false
 			))
 				break;
-			menu_unmap(widget, menu, false);
+			menu_unmap(widget, menu);
 			struct menu **prev = &widget->menus;
 			for (struct menu *tmp = widget->menus; tmp != NULL; tmp = tmp->next) {
 				if (tmp == menu) {
 					*prev = tmp->next;
-					menu_unmap(widget, tmp, false);
+					menu_unmap(widget, tmp);
 					break;
 				}
 				prev = &menu->next;
@@ -2125,14 +2123,14 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				if (entry->children != NULL) {
 					if (submenu.entries != entry->children) {
 						if (submenu.window != None)
-							menu_unmap(widget, &submenu, !grabbed);
+							menu_unmap(widget, &submenu);
 						menu_map(
 							widget, menu, &submenu,
 							entry->children, entry->nchildren,
 							menu->window_geometry.x,
 							menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
 							menu->window_geometry.width,
-							false, !grabbed, entry->label
+							false, xev.xkey.time, entry->label
 						);
 					}
 					submenu.selected = 0;
@@ -2247,7 +2245,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 		if (submenu.window != None && entry != NULL && submenu.entries == entry->children)
 			continue;
 		if (submenu.window != None) {
-			menu_unmap(widget, &submenu, !grabbed);
+			menu_unmap(widget, &submenu);
 			popup_timeout = INITIAL_TIMEOUT;
 		}
 		submenu = (struct menu){
@@ -2270,13 +2268,13 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				menu->window_geometry.x,
 				menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
 				menu->window_geometry.width,
-				false, !grabbed, entry->label
+				false, last_motion.time, entry->label
 			);
 		}
 	}
 done:
 	if (submenu.window != None)
-		menu_unmap(widget, &submenu, !grabbed);
+		menu_unmap(widget, &submenu);
 	menu->selected = -1;
 	commitdraw(widget, menu, menu->selected);
 	return close_all;
@@ -2284,15 +2282,15 @@ done:
 
 static void
 menu_popup(struct widget *widget, struct entry *entries, size_t nentries,
-		int x_root, int y_root, bool windowed)
+		int x_root, int y_root, bool windowed, Time time)
 {
 	struct menu menu;
 	menu_map(
 		widget, NULL, &menu, entries, nentries,
-		x_root, y_root, 0, windowed, !windowed, widget->title
+		x_root, y_root, 0, windowed, time, widget->title
 	);
 	(void)menu_run(widget, &menu, true);
-	menu_unmap(widget, &menu, !windowed);
+	menu_unmap(widget, &menu);
 	ungrab(widget);
 }
 
@@ -2301,6 +2299,7 @@ menu_handle_event(struct widget *widget, struct menu *menu, XEvent *event)
 {
 	XPutBackEvent(widget->display, event);
 	(void)menu_run(widget, menu, false);
+	ungrab(widget);
 }
 
 static void
@@ -2357,6 +2356,8 @@ cleanup(struct widget *widget)
 		XFreeColormap(widget->display, widget->colormap);
 	if (widget->window != None)
 		XDestroyWindow(widget->display, widget->window);
+	if (widget->cursor != None)
+		XFreeCursor(widget->display, widget->cursor);
 	free(widget);
 }
 
@@ -2385,6 +2386,7 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.title = title,
 		.leader = leader,
 		.menus = NULL,
+		.cursor = XCreateFontCursor(display, XC_left_ptr),
 
 		/* defaults [for color channels:  RED,  GREEN,   BLUE,  ALPHA] */
 		.colors[COLOR_BG].chans     = {0x3100, 0x3100, 0x3100, 0xFFFF},
@@ -2617,8 +2619,12 @@ main(int argc, char *argv[])
 	}
 
 	do {
-		if (rootmode)
+		if (rootmode) {
 			waitrootclick(widget, modifier, button);
+		} else if (grabpointer(widget) == RETURN_FAILURE ||
+		           grabkeyboard(widget) == RETURN_FAILURE) {
+			break;
+		}
 		if (!FLAG(geometry_flags, XValue|YValue)) {
 			XQueryPointer(
 				display, DefaultRootWindow(display),
@@ -2626,7 +2632,11 @@ main(int argc, char *argv[])
 				&x_root, &y_root, &(int){}, &(int){}, &(unsigned){}
 			);
 		}
-		menu_popup(widget, entries, nentries, x_root, y_root, windowed);
+		menu_popup(
+			widget, entries, nentries,
+			x_root, y_root, windowed,
+			CurrentTime
+		);
 	} while (rootmode);
 
 	while (widget->menus != NULL) {
@@ -2661,6 +2671,7 @@ main(int argc, char *argv[])
 		}
 	}
 
+	ungrab(widget);
 	cleanup(widget);
 	free(read_data);
 	free(entries);
