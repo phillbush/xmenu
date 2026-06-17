@@ -1772,6 +1772,13 @@ menu_unmap(struct widget *widget, struct menu *menu)
 	}
 }
 
+static void
+menu_close(struct widget *widget, struct menu *menu)
+{
+	menu->tornoff = false;
+	menu_unmap(widget, menu);
+}
+
 static ssize_t
 index_entry(struct widget *widget, struct menu *menu, long y)
 {
@@ -2075,18 +2082,18 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				widget->display, "WM_DELETE_WINDOW", false
 			))
 				break;
-			menu_unmap(widget, menu);
 			struct menu **prev = &widget->menus;
 			for (struct menu *tmp = widget->menus; tmp != NULL; tmp = tmp->next) {
 				if (tmp == menu) {
 					*prev = tmp->next;
-					menu_unmap(widget, tmp);
-					break;
+					menu_close(widget, tmp);
+					menu = NULL;
+					close_all = true;
+					goto done;
 				}
 				prev = &menu->next;
 			}
-			close_all = true;
-			goto done;
+			break;
 		case ConfigureNotify:
 			if (xev.xconfigure.window != menu->window) {
 				XPutBackEvent(widget->display, &xev);
@@ -2275,10 +2282,13 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 done:
 	if (submenu.window != None)
 		menu_unmap(widget, &submenu);
-	menu->selected = -1;
-	commitdraw(widget, menu, menu->selected);
+	if (menu != NULL) {
+		menu->selected = -1;
+		commitdraw(widget, menu, menu->selected);
+	}
 	return close_all;
 }
+
 
 static void
 menu_popup(struct widget *widget, struct entry *entries, size_t nentries,
