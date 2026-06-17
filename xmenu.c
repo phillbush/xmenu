@@ -1765,10 +1765,13 @@ menu_unmap(struct widget *widget, struct menu *menu)
 {
 	if (menu == NULL || menu->tornoff)
 		return;
-	XDestroyWindow(widget->display, menu->window);
+	if (menu->window != None)
+		XDestroyWindow(widget->display, menu->window);
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
-		XRenderFreePicture(widget->display, menu->canvas[i].picture);
-		XFreePixmap(widget->display, menu->canvas[i].pixmap);
+		if (menu->canvas[i].picture != None)
+			XRenderFreePicture(widget->display, menu->canvas[i].picture);
+		if (menu->canvas[i].pixmap != None)
+			XFreePixmap(widget->display, menu->canvas[i].pixmap);
 	}
 }
 
