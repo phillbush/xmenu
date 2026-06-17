@@ -2082,16 +2082,16 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				widget->display, "WM_DELETE_WINDOW", false
 			))
 				break;
-			struct menu **prev = &widget->menus;
-			for (struct menu *tmp = widget->menus; tmp != NULL; tmp = tmp->next) {
-				if (tmp == menu) {
-					*prev = tmp->next;
-					menu_close(widget, tmp);
-					menu = NULL;
-					close_all = true;
-					goto done;
+			for (struct menu **ptr = &widget->menus;
+			     *ptr != NULL;
+			     ptr = &(*ptr)->next) {
+				if (*ptr == menu) {
+					*ptr = menu->next;
+					menu_close(widget, menu);
+					menu_unmap(widget, &submenu);
+					free(menu);
+					return true;
 				}
-				prev = &menu->next;
 			}
 			break;
 		case ConfigureNotify:
@@ -2282,10 +2282,8 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 done:
 	if (submenu.window != None)
 		menu_unmap(widget, &submenu);
-	if (menu != NULL) {
-		menu->selected = -1;
-		commitdraw(widget, menu, menu->selected);
-	}
+	menu->selected = -1;
+	commitdraw(widget, menu, menu->selected);
 	return close_all;
 }
 
