@@ -1630,7 +1630,7 @@ menu_map(struct widget *widget, struct menu *parent, struct menu *menu,
 		.tearable = !windowed && widget->tearoff,
 		.tornoff = windowed,
 	};
-	xgap = widget->outer_border_width * 2;
+	xgap = widget->outer_border_width;
 	ygap = -widget->inner_border_width;
 	if (menu->tearable)
 		ygap -= widget->separatorh;
