@@ -2027,12 +2027,16 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 	for (;;) {
 		switch (next_event(widget->display, &xev, &timeout)) {
 		case ButtonPress:
+			if (xev.xbutton.button > Button3)
+				break;
 			if (xev.xbutton.window != menu->window) {
 				XPutBackEvent(widget->display, &xev);
 				goto done;
 			}
 			break;
 		case ButtonRelease:
+			if (xev.xbutton.button > Button3)
+				break;
 			if (xev.xbutton.window != menu->window) {
 				XPutBackEvent(widget->display, &xev);
 				goto done;
