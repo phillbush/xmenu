@@ -72,6 +72,18 @@ enum {
 	DIR_RIGHT
 };
 
+enum events {
+	/*
+	 * The .type field in XEvent(3) structures start from 2 because
+	 * 0 and 1 are reserved by the X11 protocol for errors and
+	 * replies.  XNextEvent(3) and related functions never return
+	 * an error or reply (or so it is expected).  So we use those
+	 * two values for our own purposes.
+	 */
+	CloseNotify     = 0,
+	TimeoutNotify   = 1,
+};
+
 struct entry {
 	char *label;
 	size_t labellen;
@@ -1763,10 +1775,9 @@ ungrab(struct widget *widget)
 static void
 menu_unmap(struct widget *widget, struct menu *menu)
 {
-	if (menu == NULL || menu->tornoff)
+	if (menu == NULL || menu->tornoff || menu->window == None)
 		return;
-	if (menu->window != None)
-		XDestroyWindow(widget->display, menu->window);
+	XDestroyWindow(widget->display, menu->window);
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		if (menu->canvas[i].picture != None)
 			XRenderFreePicture(widget->display, menu->canvas[i].picture);
@@ -1832,52 +1843,41 @@ get_entry(struct menu *menu, ssize_t entryc)
 }
 
 static int
-timed_poll(int fd, int timeout)
+next_event(Display *display, XEvent *event, int *timeout)
 {
 	struct timespec then, now;
 	int elapsed;
+	struct pollfd pfd = {
+		.fd = XConnectionNumber(display),
+		.events = POLLIN,
+	};
 
-	if (timeout <= 0)
-		return 0;
 	if (clock_gettime(CLOCK_MONOTONIC, &then) == -1) {
 		warn("clock_gettime");
-		return -1;
+		then.tv_sec = 0;
 	}
-	switch (poll(&(struct pollfd){.fd = fd, .events = POLLIN}, 1, timeout)) {
-	case -1:
-		if (errno != EINTR) {
-			warn("poll");
-			return -1;
-		}
-		/* fallthrough */
-	default:
-		if (clock_gettime(CLOCK_MONOTONIC, &now) == -1) {
-			warn("clock_gettime");
-			return -1;
-		}
-		elapsed = (now.tv_sec - then.tv_sec) * 1000;
-		elapsed += now.tv_nsec / 1000000;
-		elapsed -= then.tv_nsec / 1000000;
-		if (timeout > elapsed)
-			return timeout - elapsed;
-		/* fallthrough */
-	case 0:
-		return 0;
-	}
-}
 
-static int
-next_event(Display *display, XEvent *event)
-{
+	if (XPending(display) == 0) {
+		if (poll(&pfd, 1, *timeout?*timeout:-1) == 0) {
+			*timeout = 0;
+			return TimeoutNotify;
+		}
+	}
+
+	if (clock_gettime(CLOCK_MONOTONIC, &now) == -1) {
+		warn("clock_gettime");
+		*timeout = 0;
+	}
+	elapsed = (now.tv_sec - then.tv_sec) * 1000;
+	elapsed += now.tv_nsec / 1000000;
+	elapsed -= then.tv_nsec / 1000000;
+	if (*timeout > elapsed)
+		*timeout -= elapsed;
+
 	for (;;) {
-		static Time const DELAY_MOUSE = 32;
-		static Time last_motion = 0;
-
-		XNextEvent(display, event);
-
+		(void)XNextEvent(display, event);
 		if (event->type != MotionNotify)
 			return event->type;
-
 		/* compress sequential motion events into a single one */
 		while (XPending(display)) {
 			XEvent next;
@@ -1890,10 +1890,7 @@ next_event(Display *display, XEvent *event)
 				break;
 			XNextEvent(display, event);
 		}
-		if (event->xmotion.time - last_motion >= DELAY_MOUSE) {
-			last_motion = event->xmotion.time;
-			return MotionNotify;
-		}
+		return MotionNotify;
 	}
 }
 
@@ -1907,7 +1904,7 @@ scroll(struct widget *widget, struct menu *menu, ssize_t nentry)
 	for (;;) {
 		XEvent event;
 
-		while (XPending(widget->display)) switch (next_event(widget->display, &event)) {
+		switch (next_event(widget->display, &event, &timeout)) {
 		case MotionNotify: case ButtonPress: case ButtonRelease:
 			if (event.xmotion.window != menu->window)
 				return;
@@ -1916,12 +1913,7 @@ scroll(struct widget *widget, struct menu *menu, ssize_t nentry)
 				return;
 			}
 			break;
-		default:
-			return;
-		}
-
-		timeout = timed_poll(XConnectionNumber(widget->display), timeout);
-		if (timeout == 0) {
+		case TimeoutNotify:
 			timeout = SCROLL_TIME;
 			if (nentry == SCROLLDOWN)
 				scrolldown(widget, menu, widget->entryh);
@@ -1931,6 +1923,9 @@ scroll(struct widget *widget, struct menu *menu, ssize_t nentry)
 				commitdraw(widget, menu, nentry);
 			last_offset = menu->curr_screenful.offset;
 			XFlush(widget->display);
+			break;
+		default:
+			return;
 		}
 	}
 }
@@ -2019,18 +2014,18 @@ menu_tear_off(struct widget *widget, struct menu *menu)
 static int
 menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 {
-	static int INITIAL_TIMEOUT = 300;
+	static int MOTION_TIMEOUT = 300;
 	struct menu submenu = {};
 	XEvent xev;
 	XMotionEvent last_motion = {0};
 	struct entry *entry;
-	ssize_t nentry, prevselected = menu->selected;
-	int popup_timeout = INITIAL_TIMEOUT;
-	int motion_timeout = INITIAL_TIMEOUT;
+	ssize_t nentry;
+	ssize_t prevselected = menu->selected;
+	int timeout = 0;
 	bool close_all = false;
 
 	for (;;) {
-		switch (next_event(widget->display, &xev)) {
+		switch (next_event(widget->display, &xev, &timeout)) {
 		case ButtonPress:
 			if (xev.xbutton.window != menu->window) {
 				XPutBackEvent(widget->display, &xev);
@@ -2042,8 +2037,6 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				XPutBackEvent(widget->display, &xev);
 				goto done;
 			}
-			if (xev.xbutton.button > Button3)
-				break;
 			menu->selected = index_entry(widget, menu, xev.xbutton.y);
 			if (menu->selected == TEAROFF) {
 				menu_tear_off(widget, menu);
@@ -2217,9 +2210,42 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				scroll(widget, menu, nentry);
 			if (submenu.window == None ||
 			    (double)(xev.xmotion.x - last_motion.x)/
-			    (xev.xmotion.time - last_motion.time) < 0.01)
+			    (xev.xmotion.time - last_motion.time) < 0.01) {
 				menu->selected = nentry;
+			}
 			last_motion = xev.xmotion;
+			break;
+		case TimeoutNotify:
+			ssize_t pointed_index = index_entry(widget, menu, last_motion.y);
+			struct entry *sel_entry;
+
+			/*
+			 * submenu is being previewed; select entry
+			 * below pointer after a delay, to allow user
+			 * move pointer into subwindow.
+			 */
+			if (submenu.window != None &&
+			    pointed_index != menu->selected) {
+				menu->selected = pointed_index;
+				timeout = MOTION_TIMEOUT;
+			}
+
+			/*
+			 * no submenu is being previewed and a time has passed;
+			 * preview a submenu if possible
+			 */
+			sel_entry = get_entry(menu, menu->selected);
+			if (submenu.window == None && sel_entry != NULL &&
+			    sel_entry->children != NULL) {
+				menu_map(
+					widget, menu, &submenu,
+					sel_entry->children, sel_entry->nchildren,
+					menu->window_geometry.x,
+					menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
+					menu->window_geometry.width,
+					false, last_motion.time, sel_entry->label
+				);
+			}
 			break;
 		default:
 			if (grabbed)
@@ -2229,64 +2255,27 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				XPutBackEvent(widget->display, &xev);
 				goto done;
 			}
+			break;
+		}
+		struct entry *sel_entry = get_entry(menu, menu->selected);
+
+		if (menu->selected != prevselected) {
+			commitdraw(widget, menu, menu->selected);
+			prevselected = menu->selected;
+			timeout = MOTION_TIMEOUT;
 		}
 
 		/*
-		 * When a submenu is being previewed, allow moving the
-		 * pointer rightwards for a while and not unmap the
-		 * submenu, even if the pointer pass over another entry.
+		 * selected entry changed; unmap previewed submenu
 		 */
-		if (submenu.window != None && menu->selected == prevselected) {
-			nentry = index_entry(widget, menu, last_motion.y);
-			if (nentry == menu->selected)
-				continue;
-			if (XPending(widget->display) > 0)
-				continue;
-			motion_timeout = timed_poll(
-				XConnectionNumber(widget->display),
-				motion_timeout
-			);
-			if (motion_timeout > 0)
-				continue;
-			menu->selected = nentry;
-			motion_timeout = INITIAL_TIMEOUT;
-		}
-
-		if (menu->selected != prevselected) {
-			popup_timeout = INITIAL_TIMEOUT;
-			commitdraw(widget, menu, menu->selected);
-			prevselected = menu->selected;
-		}
-
-		entry = get_entry(menu, menu->selected);
-		if (submenu.window != None && entry != NULL && submenu.entries == entry->children)
-			continue;
-		if (submenu.window != None) {
+		if (sel_entry == NULL ||
+		    submenu.entries != sel_entry->children) {
 			menu_unmap(widget, &submenu);
-			popup_timeout = INITIAL_TIMEOUT;
-		}
-		submenu = (struct menu){
-			.window = None,
-			.entries = NULL,
-		};
-		if (entry != NULL && entry->children != NULL) {
-			if (XPending(widget->display) > 0)
-				continue;
-			popup_timeout = timed_poll(
-				XConnectionNumber(widget->display),
-				popup_timeout
-			);
-			if (popup_timeout > 0)
-				continue;
-			popup_timeout = INITIAL_TIMEOUT;
-			menu_map(
-				widget, menu, &submenu,
-				entry->children, entry->nchildren,
-				menu->window_geometry.x,
-				menu->window_geometry.y + get_entry_ypos(widget, menu, menu->selected),
-				menu->window_geometry.width,
-				false, last_motion.time, entry->label
-			);
+			timeout = MOTION_TIMEOUT;
+			submenu = (struct menu){
+				.window = None,
+				.entries = NULL,
+			};
 		}
 	}
 done:
