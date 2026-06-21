@@ -34,8 +34,6 @@ struct ctrlfnt {
 #define MAXGLYPHS 1024
 #define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
 
-static size_t font_count = 0;
-
 static struct FntPatt
 openxftfont(Display *display, const char *fontname, double fontsize)
 {
@@ -548,8 +546,6 @@ ctrlfnt_open(Display *display, int screen, Visual *visual, Colormap
 	} fonttype = GUESSTYPE;
 	int hascomma = strchr(fontspec, ',') != NULL;
 
-	if (font_count++ == 0)
-		(void)FcInit();
 	if ((fontset = malloc(sizeof(*fontset))) == NULL)
 		goto error;
 	*fontset = (ctrlfnt){
@@ -703,12 +699,12 @@ ctrlfnt_free(ctrlfnt *fontset)
 		return;
 	if (fontset->xft_fontset != NULL) {
 		for (size_t i = 0; i < fontset->xft_fontset->nmemb; i++) {
+			FcPatternDestroy(
+				fontset->xft_fontset->fonts[i].pattern
+			);
 			XftFontClose(
 				fontset->display,
 				fontset->xft_fontset->fonts[i].xftfont
-			);
-			FcPatternDestroy(
-				fontset->xft_fontset->fonts[i].pattern
 			);
 		}
 		free(fontset->xft_fontset->fonts);
@@ -721,6 +717,4 @@ ctrlfnt_free(ctrlfnt *fontset)
 		XFreeFont(fontset->display, fontset->xlfd_font);
 	}
 	free(fontset);
-	if (font_count-- == 1)
-		FcFini();
 }
