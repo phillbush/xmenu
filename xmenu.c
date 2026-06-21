@@ -1992,13 +1992,17 @@ menu_tear_off(struct widget *widget, struct menu *menu)
 		)}, 1
 	);
 	(void)XUnmapWindow(widget->display, menu->window);
-	if (menu->tearable)
+	if (menu->tearable) {
+		menu->window_geometry.x += widget->outer_border_width;
+		menu->window_geometry.y += widget->outer_border_width;
+		menu->window_geometry.y += widget->separatorh;
 		menu->window_geometry.height -= widget->separatorh;
-	XMoveResizeWindow(
-		widget->display, menu->window,
-		menu->window_geometry.x, menu->window_geometry.y,
-		menu->window_geometry.width, menu->window_geometry.height
-	);
+		XMoveResizeWindow(
+			widget->display, menu->window,
+			menu->window_geometry.x, menu->window_geometry.y,
+			menu->window_geometry.width, menu->window_geometry.height
+		);
+	}
 	menu->tearable = false;
 	menu->tornoff = true;
 	menu->selected = -1;
