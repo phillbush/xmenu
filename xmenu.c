@@ -129,7 +129,6 @@ struct widget {
 	int depth;
 	int screen;
 	Window rootwin;
-	Window window;
 	Window leader;
 	struct menu *menus;
 	XrmDatabase cli_xrm;
@@ -538,7 +537,7 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 {
 	*pixmap = XCreatePixmap(
 		widget->display,
-		widget->window,
+		widget->rootwin,
 		1, 1,
 		isalpha ? 8 : widget->depth
 	);
@@ -2369,8 +2368,6 @@ cleanup(struct widget *widget)
 	}
 	if (widget->colormap != None)
 		XFreeColormap(widget->display, widget->colormap);
-	if (widget->window != None)
-		XDestroyWindow(widget->display, widget->window);
 	if (widget->cursor != None)
 		XFreeCursor(widget->display, widget->cursor);
 	free(widget);
@@ -2393,7 +2390,6 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.depth = depth,
 		.colormap = colormap,
 		.cli_xrm = cli_xrm,
-		.window = None,
 		.argc = argc,
 		.argv = argv,
 		.name = name,
@@ -2417,8 +2413,6 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.alignment = ALIGN_LEFT,
 	};
 	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
-	if ((widget->window = createwindow(widget, NULL, 0, True)) == None)
-		goto error;
 
 	for (size_t color = 0; color < COLOR_LAST; color++) {
 		int retval;
