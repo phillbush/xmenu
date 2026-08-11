@@ -6,6 +6,7 @@ struct ctrlapp {
 	Visual *visual;
 	Colormap colormap;
 	int depth;
+	Cursor cursor;
 
 	struct _widget {
 		struct _widget *prev, *next;

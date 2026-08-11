@@ -5,6 +5,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xresource.h>
+#include <X11/cursorfont.h>
 #include <X11/extensions/Xrandr.h>
 
 #include <control/application.h>
@@ -40,8 +41,9 @@ ctrlapp_open(XrmDatabase resourcesdb,
 		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
 	if (fcntl(XConnectionNumber(app.display), F_SETFD, FD_CLOEXEC) == -1)
 		err(EXIT_FAILURE, "connection to X server \"%s\"", dpyname);
-	app.screen_number  = DefaultScreen(app.display);
-	app.root_window    = RootWindow(app.display, app.screen_number);
+	app.screen_number = DefaultScreen(app.display);
+	app.root_window = RootWindow(app.display, app.screen_number);
+	app.cursor = XCreateFontCursor(app.display, XC_left_ptr);
 	if (XMatchVisualInfo(app.display, app.screen_number, 32, TrueColor, &vinfo)) {
 		app.colormap = XCreateColormap(
 			app.display,
@@ -67,6 +69,8 @@ ctrlapp_close(struct ctrlapp *ctrlapp)
 		return;
 	if (ctrlapp->colormap != None)
 		XFreeColormap(ctrlapp->display, ctrlapp->colormap);
+	if (ctrlapp->cursor != None)
+		XFreeCursor(ctrlapp->display, ctrlapp->cursor);
 	if (ctrlapp->display != NULL)
 		XCloseDisplay(ctrlapp->display);
 }

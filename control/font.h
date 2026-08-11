@@ -1,6 +1,6 @@
-typedef struct ctrlfnt ctrlfnt;
+#include <X11/extensions/Xrender.h>
 
-ctrlfnt *
+struct ctrlfnt *
 ctrlfnt_open(
 	Display        *display,
 	int             screen,
@@ -12,7 +12,7 @@ ctrlfnt_open(
 
 int
 ctrlfnt_draw(
-	ctrlfnt    *fontset,
+	struct ctrlfnt    *fontset,
 	Picture         picture,
 	Picture         src,
 	XRectangle      rect,
@@ -20,8 +20,8 @@ ctrlfnt_draw(
 	int             nbytes
 );
 
-int ctrlfnt_width(ctrlfnt *fontset, const char *text, int nbytes);
-int ctrlfnt_height(ctrlfnt *fontset);
-int ctrlfnt_ascent(ctrlfnt *fontset);
-int ctrlfnt_descent(ctrlfnt *fontset);
-void ctrlfnt_free(ctrlfnt *fontset);
+int ctrlfnt_width(struct ctrlfnt *fontset, const char *text, int nbytes);
+int ctrlfnt_height(struct ctrlfnt *fontset);
+int ctrlfnt_ascent(struct ctrlfnt *fontset);
+int ctrlfnt_descent(struct ctrlfnt *fontset);
+void ctrlfnt_free(struct ctrlfnt *fontset);

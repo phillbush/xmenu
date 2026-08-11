@@ -225,7 +225,7 @@ getnextutf8char(const char *s, const char **next_ret)
 }
 
 static struct FntPatt
-opennewfont(ctrlfnt *fontset, FcChar32 glyph)
+opennewfont(struct ctrlfnt *fontset, FcChar32 glyph)
 {
 	struct FntPatt retfont = fontset->xft_fontset->fonts[0];
 #ifndef CTRLFNT_NO_SEARCH
@@ -277,7 +277,7 @@ done:
 }
 
 static XftFont *
-getfontforglyph(ctrlfnt *fontset, FcChar32 glyph)
+getfontforglyph(struct ctrlfnt *fontset, FcChar32 glyph)
 {
 	for (size_t i = 0; i < fontset->xft_fontset->nmemb; i++)
 		if (XftCharExists(fontset->display,
@@ -288,7 +288,7 @@ getfontforglyph(ctrlfnt *fontset, FcChar32 glyph)
 }
 
 static size_t
-getfontcoverage(ctrlfnt *fontset, XftFont *font, FcChar32 *glyphs, size_t nglyphs)
+getfontcoverage(struct ctrlfnt *fontset, XftFont *font, FcChar32 *glyphs, size_t nglyphs)
 {
 	size_t n;
 
@@ -353,7 +353,7 @@ utf8toxchar2b(XChar2b *glyphs, int maxglyphs, const char *text, int nbytes)
 }
 
 static int
-drawxftstring(ctrlfnt *fontset, Picture picture, Picture src,
+drawxftstring(struct ctrlfnt *fontset, Picture picture, Picture src,
              XRectangle rect, const char *text, int nbytes)
 {
 	FT_UInt glyphs[MAXGLYPHS];
@@ -394,7 +394,7 @@ drawxftstring(ctrlfnt *fontset, Picture picture, Picture src,
 }
 
 static int
-drawxmbstring(ctrlfnt *fontset, Pixmap pix, GC gc, XRectangle rect,
+drawxmbstring(struct ctrlfnt *fontset, Pixmap pix, GC gc, XRectangle rect,
               const char *text, int nbytes)
 {
 	XRectangle box;
@@ -408,7 +408,7 @@ drawxmbstring(ctrlfnt *fontset, Pixmap pix, GC gc, XRectangle rect,
 }
 
 static int
-drawxstring(ctrlfnt *fontset, Pixmap pix, GC gc, XRectangle rect,
+drawxstring(struct ctrlfnt *fontset, Pixmap pix, GC gc, XRectangle rect,
             const char *text, int nbytes)
 {
 	XChar2b glyphs[MAXGLYPHS];
@@ -426,7 +426,7 @@ drawxstring(ctrlfnt *fontset, Pixmap pix, GC gc, XRectangle rect,
 }
 
 static int
-drawx(ctrlfnt *fontset, Picture picture, Picture src,
+drawx(struct ctrlfnt *fontset, Picture picture, Picture src,
       XRectangle rect, const char *text, int nbytes)
 {
 	Pixmap pix = None;
@@ -481,7 +481,7 @@ error:
 }
 
 static int
-widthxftstring(ctrlfnt *fontset, const char *text, int nbytes)
+widthxftstring(struct ctrlfnt *fontset, const char *text, int nbytes)
 {
 	FT_UInt glyphs[MAXGLYPHS];
 	XftFont *font;
@@ -514,7 +514,7 @@ widthxftstring(ctrlfnt *fontset, const char *text, int nbytes)
 }
 
 static int
-widthxmbstring(ctrlfnt *fontset, const char *text, int nbytes)
+widthxmbstring(struct ctrlfnt *fontset, const char *text, int nbytes)
 {
 	XRectangle box;
 
@@ -523,7 +523,7 @@ widthxmbstring(ctrlfnt *fontset, const char *text, int nbytes)
 }
 
 static int
-widthxstring(ctrlfnt *fontset, const char *text, int nbytes)
+widthxstring(struct ctrlfnt *fontset, const char *text, int nbytes)
 {
 	XChar2b glyphs[MAXGLYPHS];
 	int nglyphs;
@@ -532,11 +532,11 @@ widthxstring(ctrlfnt *fontset, const char *text, int nbytes)
 	return XTextWidth16(fontset->xlfd_font, glyphs, nglyphs);
 }
 
-ctrlfnt *
+struct ctrlfnt *
 ctrlfnt_open(Display *display, int screen, Visual *visual, Colormap
              colormap, const char *fontspec, double fontsize)
 {
-	ctrlfnt *fontset = NULL;
+	struct ctrlfnt *fontset = NULL;
 	const char *str = fontspec;
 	enum {
 		XLFD_FONT,
@@ -548,7 +548,7 @@ ctrlfnt_open(Display *display, int screen, Visual *visual, Colormap
 
 	if ((fontset = malloc(sizeof(*fontset))) == NULL)
 		goto error;
-	*fontset = (ctrlfnt){
+	*fontset = (struct ctrlfnt){
 		.display = display,
 		.screen = screen,
 		.visual = visual,
@@ -597,7 +597,7 @@ error:
 }
 
 int
-ctrlfnt_draw(ctrlfnt *fontset, Picture picture, Picture src,
+ctrlfnt_draw(struct ctrlfnt *fontset, Picture picture, Picture src,
              XRectangle rect, const char *text, int nbytes)
 {
 	if (rect.width < 1)
@@ -616,7 +616,7 @@ ctrlfnt_draw(ctrlfnt *fontset, Picture picture, Picture src,
 }
 
 int
-ctrlfnt_width(ctrlfnt *fontset, const char *text, int nbytes)
+ctrlfnt_width(struct ctrlfnt *fontset, const char *text, int nbytes)
 {
 	if (fontset == NULL)
 		return 0;
@@ -630,7 +630,7 @@ ctrlfnt_width(ctrlfnt *fontset, const char *text, int nbytes)
 }
 
 int
-ctrlfnt_ascent(ctrlfnt *fontset)
+ctrlfnt_ascent(struct ctrlfnt *fontset)
 {
 	XFontSetExtents *extents;
 
@@ -651,7 +651,7 @@ ctrlfnt_ascent(ctrlfnt *fontset)
 }
 
 int
-ctrlfnt_descent(ctrlfnt *fontset)
+ctrlfnt_descent(struct ctrlfnt *fontset)
 {
 	XFontSetExtents *extents;
 
@@ -672,7 +672,7 @@ ctrlfnt_descent(ctrlfnt *fontset)
 }
 
 int
-ctrlfnt_height(ctrlfnt *fontset)
+ctrlfnt_height(struct ctrlfnt *fontset)
 {
 	XFontSetExtents *extents;
 
@@ -693,7 +693,7 @@ ctrlfnt_height(ctrlfnt *fontset)
 }
 
 void
-ctrlfnt_free(ctrlfnt *fontset)
+ctrlfnt_free(struct ctrlfnt *fontset)
 {
 	if (fontset == NULL)
 		return;

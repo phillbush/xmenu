@@ -1,6 +1,7 @@
 PROG = xmenu
 OBJS = ${PROG:=.o} util/color.o \
-	control/application.o control/font.o control/resources.o
+	control/application.o control/font.o control/menu.o \
+	control/resources.o
 SRCS = ${OBJS:.o=.c}
 MAN = ${PROG:=.1}
 DOC = README.md
