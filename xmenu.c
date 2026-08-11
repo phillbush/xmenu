@@ -30,14 +30,9 @@
 #include "control/font.h"
 #include "control/resources.h"
 
-#include "color.h"
+#include "util/color.h"
+#include "util/defs.h"
 
-#define LEN(a)                  (sizeof(a) / sizeof((a)[0]))
-#define MAX(a, b)               ((a)>(b)?(a):(b))
-#define MIN(a, b)               ((a)<(b)?(a):(b))
-#define FLAG(f, b)              (((f) & (b)) == (b))
-#define RETURN_FAILURE          (-1)
-#define RETURN_SUCCESS          0
 #define MAXPATHS                32
 #define PADDING                 4
 #define MIN_HEIGHT              (16 + PADDING * 2)
