@@ -5,9 +5,7 @@
 #include <dirent.h>
 #include <err.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
-#include <locale.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -28,6 +26,7 @@
 #include <X11/extensions/Xrandr.h>
 #include <Imlib2.h>
 
+#include "control/application.h"
 #include "control/font.h"
 #include "control/resources.h"
 
@@ -122,16 +121,9 @@ struct menu {
 };
 
 struct widget {
-	Display *display;
-	Visual *visual;
-	Colormap colormap;
 	Cursor cursor;
-	int depth;
-	int screen;
-	Window rootwin;
 	Window leader;
 	struct menu *menus;
-	XrmDatabase cli_xrm;
 	ctrlfnt *fontset;
 	unsigned int fonth;
 	int entryh, separatorh;
@@ -152,18 +144,14 @@ struct widget {
 		Pixmap pix;
 		Picture pict;
 	} colors[COLOR_LAST];
-
-	int argc;
-	char **argv;
-	char *name;
-	char *class;
-	char *title;
 };
 
 /* unindexable indices for special entries */
 static ssize_t TEAROFF    = -100;
 static ssize_t SCROLLUP   = -200;
 static ssize_t SCROLLDOWN = -300;
+
+struct ctrlapp *ctrlapp = NULL;
 
 static int
 parse_geometry(char *geometry_spec, int *x_root, int *y_root, char **monitor_name)
@@ -271,22 +259,22 @@ static Window
 createwindow(struct widget *widget, XRectangle *geometry, long eventmask, bool override)
 {
 	return XCreateWindow(
-		widget->display,
-		widget->rootwin,
+		ctrlapp->display,
+		ctrlapp->root_window,
 		geometry != NULL ? geometry->x : 0,
 		geometry != NULL ? geometry->y : 0,
 		geometry != NULL ? geometry->width : 1,
 		geometry != NULL ? geometry->height : 1,
 		widget->outer_border_width,
-		widget->depth,
+		ctrlapp->depth,
 		InputOutput,
-		widget->visual,
+		ctrlapp->visual,
 		CWBackPixel | CWEventMask | CWColormap |
 		CWBorderPixel | CWOverrideRedirect | CWSaveUnder,
 		&(XSetWindowAttributes){
 			.border_pixel = 0,
 			.background_pixel = 0,
-			.colormap = widget->colormap,
+			.colormap = ctrlapp->colormap,
 			.event_mask = eventmask,
 			.save_under = True,
 			.override_redirect = override,
@@ -340,10 +328,10 @@ setfont(struct widget *widget, const char *facename, double facesize)
 	if (facename == NULL)
 		facename = "xft:";
 	fontset = ctrlfnt_open(
-		widget->display,
-		widget->screen,
-		widget->visual,
-		widget->colormap,
+		ctrlapp->display,
+		ctrlapp->screen_number,
+		ctrlapp->visual,
+		ctrlapp->colormap,
 		facename,
 		facesize
 	);
@@ -397,7 +385,7 @@ parse_bg(void *ctx, void *, char const *value)
 
 	if (value == NULL)
 		return false;
-	if (!XParseColor(widget->display, widget->colormap, value, &xcolor)) {
+	if (!XParseColor(ctrlapp->display, ctrlapp->colormap, value, &xcolor)) {
 		warnx("%s: unkwnown color name", value);
 		return false;
 	}
@@ -407,35 +395,34 @@ parse_bg(void *ctx, void *, char const *value)
 		.blue = (double)xcolor.blue / 0xFFFF,
 	});
 
-	setcolor(widget->display, &widget->colors[COLOR_BG], rgb);
+	setcolor(ctrlapp->display, &widget->colors[COLOR_BG], rgb);
 	if (hsy.luma < 0.5) {
 		/* dark background; make text white */
-		setcolor(widget->display, &widget->colors[COLOR_FG], (struct rgb){1,1,1});
+		setcolor(ctrlapp->display, &widget->colors[COLOR_FG], (struct rgb){1,1,1});
 	} else {
 		/* light background; make text black */
-		setcolor(widget->display, &widget->colors[COLOR_FG], (struct rgb){0,0,0});
+		setcolor(ctrlapp->display, &widget->colors[COLOR_FG], (struct rgb){0,0,0});
 	}
-	setcolor(widget->display, &widget->colors[COLOR_TOP], to_rgb((struct hsy){
+	setcolor(ctrlapp->display, &widget->colors[COLOR_TOP], to_rgb((struct hsy){
 		hsy.hue, hsy.saturation, hsy.luma*0.5 + 0.5
 	}));
-	setcolor(widget->display, &widget->colors[COLOR_BOT], to_rgb((struct hsy){
+	setcolor(ctrlapp->display, &widget->colors[COLOR_BOT], to_rgb((struct hsy){
 		hsy.hue, hsy.saturation, hsy.luma*0.5
 	}));
 	return true;
 }
 
 static Bool
-parse_color(void *ctx, void *addr, char const *value)
+parse_color(void *, void *addr, char const *value)
 {
-	struct widget *widget = ctx;
 	struct color *color = addr;
 	XColor xcolor;
 
 	if (value == NULL)
 		return false;
-	if (!XParseColor(widget->display, widget->colormap, value, &xcolor))
+	if (!XParseColor(ctrlapp->display, ctrlapp->colormap, value, &xcolor))
 		return false;
-	setcolor(widget->display, color, (struct rgb){
+	setcolor(ctrlapp->display, color, (struct rgb){
 		.red = (double)xcolor.red / 0xFFFF,
 		.green = (double)xcolor.green / 0xFFFF,
 		.blue = (double)xcolor.blue / 0xFFFF,
@@ -467,7 +454,7 @@ parse_opacity(void *ctx, void *, const char *value)
 		return false;
 	widget->colors[COLOR_OPACITY].chans = (XRenderColor){ .alpha = d * 0xFFFF};
 	XRenderFillRectangle(
-		widget->display,
+		ctrlapp->display,
 		PictOpSrc,
 		widget->colors[COLOR_OPACITY].pict,
 		&widget->colors[COLOR_OPACITY].chans,
@@ -492,8 +479,8 @@ loadresources(struct widget *widget, const char *str)
 	char const *fontspec = NULL;
 	double fontsize = 0.0;
 #define MK_RES(n, c, p, fun) (struct ctrlres){\
-	.name_path  = (char *[]){widget->name, n},\
-	.class_path = (char *[]){widget->class, c},\
+	.name_path  = (char *[]){ctrlapp->name, n},\
+	.class_path = (char *[]){ctrlapp->class, c},\
 	.nnodes = 2, .addr = p, .setter = fun}
 	struct ctrlres resources[] = {
 		MK_RES("activeBackground", "ActiveBackground", &widget->colors[COLOR_SELBG], parse_color),
@@ -523,7 +510,7 @@ loadresources(struct widget *widget, const char *str)
 		xdb = XrmGetStringDatabase(str);
 	ctrlres_parsexrdb(
 		widget,
-		(XrmDatabase[]){widget->cli_xrm, xdb}, 2,
+		(XrmDatabase[]){ctrlapp->resourcesdb, xdb}, 2,
 		resources, LEN(resources)
 	);
 	if (fontspec != NULL)
@@ -532,25 +519,25 @@ loadresources(struct widget *widget, const char *str)
 }
 
 static int
-createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
+createpicture(Picture *picture, Pixmap *pixmap,
               XRenderColor *color, bool isalpha)
 {
 	*pixmap = XCreatePixmap(
-		widget->display,
-		widget->rootwin,
+		ctrlapp->display,
+		ctrlapp->root_window,
 		1, 1,
-		isalpha ? 8 : widget->depth
+		isalpha ? 8 : ctrlapp->depth
 	);
 	if (*pixmap == None) {
 		warnx("could not create pixmap");
 		return RETURN_FAILURE;
 	}
 	*picture = XRenderCreatePicture(
-		widget->display,
+		ctrlapp->display,
 		*pixmap,
 		isalpha
-			? XRenderFindStandardFormat(widget->display, PictStandardA8)
-			: XRenderFindVisualFormat(widget->display, widget->visual),
+			? XRenderFindStandardFormat(ctrlapp->display, PictStandardA8)
+			: XRenderFindVisualFormat(ctrlapp->display, ctrlapp->visual),
 		CPRepeat,
 		&(XRenderPictureAttributes){
 			.repeat = RepeatNormal,
@@ -561,7 +548,7 @@ createpicture(struct widget *widget, Picture *picture, Pixmap *pixmap,
 		return RETURN_FAILURE;
 	}
 	XRenderFillRectangle(
-		widget->display,
+		ctrlapp->display,
 		PictOpSrc,
 		*picture,
 		color,
@@ -688,7 +675,7 @@ grabpointer(struct widget *widget)
 	/* we may have to wait for another process to ungrab */
 	for (int i = 0; i < 1000; i++) {
 		if (XGrabPointer(
-			widget->display, widget->rootwin, True,
+			ctrlapp->display, ctrlapp->root_window, True,
 			ButtonPressMask|PointerMotionMask,
 			GrabModeAsync, GrabModeAsync,
 			None, widget->cursor, CurrentTime
@@ -708,7 +695,7 @@ grabkeyboard(struct widget *widget)
 	/* we may have to wait for another process to ungrab */
 	for (int i = 0; i < 1000; i++) {
 		if (XGrabKeyboard(
-			widget->display, widget->rootwin, True,
+			ctrlapp->display, ctrlapp->root_window, True,
 			GrabModeAsync, GrabModeAsync,
 			CurrentTime
 		) == GrabSuccess) return RETURN_SUCCESS;
@@ -724,7 +711,7 @@ drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 	for (int i = 0; i < widget->inner_border_width; i++) {
 		/* draw light shadow */
 		XRenderFillRectangle(
-			widget->display,
+			ctrlapp->display,
 			PictOpSrc,
 			picture,
 			&widget->colors[COLOR_TOP].chans,
@@ -732,7 +719,7 @@ drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 			1, geometry->height - (i * 2 + 1)
 		);
 		XRenderFillRectangle(
-			widget->display,
+			ctrlapp->display,
 			PictOpSrc,
 			picture,
 			&widget->colors[COLOR_TOP].chans,
@@ -742,7 +729,7 @@ drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 
 		/* draw dark shadow */
 		XRenderFillRectangle(
-			widget->display,
+			ctrlapp->display,
 			PictOpSrc,
 			picture,
 			&widget->colors[COLOR_BOT].chans,
@@ -750,7 +737,7 @@ drawshadows(struct widget *widget, Picture picture, XRectangle *geometry)
 			1, geometry->height - i * 2
 		);
 		XRenderFillRectangle(
-			widget->display,
+			ctrlapp->display,
 			PictOpSrc,
 			picture,
 			&widget->colors[COLOR_BOT].chans,
@@ -793,7 +780,7 @@ drawdashline(struct widget *widget, Picture picture, int width, int y)
 		}
 		for (size_t i = 0; i < nrects; i++) {
 			XRenderFillRectangles(
-				widget->display,
+				ctrlapp->display,
 				PictOpSrc,
 				picture,
 				&widget->colors[COLOR_TOP].chans,
@@ -801,7 +788,7 @@ drawdashline(struct widget *widget, Picture picture, int width, int y)
 				nrects
 			);
 			XRenderFillRectangles(
-				widget->display,
+				ctrlapp->display,
 				PictOpSrc,
 				picture,
 				&widget->colors[COLOR_BOT].chans,
@@ -816,7 +803,7 @@ static void
 drawseparator(struct widget *widget, Picture picture, XRectangle *rect)
 {
 	XRenderFillRectangle(
-		widget->display,
+		ctrlapp->display,
 		PictOpSrc,
 		picture,
 		&widget->colors[COLOR_BOT].chans,
@@ -826,7 +813,7 @@ drawseparator(struct widget *widget, Picture picture, XRectangle *rect)
 		1
 	);
 	XRenderFillRectangle(
-		widget->display,
+		ctrlapp->display,
 		PictOpSrc,
 		picture,
 		&widget->colors[COLOR_TOP].chans,
@@ -896,11 +883,11 @@ drawtriangle(struct widget *widget, Picture picture, Picture src, int x, int y, 
 		};
 	}
 	XRenderCompositeTriangles(
-		widget->display,
+		ctrlapp->display,
 		PictOpOver,
 		src,
 		picture,
-		XRenderFindStandardFormat(widget->display, PictStandardA8),
+		XRenderFindStandardFormat(ctrlapp->display, PictStandardA8),
 		0, 0,
 		&triangle,
 		1
@@ -929,9 +916,9 @@ initimlib(struct widget *widget)
 	imlib_set_cache_size(2048 * 1024);
 	imlib_context_set_dither(1);
 	imlib_context_set_blend(1);
-	imlib_context_set_display(widget->display);
-	imlib_context_set_visual(widget->visual);
-	imlib_context_set_colormap(widget->colormap);
+	imlib_context_set_display(ctrlapp->display);
+	imlib_context_set_visual(ctrlapp->visual);
+	imlib_context_set_colormap(ctrlapp->colormap);
 }
 
 static Imlib_Image
@@ -1039,28 +1026,28 @@ drawmenu(struct widget *widget, struct menu *menu)
 		for (size_t i = 0; i < CANVAS_LAST; i++) {
 			if (menu->canvas[i].picture != None) {
 				XRenderFreePicture(
-					widget->display,
+					ctrlapp->display,
 					menu->canvas[i].picture
 				);
 			}
 			if (menu->canvas[i].pixmap != None)
-				XFreePixmap(widget->display, menu->canvas[i].pixmap);
+				XFreePixmap(ctrlapp->display, menu->canvas[i].pixmap);
 			menu->canvas[i].pixmap = XCreatePixmap(
-				widget->display,
+				ctrlapp->display,
 				menu->window,
 				menu->canvas_width,
 				menu->canvas_height,
-				widget->depth
+				ctrlapp->depth
 			);
 			menu->canvas[i].picture = XRenderCreatePicture(
-				widget->display,
+				ctrlapp->display,
 				menu->canvas[i].pixmap,
-				XRenderFindVisualFormat(widget->display, widget->visual),
+				XRenderFindVisualFormat(ctrlapp->display, ctrlapp->visual),
 				0,
 				NULL
 			);
 			XRenderFillRectangle(
-				widget->display,
+				ctrlapp->display,
 				PictOpClear,
 				menu->canvas[i].picture,
 				&(XRenderColor){ 0 },
@@ -1072,7 +1059,7 @@ drawmenu(struct widget *widget, struct menu *menu)
 	}
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		XRenderComposite(
-			widget->display,
+			ctrlapp->display,
 			PictOpSrc,
 			widget->colors[i==CANVAS_SELECT ?  COLOR_SELBG : COLOR_BG].pict,
 			widget->colors[COLOR_OPACITY].pict,
@@ -1286,12 +1273,12 @@ next:
 		}
 	}
 	XSetWindowBackgroundPixmap(
-		widget->display,
+		ctrlapp->display,
 		menu->window,
 		menu->canvas[CANVAS_NORMAL].pixmap
 	);
-	XSetWindowBorderPixmap(widget->display, menu->window, widget->colors[COLOR_BORDER].pix);
-	XClearWindow(widget->display, menu->window);
+	XSetWindowBorderPixmap(ctrlapp->display, menu->window, widget->colors[COLOR_BORDER].pix);
+	XClearWindow(ctrlapp->display, menu->window);
 }
 
 static int
@@ -1348,7 +1335,7 @@ commitdraw(struct widget *widget, struct menu *menu, ssize_t selected)
 	int src_canvas_y, dst_canvas_y;
 
 	XRenderFillRectangle(
-		widget->display,
+		ctrlapp->display,
 		PictOpClear,
 		menu->canvas[CANVAS_FINAL].picture,
 		&(XRenderColor){ 0 },
@@ -1357,7 +1344,7 @@ commitdraw(struct widget *widget, struct menu *menu, ssize_t selected)
 		menu->window_geometry.height
 	);
 	XRenderComposite(
-		widget->display,
+		ctrlapp->display,
 		PictOpOver,
 		menu->canvas[CANVAS_NORMAL].picture,
 		None,
@@ -1370,7 +1357,7 @@ commitdraw(struct widget *widget, struct menu *menu, ssize_t selected)
 	);
 	if (menu->tearable) {
 		XRenderComposite(
-			widget->display,
+			ctrlapp->display,
 			PictOpOver,
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
@@ -1384,7 +1371,7 @@ commitdraw(struct widget *widget, struct menu *menu, ssize_t selected)
 	}
 	if (menu->overflow) {
 		XRenderComposite(
-			widget->display,
+			ctrlapp->display,
 			PictOpOver,
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
@@ -1396,7 +1383,7 @@ commitdraw(struct widget *widget, struct menu *menu, ssize_t selected)
 			get_entry_height(widget, menu, SCROLLUP)
 		);
 		XRenderComposite(
-			widget->display,
+			ctrlapp->display,
 			PictOpOver,
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
@@ -1420,7 +1407,7 @@ commitdraw(struct widget *widget, struct menu *menu, ssize_t selected)
 		dst_canvas_y = src_canvas_y - menu->curr_screenful.offset;
 	if (src_canvas_y >= 0) {
 		XRenderComposite(
-			widget->display,
+			ctrlapp->display,
 			PictOpOver,
 			menu->canvas[CANVAS_SELECT].picture,
 			None,
@@ -1438,11 +1425,11 @@ commitdraw(struct widget *widget, struct menu *menu, ssize_t selected)
 		&menu->window_geometry
 	);
 	XSetWindowBackgroundPixmap(
-		widget->display,
+		ctrlapp->display,
 		menu->window,
 		menu->canvas[CANVAS_FINAL].pixmap
 	);
-	XClearWindow(widget->display, menu->window);
+	XClearWindow(ctrlapp->display, menu->window);
 }
 
 static ssize_t
@@ -1572,23 +1559,23 @@ menu_map(struct widget *widget, struct menu *parent, struct menu *menu,
 
 	if (!windowed) {
 		if (XGrabPointer(
-			widget->display, widget->rootwin, True,
+			ctrlapp->display, ctrlapp->root_window, True,
 			ButtonPressMask|PointerMotionMask,
 			GrabModeAsync, GrabModeAsync,
 			None, widget->cursor, time
 		) != GrabSuccess)
 			return;
 		if (XGrabKeyboard(
-			widget->display, widget->rootwin, True,
+			ctrlapp->display, ctrlapp->root_window, True,
 			GrabModeAsync, GrabModeAsync, time
 		) != GrabSuccess)
 			return;
 	}
 	monitor.x = 0;
 	monitor.y = 0;
-	monitor.width = DisplayWidth(widget->display, widget->screen);
-	monitor.height = DisplayHeight(widget->display, widget->screen);
-	infos = XRRGetMonitors(widget->display, widget->rootwin, True, &nmons);
+	monitor.width = DisplayWidth(ctrlapp->display, ctrlapp->screen_number);
+	monitor.height = DisplayHeight(ctrlapp->display, ctrlapp->screen_number);
+	infos = XRRGetMonitors(ctrlapp->display, ctrlapp->root_window, True, &nmons);
 	for (int i = 0; i < nmons && infos != NULL; i++) {
 		if (x_root < infos[i].x)
 			continue;
@@ -1709,49 +1696,49 @@ menu_map(struct widget *widget, struct menu *parent, struct menu *menu,
 	);
 	if (widget->leader != None) {
 		(void)XSetTransientForHint(
-			widget->display,
+			ctrlapp->display,
 			menu->window,
 			widget->leader
 		);
 	}
 	(void)XSetWMProtocols(
-		widget->display,
+		ctrlapp->display,
 		menu->window,
-		(Atom[]){XInternAtom(widget->display, "WM_DELETE_WINDOW", False)},
+		(Atom[]){XInternAtom(ctrlapp->display, "WM_DELETE_WINDOW", False)},
 		1
 	);
 	(void)XmbSetWMProperties(
-		widget->display,
+		ctrlapp->display,
 		menu->window,
 		title, title,
-		widget->argv,
-		widget->argc,
+		ctrlapp->argv,
+		ctrlapp->argc,
 		&(XSizeHints){ .flags = USPosition|USSize },
 		NULL,
 		&(XClassHint){
-			.res_class = widget->class,
-			.res_name = widget->name,
+			.res_class = ctrlapp->class,
+			.res_name = ctrlapp->name,
 		}
 	);
 	(void)XChangeProperty(
-		widget->display,
+		ctrlapp->display,
 		menu->window,
-		XInternAtom(widget->display, "_NET_WM_NAME", False),
-		XInternAtom(widget->display, "UTF8_STRING", False),
+		XInternAtom(ctrlapp->display, "_NET_WM_NAME", False),
+		XInternAtom(ctrlapp->display, "UTF8_STRING", False),
 		8,
 		PropModeReplace,
 		(unsigned char *)title,
 		strlen(title)
 	);
 	(void)XChangeProperty(
-		widget->display,
+		ctrlapp->display,
 		menu->window,
-		XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE", False),
+		XInternAtom(ctrlapp->display, "_NET_WM_WINDOW_TYPE", False),
 		XA_ATOM,
 		32,
 		PropModeReplace,
 		(void *)(Atom[]){XInternAtom(
-			widget->display,
+			ctrlapp->display,
 			menu->tornoff
 			? "_NET_WM_WINDOW_TYPE_MENU"
 			: "_NET_WM_WINDOW_TYPE_POPUP_MENU",
@@ -1761,35 +1748,35 @@ menu_map(struct widget *widget, struct menu *parent, struct menu *menu,
 
 	drawmenu(widget, menu);
 	commitdraw(widget, menu, -1);
-	XMapRaised(widget->display, menu->window);
+	XMapRaised(ctrlapp->display, menu->window);
 }
 
 static void
-ungrab(struct widget *widget)
+ungrab()
 {
-	XUngrabPointer(widget->display, CurrentTime);
-	XUngrabKeyboard(widget->display, CurrentTime);
+	XUngrabPointer(ctrlapp->display, CurrentTime);
+	XUngrabKeyboard(ctrlapp->display, CurrentTime);
 }
 
 static void
-menu_unmap(struct widget *widget, struct menu *menu)
+menu_unmap(struct menu *menu)
 {
 	if (menu == NULL || menu->tornoff || menu->window == None)
 		return;
-	XDestroyWindow(widget->display, menu->window);
+	XDestroyWindow(ctrlapp->display, menu->window);
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		if (menu->canvas[i].picture != None)
-			XRenderFreePicture(widget->display, menu->canvas[i].picture);
+			XRenderFreePicture(ctrlapp->display, menu->canvas[i].picture);
 		if (menu->canvas[i].pixmap != None)
-			XFreePixmap(widget->display, menu->canvas[i].pixmap);
+			XFreePixmap(ctrlapp->display, menu->canvas[i].pixmap);
 	}
 }
 
 static void
-menu_close(struct widget *widget, struct menu *menu)
+menu_close(struct menu *menu)
 {
 	menu->tornoff = false;
-	menu_unmap(widget, menu);
+	menu_unmap(menu);
 }
 
 static ssize_t
@@ -1903,12 +1890,12 @@ scroll(struct widget *widget, struct menu *menu, ssize_t nentry)
 	for (;;) {
 		XEvent event;
 
-		switch (next_event(widget->display, &event, &timeout)) {
+		switch (next_event(ctrlapp->display, &event, &timeout)) {
 		case MotionNotify: case ButtonPress: case ButtonRelease:
 			if (event.xmotion.window != menu->window)
 				return;
 			if (index_entry(widget, menu, event.xmotion.y) != nentry) {
-				XPutBackEvent(widget->display, &event);
+				XPutBackEvent(ctrlapp->display, &event);
 				return;
 			}
 			break;
@@ -1921,7 +1908,7 @@ scroll(struct widget *widget, struct menu *menu, ssize_t nentry)
 			if (menu->curr_screenful.offset != last_offset)
 				commitdraw(widget, menu, nentry);
 			last_offset = menu->curr_screenful.offset;
-			XFlush(widget->display);
+			XFlush(ctrlapp->display);
 			break;
 		default:
 			return;
@@ -1948,14 +1935,14 @@ activate_entry(struct widget *widget, struct menu *menu, ssize_t nentry, bool al
 
 	/* blink */
 	commitdraw(widget, menu, -1);
-	XSync(widget->display, False); xsleep(60000);
+	XSync(ctrlapp->display, False); xsleep(60000);
 	commitdraw(widget, menu, nentry);
-	XSync(widget->display, False); xsleep(60000);
+	XSync(ctrlapp->display, False); xsleep(60000);
 	commitdraw(widget, menu, -1);
-	XSync(widget->display, False); xsleep(60000);
+	XSync(ctrlapp->display, False); xsleep(60000);
 	commitdraw(widget, menu, nentry);
 	while (XCheckMaskEvent(
-		widget->display,
+		ctrlapp->display,
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
 		&(XEvent){}
 	))
@@ -1979,25 +1966,25 @@ menu_tear_off(struct widget *widget, struct menu *menu)
 		return;
 	}
 	(void)XChangeWindowAttributes(
-		widget->display, menu->window, CWOverrideRedirect,
+		ctrlapp->display, menu->window, CWOverrideRedirect,
 		&(XSetWindowAttributes){ .override_redirect = false, }
 	);
 	(void)XChangeProperty(
-		widget->display, menu->window,
-		XInternAtom(widget->display, "_NET_WM_WINDOW_TYPE", false),
+		ctrlapp->display, menu->window,
+		XInternAtom(ctrlapp->display, "_NET_WM_WINDOW_TYPE", false),
 		XA_ATOM, 32, PropModeReplace,
 		(void *)(Atom[]){XInternAtom(
-			widget->display, "_NET_WM_WINDOW_TYPE_MENU", false
+			ctrlapp->display, "_NET_WM_WINDOW_TYPE_MENU", false
 		)}, 1
 	);
-	(void)XUnmapWindow(widget->display, menu->window);
+	(void)XUnmapWindow(ctrlapp->display, menu->window);
 	if (menu->tearable) {
 		menu->window_geometry.x += widget->outer_border_width;
 		menu->window_geometry.y += widget->outer_border_width;
 		menu->window_geometry.y += widget->separatorh;
 		menu->window_geometry.height -= widget->separatorh;
 		XMoveResizeWindow(
-			widget->display, menu->window,
+			ctrlapp->display, menu->window,
 			menu->window_geometry.x, menu->window_geometry.y,
 			menu->window_geometry.width, menu->window_geometry.height
 		);
@@ -2007,7 +1994,7 @@ menu_tear_off(struct widget *widget, struct menu *menu)
 	menu->selected = -1;
 	drawmenu(widget, menu);
 	commitdraw(widget, menu, menu->selected);
-	(void)XMapWindow(widget->display, menu->window);
+	(void)XMapWindow(ctrlapp->display, menu->window);
 
 	*new_menu = *menu;
 	new_menu->next = widget->menus;
@@ -2028,12 +2015,12 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 	bool close_all = false;
 
 	for (;;) {
-		switch (next_event(widget->display, &xev, &timeout)) {
+		switch (next_event(ctrlapp->display, &xev, &timeout)) {
 		case ButtonPress:
 			if (xev.xbutton.button > Button3)
 				break;
 			if (xev.xbutton.window != menu->window) {
-				XPutBackEvent(widget->display, &xev);
+				XPutBackEvent(ctrlapp->display, &xev);
 				goto done;
 			}
 			break;
@@ -2041,7 +2028,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 			if (xev.xbutton.button > Button3)
 				break;
 			if (xev.xbutton.window != menu->window) {
-				XPutBackEvent(widget->display, &xev);
+				XPutBackEvent(ctrlapp->display, &xev);
 				goto done;
 			}
 			menu->selected = index_entry(widget, menu, xev.xbutton.y);
@@ -2058,7 +2045,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 			if (entry->children != NULL) {
 				if (submenu.entries != entry->children) {
 					if (submenu.window != None)
-						menu_unmap(widget, &submenu);
+						menu_unmap(&submenu);
 					menu_map(
 						widget, menu, &submenu,
 						entry->children, entry->nchildren,
@@ -2081,15 +2068,15 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 			break;
 		case ClientMessage:
 			if (xev.xclient.window != menu->window) {
-				XPutBackEvent(widget->display, &xev);
+				XPutBackEvent(ctrlapp->display, &xev);
 				goto done;
 			}
 			if (xev.xclient.message_type != XInternAtom(
-				widget->display, "WM_PROTOCOLS", false
+				ctrlapp->display, "WM_PROTOCOLS", false
 			))
 				break;
 			if ((Atom)xev.xclient.data.l[0] != XInternAtom(
-				widget->display, "WM_DELETE_WINDOW", false
+				ctrlapp->display, "WM_DELETE_WINDOW", false
 			))
 				break;
 			for (struct menu **ptr = &widget->menus;
@@ -2097,8 +2084,8 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 			     ptr = &(*ptr)->next) {
 				if (*ptr == menu) {
 					*ptr = menu->next;
-					menu_close(widget, menu);
-					menu_unmap(widget, &submenu);
+					menu_close(menu);
+					menu_unmap(&submenu);
 					free(menu);
 					return true;
 				}
@@ -2106,7 +2093,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 			break;
 		case ConfigureNotify:
 			if (xev.xconfigure.window != menu->window) {
-				XPutBackEvent(widget->display, &xev);
+				XPutBackEvent(ctrlapp->display, &xev);
 				goto done;
 			}
 			menu->window_geometry.x = xev.xconfigure.x;
@@ -2120,7 +2107,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 			commitdraw(widget, menu, menu->selected);
 			break;
 		case KeyPress:
-			KeySym ksym = XkbKeycodeToKeysym(widget->display, xev.xkey.keycode, 0, 0);
+			KeySym ksym = XkbKeycodeToKeysym(ctrlapp->display, xev.xkey.keycode, 0, 0);
 
 			if (ksym == XK_Tab && FLAG(xev.xkey.state, ShiftMask))
 				ksym = XK_ISO_Left_Tab;
@@ -2140,7 +2127,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				if (entry->children != NULL) {
 					if (submenu.entries != entry->children) {
 						if (submenu.window != None)
-							menu_unmap(widget, &submenu);
+							menu_unmap(&submenu);
 						menu_map(
 							widget, menu, &submenu,
 							entry->children, entry->nchildren,
@@ -2159,7 +2146,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 						xev.xkey.state & ShiftMask
 					);
 					xev.xkey.keycode = XKeysymToKeycode(
-						widget->display,
+						ctrlapp->display,
 						XK_Escape
 					);
 					close_all = true;
@@ -2204,7 +2191,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				 * Pointer on ancestor menu, over entry which
 				 * does not descends into current menu.
 				 */
-				XPutBackEvent(widget->display, &xev);
+				XPutBackEvent(ctrlapp->display, &xev);
 				goto done;
 			}
 			if (xev.xmotion.window != menu->window) {
@@ -2259,7 +2246,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 				break;
 			if (xev.xany.window != menu->window &&
 			    xev.xany.window != submenu.window) {
-				XPutBackEvent(widget->display, &xev);
+				XPutBackEvent(ctrlapp->display, &xev);
 				goto done;
 			}
 			break;
@@ -2277,7 +2264,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 		 */
 		if (sel_entry == NULL ||
 		    submenu.entries != sel_entry->children) {
-			menu_unmap(widget, &submenu);
+			menu_unmap(&submenu);
 			timeout = MOTION_TIMEOUT;
 			submenu = (struct menu){
 				.window = None,
@@ -2287,7 +2274,7 @@ menu_run(struct widget *widget, struct menu *menu, bool grabbed)
 	}
 done:
 	if (submenu.window != None)
-		menu_unmap(widget, &submenu);
+		menu_unmap(&submenu);
 	menu->selected = -1;
 	commitdraw(widget, menu, menu->selected);
 	return close_all;
@@ -2301,29 +2288,29 @@ menu_popup(struct widget *widget, struct entry *entries, size_t nentries,
 	struct menu menu;
 	menu_map(
 		widget, NULL, &menu, entries, nentries,
-		x_root, y_root, 0, windowed, time, widget->title
+		x_root, y_root, 0, windowed, time, ctrlapp->title
 	);
 	(void)menu_run(widget, &menu, true);
-	menu_unmap(widget, &menu);
-	ungrab(widget);
+	menu_unmap(&menu);
+	ungrab();
 }
 
 static void
 menu_handle_event(struct widget *widget, struct menu *menu, XEvent *event)
 {
-	XPutBackEvent(widget->display, event);
+	XPutBackEvent(ctrlapp->display, event);
 	(void)menu_run(widget, menu, false);
-	ungrab(widget);
+	ungrab();
 }
 
 static void
-waitrootclick(struct widget *widget, unsigned int modifier, unsigned int button)
+waitrootclick(unsigned int modifier, unsigned int button)
 {
 	XEvent xev;
 	static unsigned int MODS = ShiftMask|ControlMask|Mod1Mask|Mod4Mask;
 
 	for (;;) {
-		(void)XNextEvent(widget->display, &xev);
+		(void)XNextEvent(ctrlapp->display, &xev);
 		if (xev.type != ButtonPress)
 			continue;
 		if (xev.xbutton.button == button && (
@@ -2331,14 +2318,14 @@ waitrootclick(struct widget *widget, unsigned int modifier, unsigned int button)
 			xev.xbutton.subwindow == None
 		)) {
 			XAllowEvents(
-				widget->display,
+				ctrlapp->display,
 				AsyncPointer,
 				xev.xbutton.time
 			);
 			return;
 		}
 		XAllowEvents(
-			widget->display,
+			ctrlapp->display,
 			ReplayPointer,
 			xev.xbutton.time
 		);
@@ -2355,49 +2342,33 @@ cleanup(struct widget *widget)
 	for (int color = 0; color < COLOR_LAST; color++) {
 		if (widget->colors[color].pict != None) {
 			XRenderFreePicture(
-				widget->display,
+				ctrlapp->display,
 				widget->colors[color].pict
 			);
 		}
 		if (widget->colors[color].pix != None) {
 			XFreePixmap(
-				widget->display,
+				ctrlapp->display,
 				widget->colors[color].pix
 			);
 		}
 	}
-	if (widget->colormap != None)
-		XFreeColormap(widget->display, widget->colormap);
 	if (widget->cursor != None)
-		XFreeCursor(widget->display, widget->cursor);
+		XFreeCursor(ctrlapp->display, widget->cursor);
 	free(widget);
 }
 
 static struct widget *
-setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth,
-		Window leader, XrmDatabase cli_xrm, char *title, char *name, char *class,
-		int argc, char *argv[])
+setup(Window leader)
 {
 	struct widget *widget;
 
 	if ((widget = malloc(sizeof(*widget))) == NULL)
 		return NULL;
 	*widget = (struct widget){
-		.display = display,
-		.screen = screen,
-		.rootwin = RootWindow(display, screen),
-		.visual = visual,
-		.depth = depth,
-		.colormap = colormap,
-		.cli_xrm = cli_xrm,
-		.argc = argc,
-		.argv = argv,
-		.name = name,
-		.class = class,
-		.title = title,
 		.leader = leader,
 		.menus = NULL,
-		.cursor = XCreateFontCursor(display, XC_left_ptr),
+		.cursor = XCreateFontCursor(ctrlapp->display, XC_left_ptr),
 
 		/* defaults [for color channels:  RED,  GREEN,   BLUE,  ALPHA] */
 		.colors[COLOR_BG].chans     = {0x3100, 0x3100, 0x3100, 0xFFFF},
@@ -2412,12 +2383,11 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		.iconsize = 16,
 		.alignment = ALIGN_LEFT,
 	};
-	XSelectInput(widget->display, widget->rootwin, PropertyChangeMask);
+	XSelectInput(ctrlapp->display, ctrlapp->root_window, PropertyChangeMask);
 
 	for (size_t color = 0; color < COLOR_LAST; color++) {
 		int retval;
 		retval = createpicture(
-			widget,
 			&widget->colors[color].pict,
 			&widget->colors[color].pix,
 			&widget->colors[color].chans,
@@ -2426,7 +2396,7 @@ setup(Display *display, int screen, Visual *visual, Colormap colormap, int depth
 		if (retval == RETURN_FAILURE)
 			goto error;
 	}
-	loadresources(widget, XResourceManagerString(widget->display));
+	loadresources(widget, XResourceManagerString(ctrlapp->display));
 	if (widget->fontset == NULL)
 		setfont(widget, NULL, 0.0);
 	if (widget->fontset == NULL)
@@ -2449,19 +2419,13 @@ get_menu(struct widget *widget, Window window)
 int
 main(int argc, char *argv[])
 {
-	char const *dpyname;
 	struct widget *widget = NULL;
-	Display *display = NULL;
-	Visual *visual;
-	Colormap colormap;
-	int depth;
 	int x_root, y_root;
 	int geometry_flags = 0;
-	XVisualInfo vinfo;
 	char *name = "xmenu";
 	char *title = "XMenu";
 	char *read_data = NULL;
-	XrmDatabase cli_xrm = NULL;
+	XrmDatabase xrm = NULL;
 	Window leader = None;
 	bool rootmode = false;
 	struct entry *entries = NULL;
@@ -2497,7 +2461,7 @@ main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "-xrm")) {
 			XrmDatabase db = XrmGetStringDatabase(argv[++i]);
 			if (db != NULL)
-				XrmCombineDatabase(db, &cli_xrm, True);
+				XrmCombineDatabase(db, &xrm, True);
 		} else {
 			warnx("unknown option -- %s", argv[i]);
 		usage:
@@ -2529,20 +2493,17 @@ main(int argc, char *argv[])
 	if (nentries == 0)
 		errx(EXIT_FAILURE, "no menu generated");
 
-	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
-		warnx("warning: no locale support for X11");
-	if ((dpyname = XDisplayName(NULL)) == NULL || dpyname[0] == '\0')
-		errx(EXIT_FAILURE, "DISPLAY is not set");
-	if ((display = XOpenDisplay(dpyname)) == NULL)
-		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
-	if (fcntl(XConnectionNumber(display), F_SETFD, FD_CLOEXEC) == -1)
-		err(EXIT_FAILURE, "connection to display \"%s\"", dpyname);
+	if ((ctrlapp = ctrlapp_open(xrm, title, name, "XMenu", argc, argv)) == NULL)
+		errx(EXIT_FAILURE, "cannot open application");
+	if ((widget = setup(leader)) == NULL)
+		errx(EXIT_FAILURE, "cannot create widget");
+
 	if (rootmode) {
 		XGrabButton(
-			display,
+			ctrlapp->display,
 			button,
 			AnyModifier,
-			DefaultRootWindow(display),
+			ctrlapp->root_window,
 			False,
 			ButtonPressMask,
 			GrabModeSync,
@@ -2551,35 +2512,15 @@ main(int argc, char *argv[])
 			None
 		);
 	}
-	if (XMatchVisualInfo(display, DefaultScreen(display), 32, TrueColor, &vinfo)) {
-		colormap = XCreateColormap(
-			display,
-			DefaultRootWindow(display),
-			vinfo.visual,
-			AllocNone
-		);
-		visual = vinfo.visual;
-		depth = vinfo.depth;
-	} else {
-		colormap = DefaultColormap(display, DefaultScreen(display));
-		visual = DefaultVisual(display, DefaultScreen(display));
-		depth = DefaultDepth(display, DefaultScreen(display));
-	}
-	widget = setup(
-		display, DefaultScreen(display), visual, colormap, depth,
-		leader, cli_xrm, title, name, "XMenu", argc, argv
-	);
-	if (widget == NULL)
-		errx(EXIT_FAILURE, "cannot create widget");
+
 	if (FLAG(geometry_flags, XValue|YValue)) {
 		int nmons = 0;
 		int x = 0;
 		int y = 0;
-		int width = DisplayWidth(display, DefaultScreen(display));
-		int height = DisplayHeight(display, DefaultScreen(display));
+		int width = DisplayWidth(ctrlapp->display, ctrlapp->screen_number);
+		int height = DisplayHeight(ctrlapp->display, ctrlapp->screen_number);
 		XRRMonitorInfo *infos = XRRGetMonitors(
-			display, DefaultRootWindow(display),
-			True, &nmons
+			ctrlapp->display, ctrlapp->root_window, True, &nmons
 		);
 		
 		if (monitor_name != NULL) {
@@ -2589,7 +2530,7 @@ main(int argc, char *argv[])
 
 			if (strcmp(monitor_name, "cursor") == 0) {
 				XQueryPointer(
-					display, DefaultRootWindow(display),
+					ctrlapp->display, ctrlapp->root_window,
 					&(Window){}, &(Window){},
 					&x, &y, &(int){}, &(int){}, &(unsigned){}
 				);
@@ -2599,7 +2540,7 @@ main(int argc, char *argv[])
 				if (*endp != '\0' || num < 0 || num > INT_MAX)
 					num = -1;
 			} else {
-				name = XInternAtom(display, monitor_name, true);
+				name = XInternAtom(ctrlapp->display, monitor_name, true);
 			}
 
 			for (int i = 0; i < nmons && infos != NULL; i++) {
@@ -2629,14 +2570,14 @@ main(int argc, char *argv[])
 
 	do {
 		if (rootmode) {
-			waitrootclick(widget, modifier, button);
+			waitrootclick(modifier, button);
 		} else if (grabpointer(widget) == RETURN_FAILURE ||
 		           grabkeyboard(widget) == RETURN_FAILURE) {
 			break;
 		}
 		if (!FLAG(geometry_flags, XValue|YValue)) {
 			XQueryPointer(
-				display, DefaultRootWindow(display),
+				ctrlapp->display, ctrlapp->root_window,
 				&(Window){}, &(Window){},
 				&x_root, &y_root, &(int){}, &(int){}, &(unsigned){}
 			);
@@ -2652,17 +2593,17 @@ main(int argc, char *argv[])
 		XEvent event;
 		struct menu *menu;
 
-		(void)XNextEvent(widget->display, &event);
+		(void)XNextEvent(ctrlapp->display, &event);
 		menu = get_menu(widget, event.xany.window);
 		if (menu != NULL) {
 			menu_handle_event(widget, menu, &event);
 		} else if (event.type == PropertyNotify &&
 		           event.xproperty.state == PropertyNewValue &&
 		           event.xproperty.atom == XA_RESOURCE_MANAGER &&
-		           event.xproperty.window == DefaultRootWindow(display)) {
+		           event.xproperty.window == ctrlapp->root_window) {
 			char *str = gettextprop(
-				widget->display,
-				widget->rootwin,
+				ctrlapp->display,
+				ctrlapp->root_window,
 				XA_RESOURCE_MANAGER
 			);
 			if (str == NULL)
@@ -2680,12 +2621,11 @@ main(int argc, char *argv[])
 		}
 	}
 
-	ungrab(widget);
+	ungrab();
 	cleanup(widget);
 	free(read_data);
 	free(entries);
-	XrmDestroyDatabase(cli_xrm);
-	if (display != NULL)
-		XCloseDisplay(display);
+	ctrlapp_close(ctrlapp);
+	XrmDestroyDatabase(xrm);
 	return EXIT_SUCCESS;
 }
