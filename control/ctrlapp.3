@@ -1,0 +1,189 @@
+.Dd August 15, 2026
+.Dt CTRLAPP 3
+.Os libcontrol
+.Sh NAME
+.Nm ctrlapp ,
+.Nm ctrlapp_set ,
+.Nm ctrlapp_getname ,
+.Nm ctrlapp_getclass ,
+.Nm ctrlapp_getargc ,
+.Nm ctrlapp_getargv ,
+.Nd utility functions for application identification and initialization
+.Sh SYNOPSIS
+.In X11/Xlib.h
+.In control/application.h
+.Ft void
+.Fo ctrlapp_set
+.Fa "char const *name"
+.Fa "char const *class"
+.Fa "int argc"
+.Fa "char **argv"
+.Fc
+.Ft "char const *"
+.Fo "ctrlapp_getname"
+.Fc
+.Ft "char const *"
+.Fo "ctrlapp_getclass"
+.Fc
+.Ft "int"
+.Fo "ctrlapp_getargc"
+.Fc
+.Ft "char **"
+.Fo "ctrlapp_getargv"
+.Fc
+.Ft "Display *"
+.Fo "ctrlapp_open"
+.Fc
+.Ft int
+.Fo ctrlapp_visuals
+.Fa "Display *display"
+.Fa "int screen_number"
+.Fa "int *depth_ret"
+.Fa "Colormap *colormap_ret"
+.Fc
+.Sh DESCRIPTION
+The ctrlapp library implements utility routines to identify the current application,
+and initialize it:
+.Bl -bullet -compact -width ""
+.It
+Some setters and getters of global properties for the current application.
+Similar to
+.Xr setprogname 3
+and
+.Xr getprogname 3 .
+.It
+A wrapper routine around
+.Xr XOpenDisplay 3
+to handle openning a connection to the X server.
+.It
+A wrapper routine around
+.Xr XMatchVisualInfo 3
+to get 32bit-deep true-color visuals.
+.El
+.Ss Application properties
+The
+.Fn ctrlapp_set
+function sets the name, class, and command-line arguments of the current program.
+The storage for each array argument must remain valid for the rest of the program's lifetime.
+.Pp
+The
+.Fn ctrlapp_getname ,
+.Fn ctrlapp_getclass ,
+.Fn ctrlapp_getargc ,
+and
+.Fn ctrlapp_getargv
+functions return the name, class, and command-line arguments of the current program,
+as previously set by
+.Fn ctrlapp_set .
+In fact, the same addresses are returned, for they are all saved in a static global variable.
+.Pp
+These routines are used by other ctrl* libraries to avoid having to pass to every function
+such strings that are constant through the entire program's lifetime.
+.Pp
+The parameters are as follows:
+.Bl -tag -width "XXXXXXXXXX"
+.It Ar name
+The application's name, for
+.Xr XClassHint 3 .
+.It Ar class
+The application's class, for
+.Xr XClassHint 3 .
+.It Ar argc
+The number of command-line arguments, as given to
+.Fn main .
+.It Ar argv
+The array of command-line arguments, as given to
+.Fn main .
+.El
+.Pp
+If the value of the
+.Ar name
+or
+.Ar class
+argument is
+.Dv NULL
+(or if
+.Fn ctrlapp_set
+has not been called),
+then
+.Fn ctrlapp_getname
+and
+.Fn ctrlapp_getclass
+return the same as
+.Xr getprogname 3 .
+.Ss Connecting to X server
+The
+.Fn ctrlapp_open
+routine is a wrapper around
+.Xr XOpenDisplay 3
+that, in addition to open a connection to X server, does the following:
+.Pp
+It sets the process'
+.Xr locale 1
+(some font routines need it to display unicode characters correctly).
+If the locale could not be set, or the server does not support it
+(see
+.Xr XSupportsLocale 3 ) ,
+.Fn ctrlapp_open
+writes a warning message on the standard error.
+.Pp
+It reads a display name from the
+.Ev DISPLAY
+environment variable,
+and opens a connection to the X server identified by such name.
+It is an error if this environment variable is not set, and
+.Fn ctrlapp_open
+returns
+.Dv NULL and
+writes a warning message into the standard error.
+.Pp
+It sets the close-on-exec
+.Pq Dv FD_CLOEXEC
+flag on the display's file descriptor,
+so it is closed if the application ever call a function from the
+.Xr execve 2
+family.
+.Ss 32-bit TrueColor visuals
+The
+.Fn ctrlapp_visuals
+routine is a wrapper around
+.Xr XMatchVisualInfo 3
+that finds and returns (on the arguments passed as reference)
+a 32bit-deep, true-color visual supported by the given
+.Ar display
+and
+.Ar screen_number .
+.Pp
+The parameters are as follows:
+.Bl -tag -width "XXXXXXXXXXXXX"
+.It Ar display
+The pointer to the context of the connection to the X server.
+.It Ar screen_number
+The index to the graphics card that the X server manages
+(there's only one for most modern computers,
+so its value is often zero)
+.It Ar visual_ret
+The address where to store the 32bit-deep true-color visual at.
+If such visual is not supported, store the display's default visual instead.
+.It Ar colormap_ret
+The address where to store the colormap for the 32bit-deep true-color visual at.
+If such visual is not supported, store the display's default colormap instead.
+.It Ar depth_ret
+The address where to store the number
+.Dv 32
+at.
+If 32bit-deep colors is not supported,
+store the display's default depth instead.
+.El
+.Pp
+It returns non-zero if the 32bit-deep true-color visual is supported,
+and stores its visual/colormap/depth at the arguments passed as reference.
+If ucht visual is not supported,
+it returns zero and stores the display's default visual/colormap/depth instead.
+.Sh SEE ALSO
+.Xr getprogname 3 ,
+.Xr setprogname 3 ,
+.Xr XClassHint 3 ,
+.Xr XOpenDisplay 3 ,
+.Xr XMatchVisualInfo 3 ,
+.Xr X 7
