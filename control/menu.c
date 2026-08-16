@@ -2059,8 +2059,8 @@ ctrlmenu_popup(Display *display, int screen_number, XrmDatabase xdb,
 		if (retval == RETURN_FAILURE)
 			goto error;
 	}
-	reload_resources(&widget, xdb, XResourceManagerString(display));
 	setfont(&widget, NULL, 0.0);
+	reload_resources(&widget, xdb, XResourceManagerString(display));
 	if (widget.fontset == NULL)
 		goto error;
 
