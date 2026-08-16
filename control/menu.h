@@ -1,4 +1,4 @@
-struct entry {
+struct ctrlmenu_entry {
 	char *label;
 	size_t labellen;
 
@@ -6,7 +6,7 @@ struct entry {
 	char *altoutput;
 	char *file;
 
-	struct entry *children;
+	struct ctrlmenu_entry *children;
 	size_t nchildren;
 };
 
@@ -17,7 +17,7 @@ void ctrlmenu_popup(
 	Visual *visual,
 	int depth,
 	Colormap colormap,
-	struct entry *entries,
+	struct ctrlmenu_entry *entries,
 	size_t nentries,
 	char const *title,
 	Window leader,

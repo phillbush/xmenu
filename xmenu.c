@@ -153,11 +153,11 @@ error:
 }
 
 static size_t
-fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
+fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
 {
 	size_t nentries;
-	struct entry *next_entry = entries;
-	struct entry *prev_entry = NULL;
+	struct ctrlmenu_entry *next_entry = entries;
+	struct ctrlmenu_entry *prev_entry = NULL;
 
 	for (size_t len = *from; len < datasize; len++) {
 		size_t entry_indentlvl;
@@ -172,7 +172,7 @@ fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t da
 
 	nentries = 0;
 	while (*from < datasize) {
-		struct entry *entry = &entries[nentries];
+		struct ctrlmenu_entry *entry = &entries[nentries];
 		size_t entry_indentlvl;
 		char *line = data + *from;
 		size_t linelen = strcspn(line, "\n");
@@ -227,7 +227,7 @@ fill_entries(struct entry *entries, size_t menu_indentlvl, char *data, size_t da
 }
 
 static size_t
-parsestdin(struct entry **entries, char **data)
+parsestdin(struct ctrlmenu_entry **entries, char **data)
 {
 	size_t nlines;
 	FILE *stream;
@@ -298,7 +298,7 @@ main(int argc, char *argv[])
 	XrmDatabase xrm = NULL;
 	Window leader = None;
 	bool rootmode = false;
-	struct entry *entries = NULL;
+	struct ctrlmenu_entry *entries = NULL;
 	size_t nentries = 0;
 	unsigned int button = 0;
 	unsigned int modifier = 0;

@@ -63,7 +63,7 @@ enum {
 
 struct menu {
 	struct menu *next;
-	struct entry *entries;
+	struct ctrlmenu_entry *entries;
 	size_t nentries;
 	ssize_t selected;
 	char const *title;
@@ -421,7 +421,7 @@ get_entry_index(struct ctrlmenu_context *menuctx, struct menu *menu, long y)
 	if (menu->overflow)
 		h += menuctx->separatorh;
 	for (size_t entryc = menu->curr_screenful.first_entry; entryc < menu->nentries; entryc++) {
-		struct entry *entry = &menu->entries[entryc];
+		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 		if (entry->label == NULL) {
 			h += menuctx->separatorh;
 			continue;
@@ -442,7 +442,7 @@ get_entry_index(struct ctrlmenu_context *menuctx, struct menu *menu, long y)
 	return -1;
 }
 
-static struct entry *
+static struct ctrlmenu_entry *
 get_entry(struct menu *menu, ssize_t entryc)
 {
 	if (entryc >= 0 && entryc < (ssize_t)menu->nentries)
@@ -484,7 +484,7 @@ get_entry_ypos(struct ctrlmenu_context *menuctx, struct menu *menu, int selected
 	if (selected < 0 || selected >= (ssize_t)menu->nentries)
 		return -1;
 	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
-		struct entry *entry = &menu->entries[entryc];
+		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 
 		if ((ssize_t)entryc == selected)
 			return ypos;
@@ -868,7 +868,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct menu *menu)
 	entry_geometry.y = get_first_entry_ypos(menuctx, menu);
 	entry_geometry.width = menu->window_geometry.width;
 	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
-		struct entry *entry = &menu->entries[entryc];
+		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 		//Imlib_Image image;
 
 		if (entry->label == NULL) {
@@ -1311,7 +1311,7 @@ select_first_entry(struct ctrlmenu_context *, struct menu *menu)
 	menu->curr_screenful.first_entry = 0;
 	menu->curr_screenful.offset = 0;
 	for (ssize_t entryc = 0; entryc < (ssize_t)menu->nentries; entryc++) {
-		struct entry *entry = &menu->entries[entryc];
+		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 		if (entry->output != NULL || entry->nchildren > 0) {
 			return entryc;
 		}
@@ -1324,7 +1324,7 @@ select_last_entry(struct ctrlmenu_context *, struct menu *menu)
 {
 	menu->curr_screenful = menu->last_screenful;
 	for (ssize_t entryc = menu->nentries - 1; entryc >= 0; entryc--) {
-		struct entry *entry = &menu->entries[entryc];
+		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 		if (entry->output != NULL || entry->nchildren > 0) {
 			return entryc;
 		}
@@ -1346,7 +1346,7 @@ select_prev_entry(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t s
 	ypos = get_entry_ypos(menuctx, menu, selected);
 	height = get_entry_height(menuctx, menu, selected);
 	for (ssize_t entryc = selected - 1; entryc >= 0; entryc--) {
-		struct entry *entry = &menu->entries[entryc];
+		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 
 		if (menu->overflow) {
 			ypos -= height;
@@ -1374,7 +1374,7 @@ select_next_entry(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t s
 	ypos = get_entry_ypos(menuctx, menu, selected);
 	height = get_entry_height(menuctx, menu, selected);
 	for (ssize_t entryc = selected+1; entryc < (ssize_t)menu->nentries; entryc++) {
-		struct entry *entry = &menu->entries[entryc];
+		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 
 		if (menu->overflow) {
 			ypos += height;
@@ -1410,7 +1410,7 @@ xsleep(unsigned int usec)
 static void
 activate_entry(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t nentry, bool alt)
 {
-	struct entry *entry;
+	struct ctrlmenu_entry *entry;
 
 	/* blink */
 	draw_commit(menuctx, menu, -1);
@@ -1441,7 +1441,7 @@ activate_entry(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t nent
 
 static void
 menu_map(struct ctrlmenu_context *menuctx, struct menu *parent, struct menu *menu,
-		struct entry *entries, size_t nentries,
+		struct ctrlmenu_entry *entries, size_t nentries,
 		int x_root, int y_root, unsigned int button_width,
 		bool windowed, Time time, char const *title)
 {
@@ -1519,7 +1519,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct menu *parent, struct menu *men
 		menu->total_height += menuctx->separatorh;
 	menu->window_geometry.height = menuctx->inner_border_width * 2;
 	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
-		struct entry *entry = &menu->entries[entryc];
+		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 		unsigned int textw;
 
 		if (entry->label != NULL) {
@@ -1728,7 +1728,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 	struct menu submenu = {};
 	XEvent xev;
 	XMotionEvent last_motion = {0};
-	struct entry *entry;
+	struct ctrlmenu_entry *entry;
 	ssize_t nentry;
 	ssize_t prevselected = menu->selected;
 	int timeout = 0;
@@ -1899,7 +1899,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 			break;
 		case MotionNotify:
 			for (struct menu *m = menu; m->next != NULL; m = m->next) {
-				struct entry *above;
+				struct ctrlmenu_entry *above;
 				if (xev.xmotion.window != m->next->window)
 					continue;
 				above = get_entry(m->next, get_entry_index(
@@ -1931,7 +1931,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 			break;
 		case TimeoutNotify:
 			ssize_t pointed_index = get_entry_index(menuctx, menu, last_motion.y);
-			struct entry *sel_entry;
+			struct ctrlmenu_entry *sel_entry;
 
 			/*
 			 * submenu is being previewed; select entry
@@ -1971,7 +1971,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 			}
 			break;
 		}
-		struct entry *sel_entry = get_entry(menu, menu->selected);
+		struct ctrlmenu_entry *sel_entry = get_entry(menu, menu->selected);
 
 		if (menu->selected != prevselected) {
 			draw_commit(menuctx, menu, menu->selected);
@@ -2008,7 +2008,7 @@ done:
 void
 ctrlmenu_popup(Display *display, int screen_number, XrmDatabase xdb,
 		Visual *visual, int depth, Colormap colormap,
-		struct entry *entries, size_t nentries, char const *title,
+		struct ctrlmenu_entry *entries, size_t nentries, char const *title,
 		Window leader, int x_root, int y_root, bool windowed, Time time)
 {
 	XWindowAttributes attrs = {};
