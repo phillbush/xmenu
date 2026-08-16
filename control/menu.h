@@ -23,6 +23,5 @@ void ctrlmenu_popup(
 	Window leader,
 	int x_root,
 	int y_root,
-	bool windowed,
 	Time time
 );

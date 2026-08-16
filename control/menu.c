@@ -2009,7 +2009,7 @@ void
 ctrlmenu_popup(Display *display, int screen_number, XrmDatabase xdb,
 		Visual *visual, int depth, Colormap colormap,
 		struct ctrlmenu_entry *entries, size_t nentries, char const *title,
-		Window leader, int x_root, int y_root, bool windowed, Time time)
+		Window leader, int x_root, int y_root, Time time)
 {
 	XWindowAttributes attrs = {};
 	struct menu menu;
@@ -2066,7 +2066,7 @@ ctrlmenu_popup(Display *display, int screen_number, XrmDatabase xdb,
 
 	menu_map(
 		&menuctx, NULL, &menu, entries, nentries,
-		x_root, y_root, 0, windowed, time, title
+		x_root, y_root, 0, false, time, title
 	);
 	(void)menu_run(&menuctx, &menu, true);
 	menu_unmap(&menuctx, &menu);

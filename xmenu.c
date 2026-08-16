@@ -449,7 +449,7 @@ main(int argc, char *argv[])
 			display, DefaultScreen(display), xrm,
 			visual, depth, colormap,
 			entries, nentries, title, leader,
-			x_root, y_root, windowed, CurrentTime
+			x_root, y_root, CurrentTime
 		);
 	} while (rootmode);
 
