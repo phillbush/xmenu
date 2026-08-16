@@ -1,7 +1,8 @@
 PROG = xmenu
-OBJS = ${PROG:=.o} util/color.o \
+LIB_OBJS = util/color.o \
 	control/application.o control/font.o control/menu.o \
 	control/resources.o
+OBJS = ${PROG:=.o} ${LIB_OBJS}
 SRCS = ${OBJS:.o=.c}
 MAN = ${PROG:=.1}
 DOC = README.md
@@ -32,7 +33,7 @@ debug:
 	${CC} ${_cflags} -o $@ -c $<
 
 ${OBJS}: util/defs.h
-xmenu.o control/font.o: control/font.h
+xmenu.o ${LIB_OBJS}: ${LIB_OBJS:.o=.h}
 
 .PHONY: tags
 tags: ${SRCS}

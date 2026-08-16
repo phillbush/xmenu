@@ -5,72 +5,89 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xresource.h>
-#include <X11/cursorfont.h>
 #include <X11/extensions/Xrandr.h>
 
 #include <control/application.h>
 
-static struct ctrlapp *ctrlapp = NULL;
-
-struct ctrlapp *
-ctrlapp_open(XrmDatabase resourcesdb,
-		char *title, char *name, char *class, int argc, char *argv[])
-{
-	static struct ctrlapp app;
-	XVisualInfo vinfo;
-	char const *dpyname;
-
-	if (ctrlapp != NULL) {
-		warnx("ctrlapp: application already open");
-		return NULL;
-	}
-	app = (struct ctrlapp){
-		.widgets        = NULL,
-		.resourcesdb    = resourcesdb,
-		.name           = name,
-		.class          = class,
-		.title          = title,
-		.argc           = argc,
-		.argv           = argv,
-	};
-	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
-		warnx("warning: no locale support for X11");
-	if ((dpyname = XDisplayName(NULL)) == NULL || dpyname[0] == '\0')
-		errx(EXIT_FAILURE, "DISPLAY is not set");
-	if ((app.display = XOpenDisplay(dpyname)) == NULL)
-		errx(EXIT_FAILURE, "%s: cannot connect to X server", dpyname);
-	if (fcntl(XConnectionNumber(app.display), F_SETFD, FD_CLOEXEC) == -1)
-		err(EXIT_FAILURE, "connection to X server \"%s\"", dpyname);
-	app.screen_number = DefaultScreen(app.display);
-	app.root_window = RootWindow(app.display, app.screen_number);
-	app.cursor = XCreateFontCursor(app.display, XC_left_ptr);
-	if (XMatchVisualInfo(app.display, app.screen_number, 32, TrueColor, &vinfo)) {
-		app.colormap = XCreateColormap(
-			app.display,
-			DefaultRootWindow(app.display),
-			vinfo.visual,
-			AllocNone
-		);
-		app.visual = vinfo.visual;
-		app.depth = vinfo.depth;
-	} else {
-		app.colormap = DefaultColormap(app.display, DefaultScreen(app.display));
-		app.visual = DefaultVisual(app.display, DefaultScreen(app.display));
-		app.depth = DefaultDepth(app.display, DefaultScreen(app.display));
-	}
-	ctrlapp = &app;
-	return ctrlapp;
-}
+static char const *saved_name;
+static char const *saved_class;
+static char **saved_argv;
+static int saved_argc;
 
 void
-ctrlapp_close(struct ctrlapp *ctrlapp)
+ctrlapp_set(char const *name, char const *class, int argc, char **argv)
 {
-	if (ctrlapp == NULL)
-		return;
-	if (ctrlapp->colormap != None)
-		XFreeColormap(ctrlapp->display, ctrlapp->colormap);
-	if (ctrlapp->cursor != None)
-		XFreeCursor(ctrlapp->display, ctrlapp->cursor);
-	if (ctrlapp->display != NULL)
-		XCloseDisplay(ctrlapp->display);
+	saved_name = name;
+	saved_class = class;
+	saved_argc = argc;
+	saved_argv = argv;
+}
+
+char const *
+ctrlapp_getname(void)
+{
+	return saved_name;
+}
+
+char const *
+ctrlapp_getclass(void)
+{
+	return saved_class;
+}
+
+char **
+ctrlapp_getargv(void)
+{
+	return saved_argv;
+}
+
+int
+ctrlapp_getargc(void)
+{
+	return saved_argc;
+}
+
+Display *
+ctrlapp_open(void)
+{
+	Display *display = NULL;
+	char const *display_name = XDisplayName(NULL);
+
+	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
+		warnx("warning: no locale support for X11");
+	if (display_name == NULL || display_name[0] == '\0') {
+		warnx("DISPLAY is not set");
+		return NULL;
+	}
+	if ((display = XOpenDisplay(display_name)) == NULL) {
+		warnx("%s: cannot connect to X server", display_name);
+		return NULL;
+	}
+	if (fcntl(XConnectionNumber(display), F_SETFD, FD_CLOEXEC) == -1) {
+		warn("connection to X server \"%s\"", display_name);
+		XCloseDisplay(display);
+		return NULL;
+	}
+	return display;
+}
+
+int
+ctrlapp_visuals(Display *display, int screen_number, Visual **visual, int *depth, Colormap *colormap)
+{
+	XVisualInfo vinfo;
+
+	if (XMatchVisualInfo(display, screen_number, 32, TrueColor, &vinfo)) {
+		*colormap = XCreateColormap(
+			display, RootWindow(display, screen_number),
+			vinfo.visual, AllocNone
+		);
+		*visual = vinfo.visual;
+		*depth = vinfo.depth;
+		return 1;
+	} else {
+		*colormap = DefaultColormap(display, screen_number);
+		*visual = DefaultVisual(display, screen_number);
+		*depth = DefaultDepth(display, screen_number);
+		return 0;
+	}
 }

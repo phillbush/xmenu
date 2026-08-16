@@ -27,8 +27,6 @@
 #include "util/color.h"
 #include "util/defs.h"
 
-struct ctrlapp *ctrlapp = NULL;
-
 static int
 parse_geometry(char *geometry_spec, int *x_root, int *y_root, char **monitor_name)
 {
@@ -264,178 +262,34 @@ parsestdin(struct entry **entries, char **data)
 	return fill_entries(*entries, strspn(*data, "\t"), *data, size, &(size_t){0});
 }
 
-static int
-grabpointer(struct widget *widget)
-{
-	struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000, };
-
-	/* we may have to wait for another process to ungrab */
-	for (int i = 0; i < 1000; i++) {
-		if (XGrabPointer(
-			ctrlapp->display, ctrlapp->root_window, True,
-			ButtonPressMask|PointerMotionMask,
-			GrabModeAsync, GrabModeAsync,
-			None, ctrlapp->cursor, CurrentTime
-		) == GrabSuccess)
-			return RETURN_SUCCESS;
-		nanosleep(&ts, NULL);
-	}
-	warnx("cannot grab keyboard");
-	return RETURN_FAILURE;
-}
-
-static int
-grabkeyboard(struct widget *widget)
-{
-	struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000, };
-
-	/* we may have to wait for another process to ungrab */
-	for (int i = 0; i < 1000; i++) {
-		if (XGrabKeyboard(
-			ctrlapp->display, ctrlapp->root_window, True,
-			GrabModeAsync, GrabModeAsync,
-			CurrentTime
-		) == GrabSuccess) return RETURN_SUCCESS;
-		nanosleep(&ts, NULL);
-	}
-	warnx("cannot grab keyboard");
-	return RETURN_FAILURE;
-}
-
 static void
-initimlib(struct widget *widget)
-{
-	if (widget->initimlib)
-		return;
-	widget->initimlib = true;
-	imlib_set_cache_size(2048 * 1024);
-	imlib_context_set_dither(1);
-	imlib_context_set_blend(1);
-	imlib_context_set_display(ctrlapp->display);
-	imlib_context_set_visual(ctrlapp->visual);
-	imlib_context_set_colormap(ctrlapp->colormap);
-}
-
-static Imlib_Image
-loadicon(struct widget *widget, const char *file, int size, int *width_ret, int *height_ret)
-{
-	Imlib_Image icon = NULL;
-	Imlib_Load_Error errcode;
-	const char *errstr;
-	int width;
-	int height;
-
-	if (file == NULL)
-		return NULL;
-	if (*file == '\0') {
-		warnx("could not load icon (file name is blank)");
-		return NULL;
-	}
-	initimlib(widget);
-	icon = imlib_load_image_with_error_return(file, &errcode);
-	if (icon == NULL) {
-		switch (errcode) {
-		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
-			errstr = "file does not exist";
-			break;
-		case IMLIB_LOAD_ERROR_FILE_IS_DIRECTORY:
-			errstr = "file is directory";
-			break;
-		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_READ:
-		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_WRITE:
-			errstr = "permission denied";
-			break;
-		case IMLIB_LOAD_ERROR_NO_LOADER_FOR_FILE_FORMAT:
-			errstr = "unknown file format";
-			break;
-		case IMLIB_LOAD_ERROR_PATH_TOO_LONG:
-			errstr = "path too long";
-			break;
-		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NON_EXISTANT:
-		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NOT_DIRECTORY:
-		case IMLIB_LOAD_ERROR_PATH_POINTS_OUTSIDE_ADDRESS_SPACE:
-			errstr = "improper path";
-			break;
-		case IMLIB_LOAD_ERROR_TOO_MANY_SYMBOLIC_LINKS:
-			errstr = "too many symbolic links";
-			break;
-		case IMLIB_LOAD_ERROR_OUT_OF_MEMORY:
-			errstr = "out of memory";
-			break;
-		case IMLIB_LOAD_ERROR_OUT_OF_FILE_DESCRIPTORS:
-			errstr = "out of file descriptors";
-			break;
-		default:
-			errstr = "unknown error";
-			break;
-		}
-		warnx("could not load icon (%s): %s", errstr, file);
-		return NULL;
-	}
-
-	imlib_context_set_image(icon);
-
-	width = imlib_image_get_width();
-	height = imlib_image_get_height();
-
-	if (width > height) {
-		*width_ret = size;
-		*height_ret = (height * size) / width;
-	} else {
-		*width_ret = (width * size) / height;
-		*height_ret = size;
-	}
-
-	icon = imlib_create_cropped_scaled_image(
-		0, 0,
-		width, height,
-		*width_ret, *height_ret
-	);
-	return icon;
-}
-
-static void
-waitrootclick(unsigned int modifier, unsigned int button)
+waitrootclick(Display *display, unsigned int modifier, unsigned int button)
 {
 	XEvent xev;
 	static unsigned int MODS = ShiftMask|ControlMask|Mod1Mask|Mod4Mask;
 
 	for (;;) {
-		(void)XNextEvent(ctrlapp->display, &xev);
+		(void)XNextEvent(display, &xev);
 		if (xev.type != ButtonPress)
 			continue;
 		if (xev.xbutton.button == button && (
 			(modifier != 0 && modifier == (xev.xbutton.state & MODS)) ||
 			xev.xbutton.subwindow == None
 		)) {
-			XAllowEvents(
-				ctrlapp->display,
-				AsyncPointer,
-				xev.xbutton.time
-			);
+			XAllowEvents(display, AsyncPointer, xev.xbutton.time);
 			return;
 		}
-		XAllowEvents(
-			ctrlapp->display,
-			ReplayPointer,
-			xev.xbutton.time
-		);
+		XAllowEvents(display, ReplayPointer, xev.xbutton.time);
 	}
-}
-
-static struct menu *
-get_menu(struct widget *widget, Window window)
-{
-	for (struct menu *menu = widget->menus; menu != NULL; menu = menu->next)
-		if (menu->window == window)
-			return menu;
-	return NULL;
 }
 
 int
 main(int argc, char *argv[])
 {
-	struct widget *widget = NULL;
+	Display *display;
+	Visual *visual;
+	Colormap colormap;
+	int depth;
 	int x_root, y_root;
 	int geometry_flags = 0;
 	char *name = "xmenu";
@@ -509,23 +363,20 @@ main(int argc, char *argv[])
 	if (nentries == 0)
 		errx(EXIT_FAILURE, "no menu generated");
 
-	if ((ctrlapp = ctrlapp_open(xrm, title, name, "XMenu", argc, argv)) == NULL)
+	ctrlapp_set(name, "XMenu", argc, argv);
+	if ((display = ctrlapp_open()) == NULL)
 		errx(EXIT_FAILURE, "cannot open application");
-	if ((widget = ctrlmenu_init(ctrlapp, leader)) == NULL)
-		errx(EXIT_FAILURE, "cannot create widget");
+	(void)ctrlapp_visuals(
+		display, DefaultScreen(display),
+		&visual, &depth, &colormap
+	);
 
 	if (rootmode) {
 		XGrabButton(
-			ctrlapp->display,
-			button,
-			AnyModifier,
-			ctrlapp->root_window,
-			False,
-			ButtonPressMask,
-			GrabModeSync,
-			GrabModeSync,
-			None,
-			None
+			display, button, AnyModifier,
+			DefaultRootWindow(display), False,
+			ButtonPressMask, GrabModeSync, GrabModeSync,
+			None, None
 		);
 	}
 
@@ -533,10 +384,10 @@ main(int argc, char *argv[])
 		int nmons = 0;
 		int x = 0;
 		int y = 0;
-		int width = DisplayWidth(ctrlapp->display, ctrlapp->screen_number);
-		int height = DisplayHeight(ctrlapp->display, ctrlapp->screen_number);
+		int width = DisplayWidth(display, DefaultScreen(display));
+		int height = DisplayHeight(display, DefaultScreen(display));
 		XRRMonitorInfo *infos = XRRGetMonitors(
-			ctrlapp->display, ctrlapp->root_window, True, &nmons
+			display, DefaultRootWindow(display), True, &nmons
 		);
 		
 		if (monitor_name != NULL) {
@@ -546,7 +397,7 @@ main(int argc, char *argv[])
 
 			if (strcmp(monitor_name, "cursor") == 0) {
 				XQueryPointer(
-					ctrlapp->display, ctrlapp->root_window,
+					display, DefaultRootWindow(display),
 					&(Window){}, &(Window){},
 					&x, &y, &(int){}, &(int){}, &(unsigned){}
 				);
@@ -556,7 +407,7 @@ main(int argc, char *argv[])
 				if (*endp != '\0' || num < 0 || num > INT_MAX)
 					num = -1;
 			} else {
-				name = XInternAtom(ctrlapp->display, monitor_name, true);
+				name = XInternAtom(display, monitor_name, true);
 			}
 
 			for (int i = 0; i < nmons && infos != NULL; i++) {
@@ -585,56 +436,51 @@ main(int argc, char *argv[])
 	}
 
 	do {
-		if (rootmode) {
-			waitrootclick(modifier, button);
-		//} else if (grabpointer(widget) == RETURN_FAILURE ||
-		//           grabkeyboard(widget) == RETURN_FAILURE) {
-		//	break;
-		}
+		if (rootmode)
+			waitrootclick(display, modifier, button);
 		if (!FLAG(geometry_flags, XValue|YValue)) {
 			XQueryPointer(
-				ctrlapp->display, ctrlapp->root_window,
+				display, DefaultRootWindow(display),
 				&(Window){}, &(Window){},
 				&x_root, &y_root, &(int){}, &(int){}, &(unsigned){}
 			);
 		}
 		ctrlmenu_popup(
-			widget, entries, nentries,
-			x_root, y_root, windowed,
-			CurrentTime
+			display, DefaultScreen(display), xrm,
+			visual, depth, colormap,
+			entries, nentries, title, leader,
+			x_root, y_root, windowed, CurrentTime
 		);
 	} while (rootmode);
 
-	while (widget->menus != NULL) {
-		XEvent event;
-		struct menu *menu;
+	//while (widget->menus != NULL) {
+	//	XEvent event;
+	//	struct menu *menu;
 
-		(void)XNextEvent(ctrlapp->display, &event);
-		menu = get_menu(widget, event.xany.window);
-		if (menu != NULL) {
-			ctrlmenu_handle_event(widget, menu, &event);
-		} else if (event.type == PropertyNotify &&
-		           event.xproperty.state == PropertyNewValue &&
-		           event.xproperty.atom == XA_RESOURCE_MANAGER &&
-		           event.xproperty.window == ctrlapp->root_window) {
-			char *str = gettextprop(
-				ctrlapp->display,
-				ctrlapp->root_window,
-				XA_RESOURCE_MANAGER
-			);
-			if (str != NULL)
-				ctrlmenu_reload_resources(widget, str);
-			free(str);
-		} else if (event.type == UnmapNotify && leader != None &&
-		           event.xdestroywindow.window == leader) {
-			break;
-		}
-	}
+	//	(void)XNextEvent(ctrlapp->display, &event);
+	//	menu = get_menu(widget, event.xany.window);
+	//	if (menu != NULL) {
+	//		ctrlmenu_handle_event(widget, menu, &event);
+	//	} else if (event.type == PropertyNotify &&
+	//	           event.xproperty.state == PropertyNewValue &&
+	//	           event.xproperty.atom == XA_RESOURCE_MANAGER &&
+	//	           event.xproperty.window == ctrlapp->root_window) {
+	//		char *str = gettextprop(
+	//			ctrlapp->display,
+	//			ctrlapp->root_window,
+	//			XA_RESOURCE_MANAGER
+	//		);
+	//		if (str != NULL)
+	//			ctrlmenu_reload_resources(widget, str);
+	//		free(str);
+	//	} else if (event.type == UnmapNotify && leader != None &&
+	//	           event.xdestroywindow.window == leader) {
+	//		break;
+	//	}
+	//}
 
-	ctrlmenu_free(widget);
 	free(read_data);
 	free(entries);
-	ctrlapp_close(ctrlapp);
 	XrmDestroyDatabase(xrm);
 	return EXIT_SUCCESS;
 }
