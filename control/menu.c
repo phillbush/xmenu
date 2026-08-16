@@ -1179,8 +1179,34 @@ draw_commit(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t selecte
  * event getter
  */
 
+static Bool
+is_menu_event(Display *, XEvent *event, XPointer arg)
+{
+	struct menu *top_menu = (void *)arg;
+
+	switch (event->type) {
+	case ButtonPress: case ButtonRelease:
+	case KeyPress: case KeyRelease:
+	case EnterNotify: case LeaveNotify:
+	case MotionNotify:
+		return True;
+	case ClientMessage:
+		for (struct menu *menu = top_menu; menu != NULL; menu = menu->next)
+			if (event->xclient.window == menu->window)
+				return True;
+		return False;
+	case ConfigureNotify:
+		for (struct menu *menu = top_menu; menu != NULL; menu = menu->next)
+			if (event->xconfigure.window == menu->window)
+				return True;
+		return False;
+	default:
+		return False;
+	}
+}
+
 static int
-next_event(Display *display, XEvent *event, int *timeout)
+next_event(Display *display, XEvent *event, struct menu *menu, int *timeout)
 {
 	struct timespec then, now;
 	int elapsed;
@@ -1212,7 +1238,7 @@ next_event(Display *display, XEvent *event, int *timeout)
 		*timeout -= elapsed;
 
 	for (;;) {
-		(void)XNextEvent(display, event);
+		(void)XIfEvent(display, event, is_menu_event, (void *)menu);
 		if (event->type != MotionNotify)
 			return event->type;
 		/* compress sequential motion events into a single one */
@@ -1274,7 +1300,7 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t nentry)
 	for (;;) {
 		XEvent event;
 
-		switch (next_event(menuctx->display, &event, &timeout)) {
+		switch (next_event(menuctx->display, &event, menu, &timeout)) {
 		case MotionNotify: case ButtonPress: case ButtonRelease:
 			if (event.xmotion.window != menu->window)
 				return;
@@ -1735,7 +1761,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 	bool close_all = false;
 
 	for (;;) {
-		switch (next_event(menuctx->display, &xev, &timeout)) {
+		switch (next_event(menuctx->display, &xev, menu, &timeout)) {
 		case ButtonPress:
 			if (xev.xbutton.button > Button3)
 				break;
