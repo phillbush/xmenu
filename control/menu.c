@@ -2037,7 +2037,6 @@ ctrlmenu_popup(Display *display, int screen_number, XrmDatabase xdb,
 		struct ctrlmenu_entry *entries, size_t nentries, char const *title,
 		Window leader, int x_root, int y_root, Time time)
 {
-	XWindowAttributes attrs = {};
 	struct menu menu;
 	struct ctrlmenu_context menuctx = {
 		.display = display,
@@ -2066,13 +2065,6 @@ ctrlmenu_popup(Display *display, int screen_number, XrmDatabase xdb,
 		.alignment = ALIGN_LEFT,
 	};
 
-	if (!XGetWindowAttributes(display, menuctx.root_window, &attrs))
-		attrs.your_event_mask = 0;
-	XSelectInput(
-		display, menuctx.root_window,
-		attrs.your_event_mask & PropertyChangeMask
-	);
-
 	for (size_t color = 0; color < COLOR_LAST; color++) {
 		int retval;
 		retval = create_picture(
@@ -2100,10 +2092,6 @@ ctrlmenu_popup(Display *display, int screen_number, XrmDatabase xdb,
 	XUngrabKeyboard(display, CurrentTime);
 
 error:
-	XSelectInput(
-		display, menuctx.root_window,
-		attrs.your_event_mask & PropertyChangeMask
-	);
 	if (menuctx.cursor != None)
 		XFreeCursor(display, menuctx.cursor);
 	if (menuctx.fontset != NULL)
