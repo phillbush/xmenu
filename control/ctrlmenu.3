@@ -1,0 +1,141 @@
+.Dd August 16, 2026
+.Dt CTRLMENU 3
+.Os libcontrol
+.Sh NAME
+.Nm ctrlmenu_popup ,
+.Nd pop-up menu routines
+.Sh SYNOPSIS
+.In X11/Xlib.h
+.In X11/Xresource.h
+.In control/menu.h
+.Bd -literal
+struct ctrlmenu_entry {
+	char *label;
+	size_t labellen;
+
+	char *output;
+	char *altoutput;
+	char *file;
+
+	struct ctrlmenu_entry *children;
+	size_t nchildren;
+};
+.Ed
+.Pp
+.Ft void
+.Fo ctrlmenu_popup
+.Fa "Display *display"
+.Fa "int screen_number"
+.Fa "XrmDatabase resurces"
+.Fa "Visual *visual"
+.Fa "int depth"
+.Fa "Colormap colormap"
+.Fa "struct ctrlmenu_entry *entries"
+.Fa "size_t nentries"
+.Fa "char const *title"
+.Fa "Window leader"
+.Fa "int x_root"
+.Fa "int y_root"
+.Fa "Time timestamp"
+.Fc
+.Sh DESCRIPTION
+The ctrlmenu library implements both a pop-up menu
+(used as context menu, or start menu, for example),
+and a torn-off menu.
+.Pp
+The
+.Fn ctrlmenu_popup
+function creates a pop-up menu on an override-redirect window
+(i'e', not managed by the window manager)
+with the given
+.Fa entries .
+It blocks as long as the menu is popped up
+(i'e', until an entry is selected or the menu is closed).
+.Pp
+The
+.Ft "struct ctrlmenu_entry"
+structure specifies one of the entries listed in a menu.
+An array of such entries makes a menu.
+.Ss Parameters
+.Bl -tag -width Ds
+.It Fa display , screen_number
+The pointer to the context of connection to the
+.Xr Xserver 1 ;
+and the index of the
+.Fa display Ap s
+screen.
+.It Fa entries , nentries
+The array of menu entries that make the menu;
+and the number of members in such array.
+.It Fa leader
+The ID of the client window that the menu is a context of.
+If the menu is not a context menu (or transient for a main window),
+this argument should be
+.Dv None .
+.It Fa resources
+The resource database with configuration for the menu look and feel.
+If
+.Dv NULL ,
+resource is not processed.
+.It Fa timestamp
+The time of the event that triggered the menu to pop up.
+.It Fa title
+The title of the menu
+(to be displayed by the window manager if the menu gets windowed/torn-off).
+.It Fa visual , depth , colormap
+The triplet of graphic information for visual type, color depth, and color map,
+needed for Xlib drawing routines.
+.It Fa x_root , y_root
+The
+.Pq Em x,y
+position where the menu is popped up.
+.El
+.Ss Entry structure
+The
+.Ft ctrlmenu_entry
+structure contains the definitions of a menu entry.
+Its members are as follows:
+.Bl -tag -width Ds
+.It Fa label , labellen
+UTF-8 string to be displayed on the entry; and its length.
+If
+.Dv NULL ,
+the entry is a separator.
+.It Fa output
+String to be printed when the entry is activated.
+If
+.Dv NULL ,
+the entry is inactive
+(dimmed and cannot be selected nor activated).
+.It Fa altoutput
+String to be printed when the entry is activated by alternate means:
+with the middle mouse button, or while pressing the
+.Em Shift
+key.
+.It Fa file
+TODO
+.It Fa children , nchildren
+The array of entries of the submenu that is created when the entry is activated;
+and the number of members of such array.
+If
+.Dv NULL ,
+the entry does not pops up a submenu.
+.El
+.Ss Popup function
+The
+.Fa ctrlmenu_popup
+function pops up a menu with the given
+.Fa entries ,
+and blocks until the menu is closed
+(either by activating an entry or closing the menu).
+.Sh SEE ALSO
+.Xr X 7
+.Rs
+.%T Xlib - C Language X Interface
+.%U https://www.x.org/releases/current/doc/libX11/libX11/libX11.html
+.%Q X Consortium Standard
+.Re
+.Rs
+.%T Drag-and-Drop Protocol for the X Window System
+.%U https://johnlindal.wixsite.com/xdnd
+.Re
