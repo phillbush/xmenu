@@ -152,6 +152,15 @@ error:
 	return s;
 }
 
+static void
+callback(void *ctx, void *self, bool alt)
+{
+	if (alt)
+		printf("%s", (char *)self);
+	else
+		printf("%s", (char *)ctx);
+}
+
 static size_t
 fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
 {
@@ -178,11 +187,13 @@ fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, 
 		size_t linelen = strcspn(line, "\n");
 
 		entry_indentlvl = strspn(line, "\t");
+		entry->callback = callback;
 		if (entry_indentlvl < menu_indentlvl) {
 			break;
 		} else if (entry_indentlvl > menu_indentlvl) {
 			assert(prev_entry != NULL);
-			prev_entry->output = NULL;
+			prev_entry->type = CTRLMENU_SUBMENU;
+			prev_entry->self = NULL;
 			prev_entry->children = next_entry;
 			prev_entry->nchildren = fill_entries(
 				prev_entry->children,
@@ -191,32 +202,41 @@ fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, 
 			);
 			next_entry += prev_entry->nchildren;
 		} else {
+			char *output;
+
 			line[linelen] = '\0';
 			*from += linelen + 1;
 			entry->label = line + entry_indentlvl;
-			if (strncmp(entry->label, "IMG:", 4) == 0) {
-				size_t pathlen;
-				entry->file = entry->label + 4;
-				pathlen = strcspn(entry->file, "\t");
-				entry->label = entry->file + pathlen;
-				entry->label += strspn(entry->label, "\t");
-				entry->file[pathlen] = '\0';
-			}
+			//if (strncmp(entry->label, "IMG:", 4) == 0) {
+			//	size_t pathlen;
+			//	entry->file = entry->label + 4;
+			//	pathlen = strcspn(entry->file, "\t");
+			//	entry->label = entry->file + pathlen;
+			//	entry->label += strspn(entry->label, "\t");
+			//	entry->file[pathlen] = '\0';
+			//}
 			entry->labellen = strcspn(entry->label, "\t");
-			entry->output = entry->label + entry->labellen;
-			entry->output += strspn(entry->output, "\t");
+			output = entry->label + entry->labellen;
+			output += strspn(output, "\t");
 			entry->label[entry->labellen] = '\0';
 
 			if (*entry->label == '\0')
 				entry->label = NULL;
-			if (*entry->output == '\0')
-				entry->output = entry->label;
-			else if (strcmp(entry->output, ":") == 0)
-				entry->output = NULL;
-			entry->altoutput = entry->output;
-			if (prev_entry != NULL && prev_entry->output != NULL &&
+			if (*output == '\0')
+				output = entry->label;
+			else if (strcmp(output, ":") == 0)
+				output = NULL;
+			entry->self = output;
+			entry->ctx = entry->self;
+			if (entry->label == NULL)
+				entry->type = CTRLMENU_SEPARATOR;
+			else if (entry->self == NULL)
+				entry->type = CTRLMENU_INACTIVE;
+			else
+				entry->type = CTRLMENU_COMMAND;
+			if (prev_entry != NULL && prev_entry->self != NULL &&
 			    entry->label != NULL && strcmp(entry->label, "''") == 0) {
-				prev_entry->altoutput = entry->output;
+				prev_entry->ctx = entry->self;
 				continue;
 			}
 			prev_entry = entry;

@@ -1,13 +1,30 @@
 struct ctrlmenu_entry {
+	enum {
+		CTRLMENU_INACTIVE,
+		CTRLMENU_COMMAND,
+		CTRLMENU_SEPARATOR,
+		CTRLMENU_SUBMENU,
+	} type;
+
 	char *label;
 	size_t labellen;
 
-	char *output;
-	char *altoutput;
-	char *file;
-
-	struct ctrlmenu_entry *children;
-	size_t nchildren;
+#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
+	union {
+	struct {
+#endif
+		void (*callback)(void *ctx, void *self, bool alt);
+		void *ctx, *self;
+#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
+	};
+	struct {
+#endif
+		struct ctrlmenu_entry *children;
+		size_t nchildren;
+#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
+	};
+	};
+#endif
 };
 
 void ctrlmenu_popup(

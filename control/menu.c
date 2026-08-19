@@ -422,11 +422,11 @@ get_entry_index(struct ctrlmenu_context *menuctx, struct menu *menu, long y)
 		h += menuctx->separatorh;
 	for (size_t entryc = menu->curr_screenful.first_entry; entryc < menu->nentries; entryc++) {
 		struct ctrlmenu_entry *entry = &menu->entries[entryc];
-		if (entry->label == NULL) {
+		if (entry->type == CTRLMENU_SEPARATOR) {
 			h += menuctx->separatorh;
 			continue;
 		}
-		if (entry->output == NULL && entry->nchildren == 0) {
+		if (entry->type == CTRLMENU_INACTIVE) {
 			h += menuctx->entryh;
 			continue;
 		}
@@ -488,10 +488,10 @@ get_entry_ypos(struct ctrlmenu_context *menuctx, struct menu *menu, int selected
 
 		if ((ssize_t)entryc == selected)
 			return ypos;
-		if (entry->label != NULL)
-			ypos += menuctx->entryh;
-		else
+		if (entry->type == CTRLMENU_SEPARATOR)
 			ypos += menuctx->separatorh;
+		else
+			ypos += menuctx->entryh;
 	}
 	return -1;
 }
@@ -871,7 +871,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct menu *menu)
 		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 		//Imlib_Image image;
 
-		if (entry->label == NULL) {
+		if (entry->type == CTRLMENU_SEPARATOR) {
 			entry_geometry.height = menuctx->separatorh;
 			draw_separator(
 				menuctx,
@@ -913,7 +913,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct menu *menu)
 		//	);
 		//	imlib_free_image();
 		//}
-		if (entry->children != NULL) {
+		if (entry->type == CTRLMENU_SUBMENU) {
 			draw_triangle(
 				menuctx,
 				menu->canvas[CANVAS_NORMAL].picture,
@@ -944,7 +944,8 @@ draw_menu(struct ctrlmenu_context *menuctx, struct menu *menu)
 			textx = entry_geometry.x + (menu->window_geometry.width - textw) / 2;
 		else
 			textx = entry_geometry.x;
-		if (entry->output != NULL || entry->nchildren > 0) {
+		if (entry->type != CTRLMENU_SEPARATOR &&
+		    entry->type != CTRLMENU_INACTIVE) {
 			ctrlfnt_draw(
 				menuctx->fontset,
 				menu->canvas[CANVAS_NORMAL].picture,
@@ -1338,7 +1339,8 @@ select_first_entry(struct ctrlmenu_context *, struct menu *menu)
 	menu->curr_screenful.offset = 0;
 	for (ssize_t entryc = 0; entryc < (ssize_t)menu->nentries; entryc++) {
 		struct ctrlmenu_entry *entry = &menu->entries[entryc];
-		if (entry->output != NULL || entry->nchildren > 0) {
+		if (entry->type != CTRLMENU_SEPARATOR &&
+		    entry->type != CTRLMENU_INACTIVE) {
 			return entryc;
 		}
 	}
@@ -1351,7 +1353,8 @@ select_last_entry(struct ctrlmenu_context *, struct menu *menu)
 	menu->curr_screenful = menu->last_screenful;
 	for (ssize_t entryc = menu->nentries - 1; entryc >= 0; entryc--) {
 		struct ctrlmenu_entry *entry = &menu->entries[entryc];
-		if (entry->output != NULL || entry->nchildren > 0) {
+		if (entry->type != CTRLMENU_SEPARATOR &&
+		    entry->type != CTRLMENU_INACTIVE) {
 			return entryc;
 		}
 	}
@@ -1381,7 +1384,8 @@ select_prev_entry(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t s
 				scroll_up(menuctx, menu, height);
 			}
 		}
-		if (entry->output != NULL || entry->nchildren > 0) {
+		if (entry->type != CTRLMENU_SEPARATOR &&
+		    entry->type != CTRLMENU_INACTIVE) {
 			return entryc;
 		}
 	}
@@ -1409,7 +1413,8 @@ select_next_entry(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t s
 				scroll_down(menuctx, menu, height);
 			}
 		}
-		if (entry->output != NULL || entry->nchildren > 0) {
+		if (entry->type != CTRLMENU_SEPARATOR &&
+		    entry->type != CTRLMENU_INACTIVE) {
 			return entryc;
 		}
 	}
@@ -1454,10 +1459,8 @@ activate_entry(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t nent
 		;
 
 	entry = get_entry(menu, menu->selected);
-	if (entry != NULL && entry->output != NULL) {
-		(void)printf("%s\n", alt ? entry->altoutput : entry->output);
-		(void)fflush(stdout);
-	}
+	if (entry != NULL && entry->type == CTRLMENU_COMMAND)
+		entry->callback(entry->ctx, entry->self, alt);
 }
 
 
@@ -1548,7 +1551,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct menu *parent, struct menu *men
 		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 		unsigned int textw;
 
-		if (entry->label != NULL) {
+		if (entry->type != CTRLMENU_SEPARATOR) {
 			menu->total_height += menuctx->entryh;
 			textw = ctrlfnt_width(
 				menuctx->fontset,
@@ -1559,9 +1562,9 @@ menu_map(struct ctrlmenu_context *menuctx, struct menu *parent, struct menu *men
 			textw = 0;
 			menu->total_height += menuctx->separatorh;
 		}
-		if (entry->file != NULL)
-			menu->hasicon = true;
-		if (entry->children != NULL)
+		//if (entry->file != NULL)
+		//	menu->hasicon = true;
+		if (entry->type == CTRLMENU_SUBMENU)
 			menu->hassubmenu = true;
 		menu->window_geometry.width = MAX(menu->window_geometry.width, textw);
 		if (menu->overflow) {
@@ -1788,7 +1791,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 			entry = get_entry(menu, menu->selected);
 			if (entry == NULL)
 				break;
-			if (entry->children != NULL) {
+			if (entry->type == CTRLMENU_SUBMENU) {
 				if (submenu.entries != entry->children) {
 					if (submenu.window != None)
 						menu_unmap(menuctx, &submenu);
@@ -1802,7 +1805,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 					);
 				}
 				goto recurse;
-			} else if (entry->output != NULL) {
+			} else if (entry->type == CTRLMENU_COMMAND) {
 				activate_entry(
 					menuctx, menu, menu->selected,
 					(xev.xbutton.state & ShiftMask) ||
@@ -1870,7 +1873,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 				entry = get_entry(menu, menu->selected);
 				if (entry == NULL)
 					break;
-				if (entry->children != NULL) {
+				if (entry->type == CTRLMENU_SUBMENU) {
 					if (submenu.entries != entry->children) {
 						if (submenu.window != None)
 							menu_unmap(menuctx, &submenu);
@@ -1976,7 +1979,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 			 */
 			sel_entry = get_entry(menu, menu->selected);
 			if (submenu.window == None && sel_entry != NULL &&
-			    sel_entry->children != NULL) {
+			    sel_entry->type == CTRLMENU_SUBMENU) {
 				menu_map(
 					menuctx, menu, &submenu,
 					sel_entry->children, sel_entry->nchildren,
