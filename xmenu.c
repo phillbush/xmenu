@@ -129,29 +129,6 @@ error:
 	errx(EXIT_FAILURE, "%s: invalid keychord specification", key_spec);
 }
 
-static char *
-gettextprop(Display *dpy, Window win, Atom atom)
-{
-	XTextProperty tprop = { .value = NULL };
-	int count;
-	char **list = NULL;
-	char *s = NULL;
-
-	if (!XGetTextProperty(dpy, win, &tprop, atom))
-		goto error;
-	if (tprop.nitems == 0)
-		goto error;
-	if (XmbTextPropertyToTextList(dpy, &tprop, &list, &count) != Success)
-		goto error;
-	if (count < 1 || list == NULL || *list == NULL)
-		goto error;
-	s = strdup(list[0]);
-error:
-	XFreeStringList(list);
-	XFree(tprop.value);
-	return s;
-}
-
 static void
 callback(void *ctx, void *self, bool alt)
 {
