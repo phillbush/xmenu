@@ -1,13 +1,14 @@
 struct ctrlmenu_entry {
 	enum {
-		CTRLMENU_INACTIVE,
 		CTRLMENU_COMMAND,
 		CTRLMENU_SEPARATOR,
-		CTRLMENU_SUBMENU,
+		CTRLMENU_CASCADE,
 	} type;
 
 	char *label;
 	size_t labellen;
+
+	bool disabled;
 
 #if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
 	union {

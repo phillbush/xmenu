@@ -169,7 +169,7 @@ fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, 
 			break;
 		} else if (entry_indentlvl > menu_indentlvl) {
 			assert(prev_entry != NULL);
-			prev_entry->type = CTRLMENU_SUBMENU;
+			prev_entry->type = CTRLMENU_CASCADE;
 			prev_entry->self = NULL;
 			prev_entry->children = next_entry;
 			prev_entry->nchildren = fill_entries(
@@ -208,7 +208,7 @@ fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, 
 			if (entry->label == NULL)
 				entry->type = CTRLMENU_SEPARATOR;
 			else if (entry->self == NULL)
-				entry->type = CTRLMENU_INACTIVE;
+				entry->disabled = true;
 			else
 				entry->type = CTRLMENU_COMMAND;
 			if (prev_entry != NULL && prev_entry->self != NULL &&

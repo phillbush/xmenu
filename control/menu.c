@@ -426,7 +426,7 @@ get_entry_index(struct ctrlmenu_context *menuctx, struct menu *menu, long y)
 			h += menuctx->separatorh;
 			continue;
 		}
-		if (entry->type == CTRLMENU_INACTIVE) {
+		if (entry->disabled) {
 			h += menuctx->entryh;
 			continue;
 		}
@@ -913,7 +913,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct menu *menu)
 		//	);
 		//	imlib_free_image();
 		//}
-		if (entry->type == CTRLMENU_SUBMENU) {
+		if (entry->type == CTRLMENU_CASCADE) {
 			draw_triangle(
 				menuctx,
 				menu->canvas[CANVAS_NORMAL].picture,
@@ -944,8 +944,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct menu *menu)
 			textx = entry_geometry.x + (menu->window_geometry.width - textw) / 2;
 		else
 			textx = entry_geometry.x;
-		if (entry->type != CTRLMENU_SEPARATOR &&
-		    entry->type != CTRLMENU_INACTIVE) {
+		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
 			ctrlfnt_draw(
 				menuctx->fontset,
 				menu->canvas[CANVAS_NORMAL].picture,
@@ -1339,8 +1338,7 @@ select_first_entry(struct ctrlmenu_context *, struct menu *menu)
 	menu->curr_screenful.offset = 0;
 	for (ssize_t entryc = 0; entryc < (ssize_t)menu->nentries; entryc++) {
 		struct ctrlmenu_entry *entry = &menu->entries[entryc];
-		if (entry->type != CTRLMENU_SEPARATOR &&
-		    entry->type != CTRLMENU_INACTIVE) {
+		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
 			return entryc;
 		}
 	}
@@ -1353,8 +1351,7 @@ select_last_entry(struct ctrlmenu_context *, struct menu *menu)
 	menu->curr_screenful = menu->last_screenful;
 	for (ssize_t entryc = menu->nentries - 1; entryc >= 0; entryc--) {
 		struct ctrlmenu_entry *entry = &menu->entries[entryc];
-		if (entry->type != CTRLMENU_SEPARATOR &&
-		    entry->type != CTRLMENU_INACTIVE) {
+		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
 			return entryc;
 		}
 	}
@@ -1384,8 +1381,7 @@ select_prev_entry(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t s
 				scroll_up(menuctx, menu, height);
 			}
 		}
-		if (entry->type != CTRLMENU_SEPARATOR &&
-		    entry->type != CTRLMENU_INACTIVE) {
+		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
 			return entryc;
 		}
 	}
@@ -1413,8 +1409,7 @@ select_next_entry(struct ctrlmenu_context *menuctx, struct menu *menu, ssize_t s
 				scroll_down(menuctx, menu, height);
 			}
 		}
-		if (entry->type != CTRLMENU_SEPARATOR &&
-		    entry->type != CTRLMENU_INACTIVE) {
+		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
 			return entryc;
 		}
 	}
@@ -1564,7 +1559,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct menu *parent, struct menu *men
 		}
 		//if (entry->file != NULL)
 		//	menu->hasicon = true;
-		if (entry->type == CTRLMENU_SUBMENU)
+		if (entry->type == CTRLMENU_CASCADE)
 			menu->hassubmenu = true;
 		menu->window_geometry.width = MAX(menu->window_geometry.width, textw);
 		if (menu->overflow) {
@@ -1791,7 +1786,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 			entry = get_entry(menu, menu->selected);
 			if (entry == NULL)
 				break;
-			if (entry->type == CTRLMENU_SUBMENU) {
+			if (entry->type == CTRLMENU_CASCADE) {
 				if (submenu.entries != entry->children) {
 					if (submenu.window != None)
 						menu_unmap(menuctx, &submenu);
@@ -1873,7 +1868,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 				entry = get_entry(menu, menu->selected);
 				if (entry == NULL)
 					break;
-				if (entry->type == CTRLMENU_SUBMENU) {
+				if (entry->type == CTRLMENU_CASCADE) {
 					if (submenu.entries != entry->children) {
 						if (submenu.window != None)
 							menu_unmap(menuctx, &submenu);
@@ -1979,7 +1974,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct menu *menu, bool grabbed)
 			 */
 			sel_entry = get_entry(menu, menu->selected);
 			if (submenu.window == None && sel_entry != NULL &&
-			    sel_entry->type == CTRLMENU_SUBMENU) {
+			    sel_entry->type == CTRLMENU_CASCADE) {
 				menu_map(
 					menuctx, menu, &submenu,
 					sel_entry->children, sel_entry->nchildren,
