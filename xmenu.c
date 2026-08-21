@@ -313,20 +313,24 @@ main(int argc, char *argv[])
 		if (!strcmp(argv[i], "-windowed") || !strcmp(argv[i], "-w")) {
 			windowed = true;
 		} else if (!strcmp(argv[i], "-leader")) {
-			leader = strtoul(argv[++i], NULL, 0);
+			if (++i < argc)
+				leader = strtoul(argv[i], NULL, 0);
 		} else if (!strcmp(argv[i], "-name") || !strcmp(argv[i], "-N")) {
 			name = argv[++i];
 		} else if (!strcmp(argv[i], "-position") || !strcmp(argv[i], "-p")) {
-			geometry_flags = parse_geometry(
-				argv[++i], &x_root, &y_root, &monitor_name
+			if (++i < argc) geometry_flags = parse_geometry(
+				argv[i], &x_root, &y_root, &monitor_name
 			);
 		} else if (!strcmp(argv[i], "-rootgrab") || !strcmp(argv[i], "-x")) {
-			parse_keychord(argv[++i], &modifier, &button);
+			if (++i < argc)
+				parse_keychord(argv[i], &modifier, &button);
 			rootmode = true;
 		} else if (!strcmp(argv[i], "-title")) {
 			title = argv[++i];
 		} else if (!strcmp(argv[i], "-xrm")) {
-			XrmDatabase db = XrmGetStringDatabase(argv[++i]);
+			XrmDatabase db = NULL;
+			if (++i < argc)
+				XrmGetStringDatabase(argv[i]);
 			if (db != NULL)
 				XrmCombineDatabase(db, &xrm, True);
 		} else {
