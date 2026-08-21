@@ -7,15 +7,23 @@
 .Sh SYNOPSIS
 .In X11/Xlib.h
 .In X11/Xresource.h
+.In control/application.h
 .In control/menu.h
 .Bd -literal
 struct ctrlmenu_entry {
+	enum {
+		CTRLMENU_COMMAND,
+		CTRLMENU_SEPARATOR,
+		CTRLMENU_CASCADE,
+	} type;
+
 	char *label;
 	size_t labellen;
 
-	char *output;
-	char *altoutput;
-	char *file;
+	bool disabled;
+
+	void (*callback)(void *ctx, void *self, bool alt);
+	void *ctx, *self;
 
 	struct ctrlmenu_entry *children;
 	size_t nchildren;
@@ -42,6 +50,19 @@ struct ctrlmenu_entry {
 The ctrlmenu library implements both a pop-up menu
 (used as context menu, or start menu, for example),
 and a torn-off menu.
+.Pp
+The menu windows created by these routines are controlled by the user
+(see the section
+.Sx USAGE
+below),
+and are configured with X resources
+(see the section
+.Sx RESOURCES
+below).
+For resources to be usable,
+the program must call
+.Xr ctrlapp_set 3
+to set a global name and class for the application.
 .Pp
 The
 .Fn ctrlmenu_popup
@@ -96,31 +117,130 @@ The
 structure contains the definitions of a menu entry.
 Its members are as follows:
 .Bl -tag -width Ds
-.It Fa label , labellen
-UTF-8 string to be displayed on the entry; and its length.
-If
-.Dv NULL ,
-the entry is a separator.
-.It Fa output
-String to be printed when the entry is activated.
-If
-.Dv NULL ,
-the entry is inactive
-(dimmed and cannot be selected nor activated).
-.It Fa altoutput
-String to be printed when the entry is activated by alternate means:
-with the middle mouse button, or while pressing the
-.Em Shift
-key.
-.It Fa file
-TODO
+.It Fa callback , ctx , self
+Function to be called when the entry is activated.
+The opaque pointers
+.Fa ctx
+and
+.Fa self
+are given to the
+.Fa callback
+function.
+These members must only be set on
+.Dv CTRLMENU_COMMAND
+entries.
 .It Fa children , nchildren
 The array of entries of the submenu that is created when the entry is activated;
 and the number of members of such array.
-If
-.Dv NULL ,
-the entry does not pops up a submenu.
+.It Fa disabled
+Whether the menu entry is disabled.
+It is only relevant for command and cascade menu entries.
+.It Fa label , labellen
+UTF-8 string to be displayed on the entry; and its length.
+.It Fa type
+The entry's type, represented by an enumeration constant:
+.Bl -tag -width CTRLMENU_SEPARATOR
+.It Dv CTRLMENU_COMMAND
+When activated, the entry triggers calling the callback routine.
+The member
+.Fa callback
+must be set on this type of entry.
+.It Dv CTRLMENU_SEPARATOR
+Entry is just a line separating entries above from entries below.
+.It Dv CTRLMENU_CASCADE
+When activated, the entry pops up a submenu.
+The members
+.Fa children
+and
+.Fa nchildren
+must be set on this type of entry.
 .El
+.Pp
+See
+.Sx USAGE
+below for a complete list of entry types and their behavior,
+including those not specified by the caller program,
+and the disabled versions of command and submenu entries.
+.El
+.Pp
+The members
+.Fa callback Ns / Ns Fa ctx Ns / Ns Fa self
+and the members
+.Fa children Ns / Ns Fa nchildren
+must not be set at the same time,
+for they are relevant for different types of entries each
+.Po
+.Dv CTRLMENU_COMMAND
+and
+.Dv CTRLMENU_CASCADE ,
+respectively
+.Pc .
+In fact, they are in anonymous structs in an anonymous union,
+if the compiler supports it:
+.Bd -literal
+union {
+	struct {
+		void (*callback)(void *ctx, void *self, bool alt);
+		void *ctx, *self;
+	};
+	struct {
+		struct ctrlmenu_entry *children;
+		size_t nchildren;
+	};
+};
+.Ed
+.Ss Callback function
+The
+.Fa callback
+member of a
+.Vt struct ctrlmenu_entry
+is the pointer to a function which is called when the entry is activated,
+and its type is
+.Dv CTRLMENU_COMMAND .
+What that function actually does is up to the program.
+.Pp
+The
+.Fa callback
+function has the following type:
+.Bd -filled -offset indent
+.Ft void
+.Fo callback
+.Fa "void *ctx"
+.Fa "void *self"
+.Fa "bool alt"
+.Fc
+.Ed
+.Pp
+When called,
+the opaque pointers
+.Fa ctx
+and
+.Fa self
+are given to the
+.Fa callback
+function.
+The idea is that
+.Fa ctx
+is a context object common to all entries, while
+.Fa self
+is some data relevant for that particular entry.
+But the program can use them the way it likes.
+.Pp
+If the entry is activated with the left mouse button,
+or with the Enter or right-arrow key,
+the value of the
+.Fa alt
+argument is
+.Dv false .
+If the entry is activated with the middle mouse button,
+or with the Enter or right-arrow key while Shift is pressed,
+the value of the
+.Fa alt
+argument is
+.Dv true.
+The idea is that the program can do a different action on an
+.Dq alternate activation .
+But it is not required to do so.
 .Ss Popup function
 The
 .Fa ctrlmenu_popup
@@ -128,14 +248,203 @@ function pops up a menu with the given
 .Fa entries ,
 and blocks until the menu is closed
 (either by activating an entry or closing the menu).
+.Sh USAGE
+A menu is a window listing entries for the user to select.
+The types of menu entries are as follows:
+.Bl -tag -width xxxxxxxxxxxxxxxx
+.It Em Command entry
+A labelled button which, when activated, invokes the callback routine.
+.It Em Cascade entry
+A labelled entry with a rightwards-pointing triangle after which,
+when activated, pops up a submenu.
+.It Em Disabled command entry
+Same as a command entry,
+but it is displayed dimmed and cannot be activated.
+.It Em Disabled cascade entry
+Same as a cascade entry,
+but it is displayed dimmed and cannot be activated.
+.It Em Separator entry
+A dimmed line that separates the entries above it from the entries below it.
+Separator entries cannot be activated, and have no use other than display.
+.It Em Tear-off entry
+A single dashed line at the top of a pop-up menu which,
+when activated, it tears the menu off.
+Unlike other menu entries, it is not specified by the programmer,
+but created automatically by the ctrlmenu routines.
+The tear-off entry only appears on pop-up menus, if enabled by resources.
+.It Em Scroller entries
+A pair of upwards and downwards pointing triangles
+(one at the top, the other at the bottom) which,
+when activated or hovered, scroll the entries upwards or downwards.
+Unlike other menu entries, they are not specified by the programmer,
+but created automatically by the ctrlmenu routines.
+The scroller entries only appear
+if there are more entries on the menu than the monitor can display.
+.El
+.Pp
+A menu can be either a pop-up menu or a torn-off menu.
+.Bl -tag -width xxxxxxxxxxxxx
+.It Em pop-up menu
+Menu is not managed by the window manager
+(i'e', its window is override-redirect).
+The keyboard and pointer are grabbed by a pop-up menu while it is open.
+When an entry is selected, the pop-up menu is closed.
+.It Em torn-off menu
+Menu is managed by the window manager, like a regular window.
+The input is not grabbed.
+Any number of entries can be selected, as long as the menu window is not closed.
+.El
+.Pp
+Menus are controlled as follows:
+.Bl -column -compact xxxxxxxxxxxxxxx XXXXXXXXXXXXXX xxx
+.It Sy Target           Ta Sy Operation         Ta Sy Description
+.It Tear-off entry      Ta Activate             Ta Tears off pop-up menu.
+.It Cascade entry       Ta Activate             Ta Pops up submenu.
+.It Command entry       Ta Activate             Ta Calls the entry's callback routine.
+.It Command entry       Ta Alt-activate         Ta Calls the entry's callback routine,
+for alternate action.
+.It Scroll-up entry     Ta Hover pointer        Ta Scrolls entries upwards.
+.It Scroll-down entry   Ta Hover pointer        Ta Scrolls entries downwards.
+.It Any entry           Ta Hover pointer        Ta Selects entry (if possible).
+.It Close button*       Ta Left click*          Ta Closes torn-off menu.
+.It Outside menu        Ta Left/right click     Ta Closes pop-up menu.
+.It Selected entry      Ta Left/right click     Ta Activates the selected entry.
+.It Selected entry      Ta Middle click         Ta Activates the selected entry for alternate action.
+.It Selected entry      Ta Hold Li Shift        Ta "If entry is"
+activated while
+.Ql Shift
+is pressed,
+activate for alternate action.
+.It Selected entry      Ta Li Right Ns / Ns Li Enter No key      Ta Activates the selected entry.
+.It Anywhere            Ta Li Home No key       Ta Selects the first entry.
+.It Anywhere            Ta Li End  No key       Ta Selects the last entry.
+.It Anywhere            Ta Li Down Ns / Ns Li Tab No key  Ta Selects the next entry,
+cycling back to the first one.
+.It Anywhere            Ta Li "Up\&" Ns / Ns Li Shift-Tab No key  Ta Selects the previous entry,
+cycling back to the last one.
+.It Anywhere            Ta Li Left Ns / Ns Li Esc No key         Ta Closes topmost pop-up menu.
+.El
+.Pp
+*depends on the window manager:
+Some use double-click on window's menu to close it;
+others do not even render a close button on windows' titlebar
+(or a titlebar at all).
+.Sh RESOURCES
+Refer to the
+.Xr X 7
+manual, at the section
+.Sx RESOURCES
+for more information on X resources.
+.Bl -column XXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXX XXX
+.It Sy Resource name                Ta Sy Default value  Ta Sy Type
+.It Dv activeBackground  Ta Dv #3465A4   Ta color
+.It Dv activeForeground  Ta Dv #FFFFFF   Ta color
+.It Dv alignment         Ta Dv left      Ta Brq Qo Dv left Qc , Qo Dv center Qc , Qo Dv right Qc
+.It Dv background        Ta Dv #313131   Ta color
+.It Dv borderWidth       Ta Dv 1         Ta size (in pixels)
+.It Dv font Ns / Ns Dv faceName     Ta (system's default)  Ta xft-font Sy OR No xldf-font
+.It Dv fontSize Ns / Ns Dv faceSize Ta (system's default)  Ta size (in points)
+.It Dv foreground        Ta Dv #FFFFFF   Ta color
+.It Dv maxItems          Ta (computed)   Ta positive integer
+.It Dv opacity           Ta 1.0          Ta Bq 0.0 , 1.0
+.It Dv shadowThickness   Ta Dv 1         Ta size (in pixels)
+.It Dv tearOff           Ta Dv false     Ta boolean
+.It Dv topShadowColor    Ta (computed)   Ta boolean
+.It Dv bottomShadowColor Ta (computed)   Ta boolean
+.El
+.Pp
+For the syntax of color resources,
+refer to the
+.Xr X 7
+manual, at the section
+.Sx COLOR NAMES .
+.Bl -tag -width Ds
+.It Ic alignment
+If set to
+.Qq Ic left ,
+.Qq Ic center ,
+or
+.Qq Ic right ,
+text is aligned to the left, center, or right of the menu, respectively.
+By default, text is aligned to the left.
+.It Ic background , activeBackground
+The color of the background for the menu and its selected entry,
+respectively.
+.It Ic borderColor
+The color of the border around the menu.
+.It Ic borderWidth
+The size in pixels of the border around the menu.
+.It Ic font Pq synonym: Ic faceName
+The font for drawing text.
+.Pp
+If it is prefixed with
+.Qq Ic xft: ,
+it is a
+.Em FontConfig
+font pattern;
+and the Xft library is used to draw text.
+Fallback fonts, for missing glyphs, can be specified by delimiting the fonts with commas.
+Refer to the
+.Xr fonts.conf 5
+manual, at the section
+.Sx FONT NAMES ,
+for the syntax of font pattern strings.
+.Pp
+If it is prefixed with
+.Qq Ic x:
+or
+.Qq Ic x11: ,
+it is a
+.Em X Logical Font Description
+.Pq Em XLFD
+font pattern;
+and the X11 library is used to draw text.
+Refer to the
+.Xr fonts.conf 5
+manual, at the section
+.Sx FONT NAMES ,
+for the syntax of font pattern strings.
+.Pp
+If no prefix is given,
+.Nm
+first tries the resource as a XLFD pattern, and then as a Xft pattern.
+.It Ic fontSize Pq synonym: Ic faceSize
+The size, in points of the font.
+This only affects
+.Xr Xft 3
+fonts.
+.It Ic foreground , activeForeground
+The color of the label text on the menu and its selected entry,
+respectively.
+If not set, these resources are a contrasting color computed from
+.Ic background
+and
+.Ic activeBackground ,
+respectively.
+.It Ic maxItems
+Maximum number of entries to be displayed in a menu.
+If a menu has more than this number of entries, they will be scrolled with arrow buttons.
+The actual number of entries displayed may be lower to fit the screen.
+.It Ic opacity
+Background opacity as a floating point number between
+0.0 (transparent) and 1.0 (opaque) inclusive.
+.It Ic shadowThickness
+The size in pixels of the Motif-like 3D relief.
+.It Ic tearOff
+If
+.Qq Ic true ,
+creates a dashed line on the top of each non-windowed menu to tear them off into a new windowed menu.
+.It Ic topShadowColor , bottomShadowColor
+The color of the top/light and bottom/dark parts of the Motif-like 3D relief.
+If not set, these resources are computed from
+.Ic background .
+.El
+.Sh EXAMPLES
+TODO
 .Sh SEE ALSO
 .Xr X 7
 .Rs
 .%T Xlib - C Language X Interface
 .%U https://www.x.org/releases/current/doc/libX11/libX11/libX11.html
 .%Q X Consortium Standard
-.Re
-.Rs
-.%T Drag-and-Drop Protocol for the X Window System
-.%U https://johnlindal.wixsite.com/xdnd
 .Re
