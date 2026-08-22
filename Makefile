@@ -4,7 +4,9 @@ LIB_OBJS = util/color.o \
 	control/resources.o
 OBJS = ${PROG:=.o} ${LIB_OBJS}
 SRCS = ${OBJS:.o=.c}
-MAN = ${PROG:=.1}
+MANS = ${PROG:=.1} \
+	control/ctrlapp.3 control/ctrlfnt.3 \
+	control/ctrlmenu.3 control/ctrlres.3
 DOC = README.md
 
 _cflags = -std=c2x -D_XOPEN_SOURCE=800 -D_BSD_SOURCE -D_GNU_SOURCE \
@@ -40,8 +42,8 @@ tags: ${SRCS}
 	ctags ${SRCS}
 
 .PHONY: lint
-lint: ${SRCS}
-	-mandoc -T lint -W warning ${MAN}
+lint: ${SRCS} ${MANS}
+	-mandoc -T lint -W warning ${MANS}
 	-clang-tidy ${SRCS} -- ${_cflags}
 
 .PHONY: clean
@@ -53,9 +55,9 @@ install: all
 	mkdir -p ${bindir}
 	mkdir -p ${mandir}
 	install -m 755 ${PROG} ${bindir}/${PROG}
-	install -m 644 ${MAN} ${mandir}/${MAN}
+	install -m 644 ${PROG:=.1} ${mandir}/${PROG:=.1}
 
 .PHONY: uninstall
 uninstall:
 	-rm ${bindir}/${PROG}
-	-rm ${mandir}/${MAN}
+	-rm ${mandir}/${PROG:=.1}
