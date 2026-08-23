@@ -20,12 +20,44 @@ struct ctrlmenu_entry {
 	};
 	struct {
 #endif
-		struct ctrlmenu_entry *children;
-		size_t nchildren;
+		struct ctrlmenu_menu *submenu;
 #if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
 	};
 	};
 #endif
+};
+
+enum {
+	CANVAS_NORMAL,
+	CANVAS_SELECT,
+	CANVAS_FINAL,
+	CANVAS_LAST
+};
+
+struct ctrlmenu_menu {
+	Window window;
+	struct ctrlmenu_entry *entries;
+	size_t nentries;
+
+	struct ctrlmenu_menu *next;
+	ssize_t selected;
+	char const *title;
+	XRectangle window_geometry;
+	int canvas_width, canvas_height;
+	int total_height;
+	struct {
+		size_t first_entry;
+		int offset;
+	} curr_screenful, last_screenful;
+	struct Canvas {
+		Pixmap pixmap;
+		Picture picture;
+	} canvas[CANVAS_LAST];
+	bool tearable;
+	bool overflow;
+	bool hasicon;
+	bool hassubmenu;
+	bool tornoff;
 };
 
 void ctrlmenu_popup(
@@ -35,8 +67,7 @@ void ctrlmenu_popup(
 	Visual *visual,
 	int depth,
 	Colormap colormap,
-	struct ctrlmenu_entry *entries,
-	size_t nentries,
+	struct ctrlmenu_menu *menus,
 	char const *title,
 	Window leader,
 	int x_root,

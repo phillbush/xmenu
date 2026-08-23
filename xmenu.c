@@ -139,10 +139,12 @@ callback(void *ctx, void *self, bool alt)
 }
 
 static size_t
-fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
+fill_menu(struct ctrlmenu_menu *menus, size_t *menus_from,
+	size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
 {
 	size_t nentries;
-	struct ctrlmenu_entry *next_entry = entries;
+	struct ctrlmenu_menu *menu = &menus[*menus_from];
+	struct ctrlmenu_entry *next_entry = menu->entries;
 	struct ctrlmenu_entry *prev_entry = NULL;
 
 	for (size_t len = *from; len < datasize; len++) {
@@ -158,7 +160,7 @@ fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, 
 
 	nentries = 0;
 	while (*from < datasize) {
-		struct ctrlmenu_entry *entry = &entries[nentries];
+		struct ctrlmenu_entry *entry = &menu->entries[nentries];
 		size_t entry_indentlvl;
 		char *line = data + *from;
 		size_t linelen = strcspn(line, "\n");
@@ -171,13 +173,13 @@ fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, 
 			assert(prev_entry != NULL);
 			prev_entry->type = CTRLMENU_CASCADE;
 			prev_entry->self = NULL;
-			prev_entry->children = next_entry;
-			prev_entry->nchildren = fill_entries(
-				prev_entry->children,
-				entry_indentlvl,
-				data, datasize, from
+			prev_entry->submenu = menus + ++(*menus_from);
+			prev_entry->submenu->entries = next_entry;
+			prev_entry->submenu->nentries = fill_menu(
+				menus, menus_from,
+				entry_indentlvl, data, datasize, from
 			);
-			next_entry += prev_entry->nchildren;
+			next_entry += prev_entry->submenu->nentries;
 		} else {
 			char *output;
 
@@ -224,9 +226,10 @@ fill_entries(struct ctrlmenu_entry *entries, size_t menu_indentlvl, char *data, 
 }
 
 static size_t
-parsestdin(struct ctrlmenu_entry **entries, char **data)
+parse_stdin(char **data, struct ctrlmenu_menu **menus)
 {
-	size_t nlines;
+	size_t last_indentlvl;
+	size_t nlines, nmenus;
 	FILE *stream;
 	char buf[BUFSIZ];
 	size_t size;
@@ -242,7 +245,7 @@ parsestdin(struct ctrlmenu_entry **entries, char **data)
 	}
 	fflush(stream);
 	if (size == 0)
-		return 0;
+		return false;
 	if ((*data)[size-1] != '\n' && (*data)[size-1] != '\0')
 		if (fwrite("\0", 1, 1, stream) != 1)
 			err(EXIT_FAILURE, "fwrite");
@@ -251,12 +254,38 @@ parsestdin(struct ctrlmenu_entry **entries, char **data)
 			err(EXIT_FAILURE, "fclose");
 
 	nlines = 0;
-	for (size_t len = 0; len < size; len += strcspn((*data)+len, "\n") + 1)
+	nmenus = 1;
+	last_indentlvl = strspn(*data, "\t");
+	for (size_t len = 0; len < size; len += strcspn((*data)+len, "\n") + 1) {
+		size_t curr_indentlvl = strspn((*data)+len, "\t");
+		if (curr_indentlvl > last_indentlvl)
+			nmenus++;
+		last_indentlvl = curr_indentlvl;
 		nlines++;
-	if ((*entries = calloc(nlines, sizeof(**entries))) == NULL)
+	}
+	if (nlines == 0 || nmenus == 0)
+		return 0;
+	if ((*menus = calloc(nmenus, sizeof(**menus))) == NULL)
 		err(EXIT_FAILURE, "calloc");
-
-	return fill_entries(*entries, strspn(*data, "\t"), *data, size, &(size_t){0});
+	/*
+	 * (*menus)[0].entries is a large array that contains all the
+	 * entries for all the other menus, not only for the root
+	 * menu ((*menus)[0]).  Therefore, (*menus)[0].nentries (the number
+	 * of entries only for the root menu) is lesser than nlines
+	 * (count of all entries for all menus).
+	 *
+	 * We do that to keep only two dynamic memory addresses we
+	 * need to free: the array of all entries ((*menus)[0].entries),
+	 * and the array of all menus (menu).  Those are freed before
+	 * main() returns.
+	 */
+	if (((*menus)[0].entries = calloc(nlines, sizeof(*(*menus)[0].entries))) == NULL)
+		err(EXIT_FAILURE, "calloc");
+	(*menus)[0].nentries = fill_menu(
+		*menus, &(size_t){0},
+		strspn(*data, "\t"), *data, size, &(size_t){0}
+	);
+	return nmenus;
 }
 
 static void
@@ -295,8 +324,8 @@ main(int argc, char *argv[])
 	XrmDatabase xrm = NULL;
 	Window leader = None;
 	bool rootmode = false;
-	struct ctrlmenu_entry *entries = NULL;
-	size_t nentries = 0;
+	struct ctrlmenu_menu *menus = NULL;
+	size_t nmenus = 0;
 	unsigned int button = 0;
 	unsigned int modifier = 0;
 	bool windowed = false;
@@ -360,8 +389,8 @@ main(int argc, char *argv[])
 		leader = None;
 	else if (windowed)
 		rootmode = false;
-	nentries = parsestdin(&entries, &read_data);
-	if (nentries == 0)
+	nmenus = parse_stdin(&read_data, &menus);
+	if (nmenus == 0)
 		errx(EXIT_FAILURE, "no menu generated");
 
 	ctrlapp_set(name, "XMenu", argc, argv);
@@ -448,8 +477,7 @@ main(int argc, char *argv[])
 		}
 		ctrlmenu_popup(
 			display, DefaultScreen(display), xrm,
-			visual, depth, colormap,
-			entries, nentries, title, leader,
+			visual, depth, colormap, menus, title, leader,
 			x_root, y_root, CurrentTime
 		);
 	} while (rootmode);
@@ -481,7 +509,8 @@ main(int argc, char *argv[])
 	//}
 
 	free(read_data);
-	free(entries);
+	free(menus[0].entries);
+	free(menus);
 	XrmDestroyDatabase(xrm);
 	return EXIT_SUCCESS;
 }

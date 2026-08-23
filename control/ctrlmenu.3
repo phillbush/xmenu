@@ -25,8 +25,15 @@ struct ctrlmenu_entry {
 	void (*callback)(void *ctx, void *self, bool alt);
 	void *ctx, *self;
 
-	struct ctrlmenu_entry *children;
-	size_t nchildren;
+	struct ctrlmenu_menu *submenu;
+};
+
+struct ctrlmenu_menu {
+	Window window;
+	struct ctrlmenu_entry *entries;
+	size_t nentries;
+
+	/* ...other members that the caller program shall not mess with*/
 };
 .Ed
 .Pp
@@ -38,8 +45,7 @@ struct ctrlmenu_entry {
 .Fa "Visual *visual"
 .Fa "int depth"
 .Fa "Colormap colormap"
-.Fa "struct ctrlmenu_entry *entries"
-.Fa "size_t nentries"
+.Fa "struct ctrlmenu_menu *menu"
 .Fa "char const *title"
 .Fa "Window leader"
 .Fa "int x_root"
@@ -68,8 +74,9 @@ The
 .Fn ctrlmenu_popup
 function creates a pop-up menu on an override-redirect window
 (i'e', not managed by the window manager)
-with the given
-.Fa entries .
+for the given
+.Fa menu
+object.
 It blocks as long as the menu is popped up
 (i'e', until an entry is selected or the menu is closed).
 .Pp
@@ -85,9 +92,23 @@ The pointer to the context of connection to the
 and the index of the
 .Fa display Ap s
 screen.
-.It Fa entries , nentries
-The array of menu entries that make the menu;
+.It Fa menu
+The pointer to a
+.Ft struct ctrlmenu_menu
+structure holding an array of menu entries that make the menu,
 and the number of members in such array.
+.Pp
+Except for
+.Fa entries
+and
+.Fa nentries ,
+all the other members of
+.Fa menu
+must be zeroed before the first
+(and only the first!)
+call of
+.Fn ctrlmenu_popup .
+All the other members are filled by ctrlmenu routines.
 .It Fa leader
 The ID of the client window that the menu is a context of.
 If the menu is not a context menu (or transient for a main window),
@@ -114,7 +135,7 @@ position where the menu is popped up.
 .Ss Entry structure
 The
 .Ft ctrlmenu_entry
-structure contains the definitions of a menu entry.
+structure holds the definition of a menu entry.
 Its members are as follows:
 .Bl -tag -width Ds
 .It Fa callback , ctx , self
@@ -129,14 +150,16 @@ function.
 These members must only be set on
 .Dv CTRLMENU_COMMAND
 entries.
-.It Fa children , nchildren
-The array of entries of the submenu that is created when the entry is activated;
-and the number of members of such array.
 .It Fa disabled
 Whether the menu entry is disabled.
 It is only relevant for command and cascade menu entries.
 .It Fa label , labellen
 UTF-8 string to be displayed on the entry; and its length.
+.It Fa submenu
+The pointer to the menu that pops up when the entry is activated.
+This member must only be set on
+.Dv CTRLMENU_CASCADE
+entries.
 .It Fa type
 The entry's type, represented by an enumeration constant:
 .Bl -tag -width CTRLMENU_SEPARATOR
@@ -149,10 +172,8 @@ must be set on this type of entry.
 Entry is just a line separating entries above from entries below.
 .It Dv CTRLMENU_CASCADE
 When activated, the entry pops up a submenu.
-The members
-.Fa children
-and
-.Fa nchildren
+The member
+.Fa submenu
 must be set on this type of entry.
 .El
 .Pp
@@ -165,8 +186,8 @@ and the disabled versions of command and submenu entries.
 .Pp
 The members
 .Fa callback Ns / Ns Fa ctx Ns / Ns Fa self
-and the members
-.Fa children Ns / Ns Fa nchildren
+and the member
+.Fa submenu
 must not be set at the same time,
 for they are relevant for different types of entries each
 .Po
@@ -184,11 +205,24 @@ union {
 		void *ctx, *self;
 	};
 	struct {
-		struct ctrlmenu_entry *children;
-		size_t nchildren;
+		struct ctrlmenu_menu *submenu;
 	};
 };
 .Ed
+.Pp
+The
+.Ft ctrlmenu_menu
+structure holds the definition of a menu.
+It members are as follows:
+.Bl -tag -width Ds
+.It Fa entries , nentries
+The array of entries of the submenu that is created when the entry is activated;
+and the number of members of such array.
+.It Fa window
+The window that was created for the menu by
+.Fn ctrlmenu_popup
+or another routine.
+.El
 .Ss Callback function
 The
 .Fa callback
