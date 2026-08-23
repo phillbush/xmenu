@@ -1169,6 +1169,9 @@ is_menu_event(Display *, XEvent *event, XPointer arg)
 				return True;
 		return False;
 	default:
+		for (struct ctrlmenu_menu *menu = top_menu; menu != NULL; menu = menu->next)
+			if (event->xany.window == menu->window)
+				return True;
 		return False;
 	}
 }
@@ -1188,7 +1191,8 @@ next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu, int *tim
 		then.tv_sec = 0;
 	}
 
-	if (XPending(display) == 0) {
+	if (XPending(display) == 0 ||
+	    !XCheckIfEvent(display, event, is_menu_event, (void *)menu)) {
 		if (poll(&pfd, 1, *timeout?*timeout:-1) == 0) {
 			*timeout = 0;
 			return TimeoutNotify;
