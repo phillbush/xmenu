@@ -1990,19 +1990,12 @@ done:
  */
 
 void
-ctrlmenu_popup(Display *display, int screen_number, XrmDatabase xdb,
-		Visual *visual, int depth, Colormap colormap,
+ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
 		struct ctrlmenu_menu *root_menu, char const *title,
 		Window leader, int x_root, int y_root, Time time)
 {
 	struct ctrlmenu_context menuctx = {
 		.display = display,
-		.screen_number = screen_number,
-		.root_window = RootWindow(display, screen_number),
-
-		.visual = visual,
-		.depth = depth,
-		.colormap = colormap,
 		.cursor = XCreateFontCursor(display, XC_left_ptr),
 
 		.leader = leader,
@@ -2022,10 +2015,23 @@ ctrlmenu_popup(Display *display, int screen_number, XrmDatabase xdb,
 		.alignment = ALIGN_LEFT,
 	};
 
+	{
+		XWindowAttributes attributes;
+
+		if (!XGetWindowAttributes(display, reference, &attributes))
+			return;
+		menuctx.screen_number = XScreenNumberOfScreen(attributes.screen);
+		menuctx.root_window = attributes.root;
+		menuctx.visual = attributes.visual;
+		menuctx.depth = attributes.depth;
+		menuctx.colormap = attributes.colormap;
+	}
+
 	for (size_t color = 0; color < COLOR_LAST; color++) {
 		int retval;
 		retval = create_picture(
-			display, menuctx.root_window, visual, depth,
+			display,
+			menuctx.root_window, menuctx.visual, menuctx.depth,
 			&menuctx.colors[color].pict,
 			&menuctx.colors[color].pix,
 			&menuctx.colors[color].chans,

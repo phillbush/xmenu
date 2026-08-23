@@ -62,11 +62,8 @@ struct ctrlmenu_menu {
 
 void ctrlmenu_popup(
 	Display *display,
-	int screen_number,
+	Drawable reference,
 	XrmDatabase xdb,
-	Visual *visual,
-	int depth,
-	Colormap colormap,
 	struct ctrlmenu_menu *menus,
 	char const *title,
 	Window leader,

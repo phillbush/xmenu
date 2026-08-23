@@ -476,9 +476,8 @@ main(int argc, char *argv[])
 			);
 		}
 		ctrlmenu_popup(
-			display, DefaultScreen(display), xrm,
-			visual, depth, colormap, menus, title, leader,
-			x_root, y_root, CurrentTime
+			display, DefaultRootWindow(display), xrm,
+			menus, title, leader, x_root, y_root, CurrentTime
 		);
 	} while (rootmode);
 

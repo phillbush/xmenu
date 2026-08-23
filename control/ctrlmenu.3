@@ -40,11 +40,8 @@ struct ctrlmenu_menu {
 .Ft void
 .Fo ctrlmenu_popup
 .Fa "Display *display"
-.Fa "int screen_number"
+.Fa "Drawable reference"
 .Fa "XrmDatabase resurces"
-.Fa "Visual *visual"
-.Fa "int depth"
-.Fa "Colormap colormap"
 .Fa "struct ctrlmenu_menu *menu"
 .Fa "char const *title"
 .Fa "Window leader"
@@ -86,12 +83,9 @@ structure specifies one of the entries listed in a menu.
 An array of such entries makes a menu.
 .Ss Parameters
 .Bl -tag -width Ds
-.It Fa display , screen_number
-The pointer to the context of connection to the
-.Xr Xserver 1 ;
-and the index of the
-.Fa display Ap s
-screen.
+.It Fa display
+The pointer to the context of the connection to the
+.Xr Xserver 1 .
 .It Fa menu
 The pointer to a
 .Ft struct ctrlmenu_menu
@@ -114,9 +108,33 @@ The ID of the client window that the menu is a context of.
 If the menu is not a context menu (or transient for a main window),
 this argument should be
 .Dv None .
+.Pp
+If an existing window is given,
+it should be a descendant of the same root window of the
+.Fa reference
+one.
+.It Fa reference
+A window or pixmap whose screen, visual type, color depth, and colormap
+are used for the menu window.
+The window/pixmap itself is ignored;
+it is only relevant for its attributes.
+.Pp
+You should just pass the root window,
+unless you want to use a custom visual/depth/colormap for the menu,
+in which case you must create a window with the needed attributes.
+.Pp
+.Em Rationale :
+The reference window replaces four parameters that were used previously:
+the screen number, the visual type, the color depth, and the colormap.
+Most often, the programmer just wants to use the default values.
+So, to simplify the API and make falling back to the defaults easier,
+just pass a dummy reference window.
+Lots of Xlib routines do that anyway
+(but in their case that's mostly a need of the X protocol,
+rather than the API design).
 .It Fa resources
 The resource database with configuration for the menu look and feel.
-If
+If its value is
 .Dv NULL ,
 resource is not processed.
 .It Fa timestamp
@@ -124,9 +142,6 @@ The time of the event that triggered the menu to pop up.
 .It Fa title
 The title of the menu
 (to be displayed by the window manager if the menu gets windowed/torn-off).
-.It Fa visual , depth , colormap
-The triplet of graphic information for visual type, color depth, and color map,
-needed for Xlib drawing routines.
 .It Fa x_root , y_root
 The
 .Pq Em x,y
