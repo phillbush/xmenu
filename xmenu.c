@@ -139,12 +139,11 @@ callback(void *ctx, void *self, bool alt)
 }
 
 static size_t
-fill_menu(struct ctrlmenu_menu *menus, size_t *menus_from,
+fill_menu(struct ctrlmenu_menu **menus, struct ctrlmenu_entry **next_entry,
 	size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
 {
 	size_t nentries;
-	struct ctrlmenu_menu *menu = &menus[*menus_from];
-	struct ctrlmenu_entry *next_entry = menu->entries;
+	struct ctrlmenu_menu *menu = *menus;
 	struct ctrlmenu_entry *prev_entry = NULL;
 
 	for (size_t len = *from; len < datasize; len++) {
@@ -155,8 +154,9 @@ fill_menu(struct ctrlmenu_menu *menus, size_t *menus_from,
 		if (entry_indentlvl < menu_indentlvl)
 			break;
 		if (entry_indentlvl == menu_indentlvl)
-			next_entry++;
+			(*next_entry)++;
 	}
+	(*menus)++;
 
 	nentries = 0;
 	while (*from < datasize) {
@@ -173,13 +173,12 @@ fill_menu(struct ctrlmenu_menu *menus, size_t *menus_from,
 			assert(prev_entry != NULL);
 			prev_entry->type = CTRLMENU_CASCADE;
 			prev_entry->self = NULL;
-			prev_entry->submenu = menus + ++(*menus_from);
-			prev_entry->submenu->entries = next_entry;
+			prev_entry->submenu = *menus;
+			prev_entry->submenu->entries = *next_entry;
 			prev_entry->submenu->nentries = fill_menu(
-				menus, menus_from,
+				menus, next_entry,
 				entry_indentlvl, data, datasize, from
 			);
-			next_entry += prev_entry->submenu->nentries;
 		} else {
 			char *output;
 
@@ -226,10 +225,12 @@ fill_menu(struct ctrlmenu_menu *menus, size_t *menus_from,
 }
 
 static size_t
-parse_stdin(char **data, struct ctrlmenu_menu **menus)
+parse_stdin(char **data, struct ctrlmenu_menu **menus_ret)
 {
 	size_t last_indentlvl;
 	size_t nlines, nmenus;
+	struct ctrlmenu_menu *menus;
+	struct ctrlmenu_entry *entries;
 	FILE *stream;
 	char buf[BUFSIZ];
 	size_t size;
@@ -265,24 +266,26 @@ parse_stdin(char **data, struct ctrlmenu_menu **menus)
 	}
 	if (nlines == 0 || nmenus == 0)
 		return 0;
-	if ((*menus = calloc(nmenus, sizeof(**menus))) == NULL)
+	if ((menus = calloc(nmenus, sizeof(*menus))) == NULL)
 		err(EXIT_FAILURE, "calloc");
+	if ((entries = calloc(nlines, sizeof(*entries))) == NULL)
+		err(EXIT_FAILURE, "calloc");
+	*menus_ret = &menus[0];
 	/*
-	 * (*menus)[0].entries is a large array that contains all the
+	 * menus[0].entries is a large array that contains all the
 	 * entries for all the other menus, not only for the root
-	 * menu ((*menus)[0]).  Therefore, (*menus)[0].nentries (the number
+	 * menu (menus[0]).  Therefore, menus[0].nentries (the number
 	 * of entries only for the root menu) is lesser than nlines
 	 * (count of all entries for all menus).
 	 *
 	 * We do that to keep only two dynamic memory addresses we
-	 * need to free: the array of all entries ((*menus)[0].entries),
-	 * and the array of all menus (menu).  Those are freed before
+	 * need to free: the array of all entries (menus[0].entries),
+	 * and the array of all menus (menus).  Those are freed before
 	 * main() returns.
 	 */
-	if (((*menus)[0].entries = calloc(nlines, sizeof(*(*menus)[0].entries))) == NULL)
-		err(EXIT_FAILURE, "calloc");
-	(*menus)[0].nentries = fill_menu(
-		*menus, &(size_t){0},
+	(*menus_ret)[0].entries = entries;
+	(*menus_ret)[0].nentries = fill_menu(
+		&menus, &entries,
 		strspn(*data, "\t"), *data, size, &(size_t){0}
 	);
 	return nmenus;
