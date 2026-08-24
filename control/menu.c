@@ -64,8 +64,6 @@ struct ctrlmenu_context {
 	Colormap colormap;
 	Cursor cursor;
 
-	Window leader;
-	struct ctrlmenu_menu *menus;
 	struct ctrlfnt *fontset;
 	unsigned int fonth;
 	int entryh, separatorh;
@@ -1446,9 +1444,10 @@ activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssi
  */
 
 static void
-menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *parent, struct ctrlmenu_menu *menu,
+menu_map(struct ctrlmenu_context *menuctx,
+		struct ctrlmenu_menu *parent, struct ctrlmenu_menu *menu,
 		int x_root, int y_root, unsigned int button_width,
-		bool windowed, Time time, char const *title)
+		Window leader, bool windowed, Time time, char const *title)
 {
 	int max_height;
 	int xgap, ygap;
@@ -1599,13 +1598,8 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *parent, struct 
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
 		menu->tornoff ? false : true
 	);
-	if (menuctx->leader != None) {
-		(void)XSetTransientForHint(
-			menuctx->display,
-			menu->window,
-			menuctx->leader
-		);
-	}
+	if (leader != None)
+		(void)XSetTransientForHint(menuctx->display, menu->window, leader);
 	(void)XSetWMProtocols(
 		menuctx->display,
 		menu->window,
@@ -1721,14 +1715,11 @@ menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
 	draw_menu(menuctx, menu);
 	draw_commit(menuctx, menu, menu->selected);
 	(void)XMapWindow(menuctx->display, menu->window);
-
-	*new_menu = *menu;
-	new_menu->next = menuctx->menus;
-	menuctx->menus = new_menu;
 }
 
 static int
-menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grabbed)
+menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
+		Window leader, bool grabbed)
 {
 	static int MOTION_TIMEOUT = 300;
 	struct ctrlmenu_menu *submenu = NULL;
@@ -1777,6 +1768,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grab
 						menu->window_geometry.x,
 						menu->window_geometry.y + get_entry_ypos(menuctx, menu, menu->selected),
 						menu->window_geometry.width,
+						leader,
 						false, xev.xbutton.time, entry->label
 					);
 				}
@@ -1804,16 +1796,16 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grab
 				menuctx->display, "WM_DELETE_WINDOW", false
 			))
 				break;
-			for (struct ctrlmenu_menu **ptr = &menuctx->menus;
-			     *ptr != NULL;
-			     ptr = &(*ptr)->next) {
-				if (*ptr == menu) {
-					*ptr = menu->next;
-					menu_close(menuctx, menu);
-					menu_unmap(menuctx, submenu);
-					return true;
-				}
-			}
+			//for (struct ctrlmenu_menu **ptr = &menuctx->menus;
+			//     *ptr != NULL;
+			//     ptr = &(*ptr)->next) {
+			//	if (*ptr == menu) {
+			//		*ptr = menu->next;
+			//		menu_close(menuctx, menu);
+			//		menu_unmap(menuctx, submenu);
+			//		return true;
+			//	}
+			//}
 			break;
 		case ConfigureNotify:
 			if (xev.xconfigure.window != menu->window) {
@@ -1857,6 +1849,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grab
 							menu->window_geometry.x,
 							menu->window_geometry.y + get_entry_ypos(menuctx, menu, menu->selected),
 							menu->window_geometry.width,
+							leader,
 							false, xev.xkey.time, entry->label
 						);
 					}
@@ -1888,7 +1881,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grab
 		recurse:
 			if (submenu == NULL)
 				break;
-			close_all = menu_run(menuctx, submenu, true);
+			close_all = menu_run(menuctx, submenu, leader, true);
 			if (close_all)
 				goto done;
 			break;
@@ -1959,6 +1952,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grab
 					menu->window_geometry.x,
 					menu->window_geometry.y + get_entry_ypos(menuctx, menu, menu->selected),
 					menu->window_geometry.width,
+					leader,
 					false, last_motion.time, sel_entry->label
 				);
 			}
@@ -2000,20 +1994,41 @@ done:
 
 
 /*
- * exported routines
+ * context routines
  */
 
-void
-ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
-		struct ctrlmenu_menu *root_menu, char const *title,
-		Window leader, int x_root, int y_root, Time time)
+static void
+context_cleanup(struct ctrlmenu_context *menuctx)
 {
-	struct ctrlmenu_context menuctx = {
+	if (menuctx->cursor != None)
+		XFreeCursor(menuctx->display, menuctx->cursor);
+	if (menuctx->fontset != NULL)
+		ctrlfnt_free(menuctx->fontset);
+	for (int color = 0; color < COLOR_LAST; color++) {
+		if (menuctx->colors[color].pict != None)
+			XRenderFreePicture(menuctx->display, menuctx->colors[color].pict);
+		if (menuctx->colors[color].pix != None)
+			XFreePixmap(menuctx->display, menuctx->colors[color].pix);
+	}
+}
+
+static int
+context_setup(struct ctrlmenu_context *menuctx, Display *display,
+		Drawable reference, XrmDatabase xdb)
+{
+	XWindowAttributes attributes;
+
+	if (!XGetWindowAttributes(display, reference, &attributes))
+		goto error;
+
+	*menuctx = (struct ctrlmenu_context){
 		.display = display,
 		.cursor = XCreateFontCursor(display, XC_left_ptr),
-
-		.leader = leader,
-		.menus = NULL,
+		.screen_number = XScreenNumberOfScreen(attributes.screen),
+		.root_window = attributes.root,
+		.visual = attributes.visual,
+		.depth = attributes.depth,
+		.colormap = attributes.colormap,
 
 		/* defaults [for color channels:  RED,  GREEN,   BLUE,  ALPHA] */
 		.colors[COLOR_BG].chans     = {0x3100, 0x3100, 0x3100, 0xFFFF},
@@ -2029,54 +2044,55 @@ ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
 		.alignment = ALIGN_LEFT,
 	};
 
-	{
-		XWindowAttributes attributes;
-
-		if (!XGetWindowAttributes(display, reference, &attributes))
-			return;
-		menuctx.screen_number = XScreenNumberOfScreen(attributes.screen);
-		menuctx.root_window = attributes.root;
-		menuctx.visual = attributes.visual;
-		menuctx.depth = attributes.depth;
-		menuctx.colormap = attributes.colormap;
-	}
-
 	for (size_t color = 0; color < COLOR_LAST; color++) {
 		int retval;
 		retval = create_picture(
 			display,
-			menuctx.root_window, menuctx.visual, menuctx.depth,
-			&menuctx.colors[color].pict,
-			&menuctx.colors[color].pix,
-			&menuctx.colors[color].chans,
+			menuctx->root_window, menuctx->visual, menuctx->depth,
+			&menuctx->colors[color].pict,
+			&menuctx->colors[color].pix,
+			&menuctx->colors[color].chans,
 			false
 		);
 		if (retval == RETURN_FAILURE)
 			goto error;
 	}
-	setfont(&menuctx, NULL, 0.0);
-	reload_resources(&menuctx, xdb, XResourceManagerString(display));
-	if (menuctx.fontset == NULL)
+	setfont(menuctx, NULL, 0.0);
+	reload_resources(menuctx, xdb, XResourceManagerString(display));
+	if (menuctx->fontset == NULL)
+		goto error;
+
+	return RETURN_SUCCESS;
+
+error:
+	context_cleanup(menuctx);
+	return RETURN_FAILURE;
+}
+
+
+/*
+ * exported routines
+ */
+
+void
+ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
+		struct ctrlmenu_menu *root_menu, char const *title,
+		Window leader, int x_root, int y_root, Time time)
+{
+	struct ctrlmenu_context menuctx;
+
+	if (context_setup(&menuctx, display, reference, xdb) == RETURN_FAILURE)
 		goto error;
 
 	menu_map(
-		&menuctx, NULL, root_menu,
-		x_root, y_root, 0, false, time, title
+		&menuctx, NULL, root_menu, x_root, y_root,
+		0, leader, false, time, title
 	);
-	(void)menu_run(&menuctx, root_menu, true);
+	(void)menu_run(&menuctx, root_menu, leader, true);
 	menu_unmap(&menuctx, root_menu);
 	XUngrabPointer(display, CurrentTime);
 	XUngrabKeyboard(display, CurrentTime);
 
 error:
-	if (menuctx.cursor != None)
-		XFreeCursor(display, menuctx.cursor);
-	if (menuctx.fontset != NULL)
-		ctrlfnt_free(menuctx.fontset);
-	for (int color = 0; color < COLOR_LAST; color++) {
-		if (menuctx.colors[color].pict != None)
-			XRenderFreePicture(display, menuctx.colors[color].pict);
-		if (menuctx.colors[color].pix != None)
-			XFreePixmap(display, menuctx.colors[color].pix);
-	}
+	context_cleanup(&menuctx);
 }
