@@ -2076,7 +2076,7 @@ error:
 
 void
 ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
-		struct ctrlmenu_menu *root_menu, char const *title,
+		struct ctrlmenu_menu *menu, char const *title,
 		Window leader, int x_root, int y_root, Time time)
 {
 	struct ctrlmenu_context menuctx;
@@ -2085,11 +2085,11 @@ ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
 		goto error;
 
 	menu_map(
-		&menuctx, NULL, root_menu, x_root, y_root,
+		&menuctx, NULL, menu, x_root, y_root,
 		0, leader, false, time, title
 	);
-	(void)menu_run(&menuctx, root_menu, leader, true);
-	menu_unmap(&menuctx, root_menu);
+	(void)menu_run(&menuctx, menu, leader, true);
+	menu_unmap(&menuctx, menu);
 	XUngrabPointer(display, CurrentTime);
 	XUngrabKeyboard(display, CurrentTime);
 
