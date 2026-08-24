@@ -825,9 +825,8 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
 			menu->canvas[i].picture,
 			0, 0,
 			0, 0,
-			menuctx->inner_border_width, menuctx->inner_border_width,
-			menu->window_geometry.width - menuctx->inner_border_width * 2,
-			menu->window_geometry.height - menuctx->inner_border_width * 2
+			0, 0,
+			menu->canvas_width, menu->canvas_height
 		);
 	}
 	entry_geometry.x = menuctx->inner_border_width + PADDING;
