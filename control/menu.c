@@ -2018,6 +2018,9 @@ context_setup(struct ctrlmenu_context *menuctx, Display *display,
 {
 	XWindowAttributes attributes;
 
+	*menuctx = (struct ctrlmenu_context){0};
+	if (reference == None)
+		goto error;
 	if (!XGetWindowAttributes(display, reference, &attributes))
 		goto error;
 
