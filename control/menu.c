@@ -92,30 +92,6 @@ struct ctrlmenu_context {
  * resource creators
  */
 
-static Window
-create_window(Display *display, Window root_window,
-		Visual *visual, int depth, Colormap colormap,
-		int x, int y, unsigned width, unsigned height, unsigned border,
-		long eventmask, bool override)
-{
-	return XCreateWindow(
-		display,
-		root_window,
-		x, y, width, height, border,
-		depth, InputOutput, visual,
-		CWBackPixel | CWEventMask | CWColormap |
-		CWBorderPixel | CWOverrideRedirect | CWSaveUnder,
-		&(XSetWindowAttributes){
-			.border_pixel = 0,
-			.background_pixel = 0,
-			.colormap = colormap,
-			.event_mask = eventmask,
-			.save_under = True,
-			.override_redirect = override,
-		}
-	);
-}
-
 static int
 create_picture(Display *display, Window root_window,
 		Visual *visual, int depth,
@@ -146,23 +122,50 @@ create_picture(Display *display, Window root_window,
 	return RETURN_SUCCESS;
 }
 
+static Window
+create_window(Display *display, Window root_window,
+		Visual *visual, int depth, Colormap colormap,
+		int x, int y, unsigned width, unsigned height, unsigned border,
+		long eventmask, bool override)
+{
+	return XCreateWindow(
+		display,
+		root_window,
+		x, y, width, height, border,
+		depth, InputOutput, visual,
+		CWBackPixel | CWEventMask | CWColormap |
+		CWBorderPixel | CWOverrideRedirect | CWSaveUnder,
+		&(XSetWindowAttributes){
+			.border_pixel = 0,
+			.background_pixel = 0,
+			.colormap = colormap,
+			.event_mask = eventmask,
+			.save_under = True,
+			.override_redirect = override,
+		}
+	);
+}
+
 /*
  * resource parsers and setters
  */
 
-static Bool
-parse_alignment(void *, void *addr, const char *value)
+static void
+setcolor(Display *display, struct color *color, struct rgb rgb)
 {
-	enum alignment *dst = addr;
-	if (strcasecmp(value, "center") == 0)
-		*dst = ALIGN_CENTER;
-	else if (strcasecmp(value, "left") == 0)
-		*dst = ALIGN_LEFT;
-	else if (strcasecmp(value, "right") == 0)
-		*dst = ALIGN_RIGHT;
-	else
-		return false;
-	return true;
+	color->chans = (XRenderColor){
+		.red   = rgb.red * 0xFFFF,
+		.green = rgb.green * 0xFFFF,
+		.blue  = rgb.blue * 0xFFFF,
+		.alpha = 0xFFFF,
+	};
+	XRenderFillRectangle(
+		display,
+		PictOpSrc,
+		color->pict,
+		&color->chans,
+		0, 0, 1, 1
+	);
 }
 
 static void
@@ -190,34 +193,18 @@ setfont(struct ctrlmenu_context *menuctx, const char *facename, double facesize)
 }
 
 static Bool
-parse_width(void *, void *addr, char const *value)
+parse_alignment(void *, void *addr, const char *value)
 {
-	int *dst = addr;
-	long n;
-
-	n = strtol(value, NULL, 10);
-	if (n < 0 || n > 1024)
+	enum alignment *dst = addr;
+	if (strcasecmp(value, "center") == 0)
+		*dst = ALIGN_CENTER;
+	else if (strcasecmp(value, "left") == 0)
+		*dst = ALIGN_LEFT;
+	else if (strcasecmp(value, "right") == 0)
+		*dst = ALIGN_RIGHT;
+	else
 		return false;
-	*dst = n;
 	return true;
-}
-
-static void
-setcolor(Display *display, struct color *color, struct rgb rgb)
-{
-	color->chans = (XRenderColor){
-		.red   = rgb.red * 0xFFFF,
-		.green = rgb.green * 0xFFFF,
-		.blue  = rgb.blue * 0xFFFF,
-		.alpha = 0xFFFF,
-	};
-	XRenderFillRectangle(
-		display,
-		PictOpSrc,
-		color->pict,
-		&color->chans,
-		0, 0, 1, 1
-	);
 }
 
 static Bool
@@ -318,6 +305,19 @@ parse_tearoff(void *, void *addr, char const *value)
 	return true;
 }
 
+static Bool
+parse_width(void *, void *addr, char const *value)
+{
+	int *dst = addr;
+	long n;
+
+	n = strtol(value, NULL, 10);
+	if (n < 0 || n > 1024)
+		return false;
+	*dst = n;
+	return true;
+}
+
 static void
 reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase cli_xdb, const char *str)
 {
@@ -369,6 +369,14 @@ reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase cli_xdb, const ch
  * entry positioning routines
  */
 
+static struct ctrlmenu_entry *
+get_entry(struct ctrlmenu_menu *menu, ssize_t entryc)
+{
+	if (entryc >= 0 && entryc < (ssize_t)menu->nentries)
+		return &menu->entries[entryc];
+	return NULL;
+}
+
 static ssize_t
 get_entry_index(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, long y)
 {
@@ -410,25 +418,19 @@ get_entry_index(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, lo
 	return -1;
 }
 
-static struct ctrlmenu_entry *
-get_entry(struct ctrlmenu_menu *menu, ssize_t entryc)
-{
-	if (entryc >= 0 && entryc < (ssize_t)menu->nentries)
-		return &menu->entries[entryc];
-	return NULL;
-}
-
 static int
-get_first_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
+get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int selected)
 {
-	int y;
-
-	y = menuctx->inner_border_width;
-	if (menu->tearable)
-		y += menuctx->separatorh;
-	if (menu->overflow)
-		y += menuctx->separatorh;
-	return y;
+	if (menu->tearable && selected == TEAROFF)
+		return menuctx->separatorh;
+	if (menu->overflow && (selected == SCROLLDOWN || selected == SCROLLUP))
+		return menuctx->separatorh;
+	if (selected < 0 || selected >= (ssize_t)menu->nentries)
+		return 0;
+	if (menu->entries[selected].label != NULL)
+		return menuctx->entryh;
+	else
+		return menuctx->separatorh;
 }
 
 static int
@@ -465,66 +467,22 @@ get_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int
 }
 
 static int
-get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int selected)
+get_first_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
 {
-	if (menu->tearable && selected == TEAROFF)
-		return menuctx->separatorh;
-	if (menu->overflow && (selected == SCROLLDOWN || selected == SCROLLUP))
-		return menuctx->separatorh;
-	if (selected < 0 || selected >= (ssize_t)menu->nentries)
-		return 0;
-	if (menu->entries[selected].label != NULL)
-		return menuctx->entryh;
-	else
-		return menuctx->separatorh;
+	int y;
+
+	y = menuctx->inner_border_width;
+	if (menu->tearable)
+		y += menuctx->separatorh;
+	if (menu->overflow)
+		y += menuctx->separatorh;
+	return y;
 }
 
 
 /*
  * drawing routines
  */
-
-static void
-draw_shadows(struct ctrlmenu_context *menuctx, Picture picture, XRectangle *geometry)
-{
-	for (int i = 0; i < menuctx->inner_border_width; i++) {
-		/* draw light shadow */
-		XRenderFillRectangle(
-			menuctx->display,
-			PictOpSrc,
-			picture,
-			&menuctx->colors[COLOR_TOP].chans,
-			i, i,
-			1, geometry->height - (i * 2 + 1)
-		);
-		XRenderFillRectangle(
-			menuctx->display,
-			PictOpSrc,
-			picture,
-			&menuctx->colors[COLOR_TOP].chans,
-			i, i,
-			geometry->width - (i * 2 + 1), 1
-		);
-
-		/* draw dark shadow */
-		XRenderFillRectangle(
-			menuctx->display,
-			PictOpSrc,
-			picture,
-			&menuctx->colors[COLOR_BOT].chans,
-			geometry->width - 1 - i, i,
-			1, geometry->height - i * 2
-		);
-		XRenderFillRectangle(
-			menuctx->display,
-			PictOpSrc,
-			picture,
-			&menuctx->colors[COLOR_BOT].chans,
-			i, geometry->height - 1 - i,
-			geometry->width - i * 2, 1
-		);
-	}
-}
 
 static void
 draw_dashline(struct ctrlmenu_context *menuctx, Picture picture, int width, int y)
@@ -601,6 +559,48 @@ draw_separator(struct ctrlmenu_context *menuctx, Picture picture, XRectangle *re
 		rect->width - menuctx->inner_border_width * 2 - PADDING * 2,
 		1
 	);
+}
+
+static void
+draw_shadows(struct ctrlmenu_context *menuctx, Picture picture, XRectangle *geometry)
+{
+	for (int i = 0; i < menuctx->inner_border_width; i++) {
+		/* draw light shadow */
+		XRenderFillRectangle(
+			menuctx->display,
+			PictOpSrc,
+			picture,
+			&menuctx->colors[COLOR_TOP].chans,
+			i, i,
+			1, geometry->height - (i * 2 + 1)
+		);
+		XRenderFillRectangle(
+			menuctx->display,
+			PictOpSrc,
+			picture,
+			&menuctx->colors[COLOR_TOP].chans,
+			i, i,
+			geometry->width - (i * 2 + 1), 1
+		);
+
+		/* draw dark shadow */
+		XRenderFillRectangle(
+			menuctx->display,
+			PictOpSrc,
+			picture,
+			&menuctx->colors[COLOR_BOT].chans,
+			geometry->width - 1 - i, i,
+			1, geometry->height - i * 2
+		);
+		XRenderFillRectangle(
+			menuctx->display,
+			PictOpSrc,
+			picture,
+			&menuctx->colors[COLOR_BOT].chans,
+			i, geometry->height - 1 - i,
+			geometry->width - i * 2, 1
+		);
+	}
 }
 
 static void
@@ -1245,18 +1245,6 @@ next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu, int *tim
  */
 
 static void
-scroll_up(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int diff)
-{
-	int height = 0;
-
-	while (height < diff && menu->curr_screenful.first_entry > 0) {
-		height = get_entry_height(menuctx, menu, menu->curr_screenful.first_entry);
-		menu->curr_screenful.first_entry--;
-		menu->curr_screenful.offset -= height;
-	}
-}
-
-static void
 scroll_down(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int diff)
 {
 	int height = 0;
@@ -1269,6 +1257,18 @@ scroll_down(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int di
 		height = get_entry_height(menuctx, menu, menu->curr_screenful.first_entry);
 		menu->curr_screenful.first_entry++;
 		menu->curr_screenful.offset += height;
+	}
+}
+
+static void
+scroll_up(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int diff)
+{
+	int height = 0;
+
+	while (height < diff && menu->curr_screenful.first_entry > 0) {
+		height = get_entry_height(menuctx, menu, menu->curr_screenful.first_entry);
+		menu->curr_screenful.first_entry--;
+		menu->curr_screenful.offset -= height;
 	}
 }
 
