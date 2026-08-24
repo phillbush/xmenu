@@ -1175,6 +1175,18 @@ is_menu_event(Display *, XEvent *event, XPointer arg)
 	}
 }
 
+static bool
+check_event(Display *display, struct ctrlmenu_menu *menu)
+{
+	XEvent event;
+
+	if (XCheckIfEvent(display, &event, is_menu_event, (void *)menu)) {
+		XPutBackEvent(display, &event);
+		return true;
+	}
+	return false;
+}
+
 static int
 next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu, int *timeout)
 {
@@ -1190,8 +1202,7 @@ next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu, int *tim
 		then.tv_sec = 0;
 	}
 
-	if (XPending(display) == 0 ||
-	    !XCheckIfEvent(display, event, is_menu_event, (void *)menu)) {
+	if (XPending(display) == 0 || !check_event(display, menu)) {
 		if (poll(&pfd, 1, *timeout?*timeout:-1) == 0) {
 			*timeout = 0;
 			return TimeoutNotify;
