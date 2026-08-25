@@ -2079,14 +2079,12 @@ ctrlmenu_handle_event(Display *display, struct ctrlmenu_menu *menu,
 	struct ctrlmenu_context menuctx;
 
 	if (context_setup(&menuctx, display, menu->window, xdb) == RETURN_FAILURE)
-		goto error;
+		return;
 
 	XPutBackEvent(display, event);
 	(void)menu_run(&menuctx, menu, leader, true);
 	XUngrabPointer(display, CurrentTime);
 	XUngrabKeyboard(display, CurrentTime);
-
-error:
 	context_cleanup(&menuctx);
 }
 
@@ -2098,7 +2096,7 @@ ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
 	struct ctrlmenu_context menuctx;
 
 	if (context_setup(&menuctx, display, reference, xdb) == RETURN_FAILURE)
-		goto error;
+		return;
 
 	menu_map(
 		&menuctx, NULL, menu, x_root, y_root,
@@ -2108,7 +2106,5 @@ ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
 	menu_unmap(&menuctx, menu);
 	XUngrabPointer(display, CurrentTime);
 	XUngrabKeyboard(display, CurrentTime);
-
-error:
 	context_cleanup(&menuctx);
 }
