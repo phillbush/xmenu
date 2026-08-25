@@ -291,25 +291,22 @@ parse_stdin(char **data, struct ctrlmenu_menu **menus_ret)
 	return nmenus;
 }
 
-static void
-waitrootclick(Display *display, unsigned int modifier, unsigned int button)
+static struct ctrlmenu_menu *
+find_menu(struct ctrlmenu_menu *menus, size_t nmenus, Window window)
 {
-	XEvent xev;
-	static unsigned int MODS = ShiftMask|ControlMask|Mod1Mask|Mod4Mask;
+	for (size_t i = 0; i < nmenus; i++)
+		if (window == menus[i].window)
+			return &menus[i];
+	return NULL;
+}
 
-	for (;;) {
-		(void)XNextEvent(display, &xev);
-		if (xev.type != ButtonPress)
-			continue;
-		if (xev.xbutton.button == button && (
-			(modifier != 0 && modifier == (xev.xbutton.state & MODS)) ||
-			xev.xbutton.subwindow == None
-		)) {
-			XAllowEvents(display, AsyncPointer, xev.xbutton.time);
-			return;
-		}
-		XAllowEvents(display, ReplayPointer, xev.xbutton.time);
-	}
+static bool
+has_tornoff(struct ctrlmenu_menu *menus, size_t nmenus)
+{
+	for (size_t i = 0; i < nmenus; i++)
+		if (menus[i].tornoff)
+			return true;
+	return false;
 }
 
 int
@@ -468,47 +465,41 @@ main(int argc, char *argv[])
 		XRRFreeMonitors(infos);
 	}
 
-	do {
-		if (rootmode)
-			waitrootclick(display, modifier, button);
-		if (!FLAG(geometry_flags, XValue|YValue)) {
-			XQueryPointer(
-				display, DefaultRootWindow(display),
-				&(Window){}, &(Window){},
-				&x_root, &y_root, &(int){}, &(int){}, &(unsigned){}
+	if (!rootmode)
+		goto popup;
+	for (;;) {
+		XEvent event;
+		struct ctrlmenu_menu *menu;
+		static unsigned int MODS = ShiftMask|ControlMask|Mod1Mask|Mod4Mask;
+
+		(void)XNextEvent(display, &event);
+		XAllowEvents(display, ReplayPointer, event.xbutton.time);
+		if (rootmode && event.xbutton.button == button && (
+			(modifier != 0 && modifier == (event.xbutton.state & MODS)) ||
+			event.xbutton.subwindow == None
+		)) {
+popup:
+			if (!FLAG(geometry_flags, XValue|YValue)) {
+				XQueryPointer(
+					display, DefaultRootWindow(display),
+					&(Window){}, &(Window){},
+					&x_root, &y_root, &(int){}, &(int){}, &(unsigned){}
+				);
+			}
+			ctrlmenu_popup(
+				display, DefaultRootWindow(display), xrm,
+				menus, title, leader, x_root, y_root, CurrentTime
 			);
+			if (!rootmode && !has_tornoff(menus, nmenus)) {
+				goto done;
+			}
 		}
-		ctrlmenu_popup(
-			display, DefaultRootWindow(display), xrm,
-			menus, title, leader, x_root, y_root, CurrentTime
-		);
-	} while (rootmode);
-
-	//while (widget->menus != NULL) {
-	//	XEvent event;
-	//	struct menu *menu;
-
-	//	(void)XNextEvent(ctrlapp->display, &event);
-	//	menu = get_menu(widget, event.xany.window);
-	//	if (menu != NULL) {
-	//		ctrlmenu_handle_event(widget, menu, &event);
-	//	} else if (event.type == PropertyNotify &&
-	//	           event.xproperty.state == PropertyNewValue &&
-	//	           event.xproperty.atom == XA_RESOURCE_MANAGER &&
-	//	           event.xproperty.window == ctrlapp->root_window) {
-	//		char *str = gettextprop(
-	//			ctrlapp->display,
-	//			ctrlapp->root_window,
-	//			XA_RESOURCE_MANAGER
-	//		);
-	//		if (str != NULL)
-	//			ctrlmenu_reload_resources(widget, str);
-	//		free(str);
-	//	} else if (event.type == UnmapNotify && leader != None &&
-	//	           event.xdestroywindow.window == leader) {
-	//		break;
-	//	}
-	//}
+		menu = find_menu(menus, nmenus, event.xany.window);
+		if (menu != NULL) {
+			ctrlmenu_handle_event(display, menu, xrm, leader, &event);
+		}
+	}
+done:
 
 	free(read_data);
 	free(menus[0].entries);

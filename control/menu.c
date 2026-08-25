@@ -124,7 +124,7 @@ static Window
 create_window(Display *display, Window root_window,
 		Visual *visual, int depth, Colormap colormap,
 		int x, int y, unsigned width, unsigned height, unsigned border,
-		long eventmask, bool override)
+		long eventmask)
 {
 	return XCreateWindow(
 		display,
@@ -132,14 +132,13 @@ create_window(Display *display, Window root_window,
 		x, y, width, height, border,
 		depth, InputOutput, visual,
 		CWBackPixel | CWEventMask | CWColormap |
-		CWBorderPixel | CWOverrideRedirect | CWSaveUnder,
+		CWBorderPixel | CWSaveUnder,
 		&(XSetWindowAttributes){
 			.border_pixel = 0,
 			.background_pixel = 0,
 			.colormap = colormap,
 			.event_mask = eventmask,
 			.save_under = True,
-			.override_redirect = override,
 		}
 	);
 }
@@ -1582,21 +1581,28 @@ menu_map(struct ctrlmenu_context *menuctx,
 		menu->window_geometry.y -= menu->window_geometry.height;
 	}
 
-	menu->window = create_window(
-		menuctx->display,
-		menuctx->root_window,
-		menuctx->visual,
-		menuctx->depth,
-		menuctx->colormap,
-		menu->window_geometry.x,
-		menu->window_geometry.y,
-		menu->window_geometry.width,
-		menu->window_geometry.height,
-		menuctx->outer_border_width,
-		KeyPressMask | StructureNotifyMask |
-		EnterWindowMask | LeaveWindowMask |
-		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-		menu->tornoff ? false : true
+	if (menu->window == None) {
+		menu->window = create_window(
+			menuctx->display,
+			menuctx->root_window,
+			menuctx->visual,
+			menuctx->depth,
+			menuctx->colormap,
+			menu->window_geometry.x,
+			menu->window_geometry.y,
+			menu->window_geometry.width,
+			menu->window_geometry.height,
+			menuctx->outer_border_width,
+			KeyPressMask | StructureNotifyMask |
+			EnterWindowMask | LeaveWindowMask |
+			ButtonPressMask | ButtonReleaseMask | PointerMotionMask
+		);
+	}
+	(void)XChangeWindowAttributes(
+		menuctx->display, menu->window, CWOverrideRedirect,
+		&(XSetWindowAttributes){
+			.override_redirect = !menu->tornoff
+		}
 	);
 	if (leader != None)
 		(void)XSetTransientForHint(menuctx->display, menu->window, leader);
@@ -1655,36 +1661,12 @@ menu_unmap(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
 {
 	if (menu == NULL || menu->tornoff || menu->window == None)
 		return;
-	XDestroyWindow(menuctx->display, menu->window);
-	for (size_t i = 0; i < CANVAS_LAST; i++) {
-		if (menu->canvas[i].picture != None)
-			XRenderFreePicture(menuctx->display, menu->canvas[i].picture);
-		if (menu->canvas[i].pixmap != None)
-			XFreePixmap(menuctx->display, menu->canvas[i].pixmap);
-	}
-	*menu = (struct ctrlmenu_menu){
-		.entries = menu->entries,
-		.nentries = menu->nentries,
-	};
-}
-
-static void
-menu_close(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
-{
-	menu->tornoff = false;
-	menu_unmap(menuctx, menu);
+	XUnmapWindow(menuctx->display, menu->window);
 }
 
 static void
 menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
 {
-	struct ctrlmenu_menu *new_menu;
-
-	new_menu = malloc(sizeof(*new_menu));
-	if (new_menu == NULL) {
-		warnx("%zu", sizeof(*new_menu));
-		return;
-	}
 	(void)XChangeWindowAttributes(
 		menuctx->display, menu->window, CWOverrideRedirect,
 		&(XSetWindowAttributes){ .override_redirect = false, }
@@ -2076,6 +2058,41 @@ error:
 /*
  * exported routines
  */
+
+static void
+ctrlmenu_close(Display *display, struct ctrlmenu_menu *menu)
+{
+	if (menu->window != None)
+		XDestroyWindow(display, menu->window);
+	for (size_t i = 0; i < CANVAS_LAST; i++) {
+		if (menu->canvas[i].picture != None)
+			XRenderFreePicture(display, menu->canvas[i].picture);
+		if (menu->canvas[i].pixmap != None)
+			XFreePixmap(display, menu->canvas[i].pixmap);
+	}
+	*menu = (struct ctrlmenu_menu){
+		.entries = menu->entries,
+		.nentries = menu->nentries,
+	};
+}
+
+void
+ctrlmenu_handle_event(Display *display, struct ctrlmenu_menu *menu,
+		XrmDatabase xdb, Window leader, XEvent *event)
+{
+	struct ctrlmenu_context menuctx;
+
+	if (context_setup(&menuctx, display, menu->window, xdb) == RETURN_FAILURE)
+		goto error;
+
+	XPutBackEvent(display, event);
+	(void)menu_run(&menuctx, menu, leader, true);
+	XUngrabPointer(display, CurrentTime);
+	XUngrabKeyboard(display, CurrentTime);
+
+error:
+	context_cleanup(&menuctx);
+}
 
 void
 ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,

@@ -71,3 +71,11 @@ void ctrlmenu_popup(
 	int y_root,
 	Time time
 );
+
+void ctrlmenu_handle_event(
+	Display *display,
+	struct ctrlmenu_menu *menu,
+	XrmDatabase xdb,
+	Window leader,
+	XEvent *event
+);
