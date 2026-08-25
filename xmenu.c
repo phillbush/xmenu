@@ -321,7 +321,7 @@ main(int argc, char *argv[])
 	char *name = "xmenu";
 	char *title = "XMenu";
 	char *read_data = NULL;
-	XrmDatabase xrm = NULL;
+	XrmDatabase resources = NULL;
 	Window leader = None;
 	bool rootmode = false;
 	struct ctrlmenu_menu *menus = NULL;
@@ -359,9 +359,9 @@ main(int argc, char *argv[])
 		} else if (!strcmp(argv[i], "-xrm")) {
 			XrmDatabase db = NULL;
 			if (++i < argc)
-				XrmGetStringDatabase(argv[i]);
+				db = XrmGetStringDatabase(argv[i]);
 			if (db != NULL)
-				XrmCombineDatabase(db, &xrm, True);
+				XrmCombineDatabase(db, &resources, True);
 		} else {
 			warnx("unknown option -- %s", argv[i]);
 		usage:
@@ -465,6 +465,16 @@ main(int argc, char *argv[])
 		XRRFreeMonitors(infos);
 	}
 
+
+	{
+		char *xrm_str = XResourceManagerString(display);
+		XrmDatabase db = NULL;
+
+		if (xrm_str != NULL)
+			db = XrmGetStringDatabase(xrm_str);
+		if (db != NULL)
+			XrmCombineDatabase(db, &resources, False);
+	}
 	if (!rootmode)
 		goto popup;
 	for (;;) {
@@ -487,7 +497,7 @@ popup:
 				);
 			}
 			ctrlmenu_popup(
-				display, DefaultRootWindow(display), xrm,
+				display, DefaultRootWindow(display), resources,
 				menus, title, leader, x_root, y_root, CurrentTime
 			);
 			if (!rootmode && !has_tornoff(menus, nmenus)) {
@@ -496,7 +506,7 @@ popup:
 		}
 		menu = find_menu(menus, nmenus, event.xany.window);
 		if (menu != NULL) {
-			ctrlmenu_handle_event(display, menu, xrm, leader, &event);
+			ctrlmenu_handle_event(display, menu, resources, leader, &event);
 		}
 	}
 done:
@@ -504,6 +514,6 @@ done:
 	free(read_data);
 	free(menus[0].entries);
 	free(menus);
-	XrmDestroyDatabase(xrm);
+	XrmDestroyDatabase(resources);
 	return EXIT_SUCCESS;
 }

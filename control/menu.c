@@ -316,9 +316,8 @@ parse_width(void *, void *addr, char const *value)
 }
 
 static void
-reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase cli_xdb, const char *str)
+reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase xdb)
 {
-	XrmDatabase xdb = NULL;
 	char const *fontspec = NULL;
 	double fontsize = 0.0;
 #define MK_RES(n, c, p, fun) (struct ctrlres){\
@@ -349,16 +348,13 @@ reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase cli_xdb, const ch
 		MK_RES("bottomShadowColor", "BottomShadowColor", &menuctx->colors[COLOR_BOT], parse_color),
 	};
 
-	if (str != NULL)
-		xdb = XrmGetStringDatabase(str);
 	ctrlres_parsexrdb(
 		menuctx,
-		(XrmDatabase[]){cli_xdb, xdb}, 2,
+		(XrmDatabase[]){xdb}, 1,
 		resources, LEN(resources)
 	);
 	if (fontspec != NULL)
 		setfont(menuctx, fontspec, fontsize);
-	XrmDestroyDatabase(xdb);
 }
 
 
@@ -2043,7 +2039,7 @@ context_setup(struct ctrlmenu_context *menuctx, Display *display,
 			goto error;
 	}
 	setfont(menuctx, NULL, 0.0);
-	reload_resources(menuctx, xdb, XResourceManagerString(display));
+	reload_resources(menuctx, xdb);
 	if (menuctx->fontset == NULL)
 		goto error;
 
