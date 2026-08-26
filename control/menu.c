@@ -2040,7 +2040,7 @@ error:
  * exported routines
  */
 
-static void
+void
 ctrlmenu_close(Display *display, struct ctrlmenu_menu *menu)
 {
 	if (menu->window != None)

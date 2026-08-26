@@ -79,3 +79,5 @@ void ctrlmenu_handle_event(
 	Window leader,
 	XEvent *event
 );
+
+void ctrlmenu_close(Display *display, struct ctrlmenu_menu *menu);
