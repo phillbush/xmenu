@@ -30,6 +30,8 @@ struct ctrlmenu_entry {
 
 struct ctrlmenu_menu {
 	Window window;
+	char const *title;
+
 	struct ctrlmenu_entry *entries;
 	size_t nentries;
 
@@ -43,7 +45,6 @@ struct ctrlmenu_menu {
 .Fa "Drawable reference"
 .Fa "XrmDatabase resurces"
 .Fa "struct ctrlmenu_menu *menu"
-.Fa "char const *title"
 .Fa "Window leader"
 .Fa "int x_root"
 .Fa "int y_root"
@@ -139,9 +140,6 @@ If its value is
 resource is not processed.
 .It Fa timestamp
 The time of the event that triggered the menu to pop up.
-.It Fa title
-The title of the menu
-(to be displayed by the window manager if the menu gets windowed/torn-off).
 .It Fa x_root , y_root
 The
 .Pq Em x,y
@@ -229,10 +227,23 @@ The
 .Ft ctrlmenu_menu
 structure holds the definition of a menu.
 It members are as follows:
-.Bl -tag -width Ds
+.Bl -tag -width WINDOW
 .It Fa entries , nentries
 The array of entries of the submenu that is created when the entry is activated;
 and the number of members of such array.
+.It Fa title
+The title of the menu
+(to be displayed by the window manager if the menu gets windowed/torn-off).
+.Pp
+Usually,
+for submenus this should be the label of the the menu entry that triggered it.
+For example, if the entry
+.Em Recent files
+in the menu
+.Em Files
+opens a submenu, this submenu should probably be called
+.Em Recent files .
+It is up to the programmer to follow this good practice.
 .It Fa window
 The window that was created for the menu by
 .Fn ctrlmenu_popup

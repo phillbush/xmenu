@@ -36,12 +36,13 @@ enum {
 
 struct ctrlmenu_menu {
 	Window window;
+	char const *title;
+
 	struct ctrlmenu_entry *entries;
 	size_t nentries;
 
 	struct ctrlmenu_menu *next;
 	ssize_t selected;
-	char const *title;
 	XRectangle window_geometry;
 	int canvas_width, canvas_height;
 	int total_height;
@@ -65,7 +66,6 @@ void ctrlmenu_popup(
 	Drawable reference,
 	XrmDatabase xdb,
 	struct ctrlmenu_menu *menus,
-	char const *title,
 	Window leader,
 	int x_root,
 	int y_root,

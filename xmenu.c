@@ -140,12 +140,16 @@ callback(void *ctx, void *self, bool alt)
 
 static size_t
 fill_menu(struct ctrlmenu_menu **menus, struct ctrlmenu_entry **next_entry,
-	size_t menu_indentlvl, char *data, size_t datasize, size_t *from)
+	size_t menu_indentlvl, char *data, size_t datasize, size_t *from, char *title)
 {
 	size_t nentries;
 	struct ctrlmenu_menu *menu = *menus;
 	struct ctrlmenu_entry *prev_entry = NULL;
 
+	*menu = (struct ctrlmenu_menu){
+		.entries = *next_entry,
+		.title = title
+	};
 	for (size_t len = *from; len < datasize; len++) {
 		size_t entry_indentlvl;
 
@@ -174,10 +178,9 @@ fill_menu(struct ctrlmenu_menu **menus, struct ctrlmenu_entry **next_entry,
 			prev_entry->type = CTRLMENU_CASCADE;
 			prev_entry->self = NULL;
 			prev_entry->submenu = *menus;
-			prev_entry->submenu->entries = *next_entry;
 			prev_entry->submenu->nentries = fill_menu(
-				menus, next_entry,
-				entry_indentlvl, data, datasize, from
+				menus, next_entry, entry_indentlvl,
+				data, datasize, from, prev_entry->label
 			);
 		} else {
 			char *output;
@@ -225,7 +228,7 @@ fill_menu(struct ctrlmenu_menu **menus, struct ctrlmenu_entry **next_entry,
 }
 
 static size_t
-parse_stdin(char **data, struct ctrlmenu_menu **menus_ret)
+parse_stdin(char **data, struct ctrlmenu_menu **menus_ret, char *title)
 {
 	size_t last_indentlvl;
 	size_t nlines, nmenus;
@@ -283,10 +286,9 @@ parse_stdin(char **data, struct ctrlmenu_menu **menus_ret)
 	 * and the array of all menus (menus).  Those are freed before
 	 * main() returns.
 	 */
-	(*menus_ret)[0].entries = entries;
 	(*menus_ret)[0].nentries = fill_menu(
 		&menus, &entries,
-		strspn(*data, "\t"), *data, size, &(size_t){0}
+		strspn(*data, "\t"), *data, size, &(size_t){0}, title
 	);
 	return nmenus;
 }
@@ -389,7 +391,7 @@ main(int argc, char *argv[])
 		leader = None;
 	else if (windowed)
 		rootmode = false;
-	nmenus = parse_stdin(&read_data, &menus);
+	nmenus = parse_stdin(&read_data, &menus, title);
 	if (nmenus == 0)
 		errx(EXIT_FAILURE, "no menu generated");
 
@@ -498,7 +500,7 @@ popup:
 			}
 			ctrlmenu_popup(
 				display, DefaultRootWindow(display), resources,
-				menus, title, leader, x_root, y_root, CurrentTime
+				menus, leader, x_root, y_root, CurrentTime
 			);
 		}
 		menu = find_menu(menus, nmenus, event.xany.window);

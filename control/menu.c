@@ -1444,14 +1444,17 @@ static void
 menu_map(struct ctrlmenu_context *menuctx,
 		struct ctrlmenu_menu *parent, struct ctrlmenu_menu *menu,
 		int x_root, int y_root, unsigned int button_width,
-		bool windowed, Time time, char const *title)
+		bool windowed, Time time)
 {
 	int max_height;
 	int xgap, ygap;
 	XRectangle monitor;
 	XRRMonitorInfo *infos;
 	int nmons = 0;
+	char const *title = menu->title;
 
+	if (title == NULL)
+		title = ctrlapp_getclass();
 	if (!windowed) {
 		if (XGrabPointer(
 			menuctx->display, menuctx->root_window, True,
@@ -1500,7 +1503,6 @@ menu_map(struct ctrlmenu_context *menuctx,
 			x_root--;
 	}
 
-	menu->title = title;
 	menu->selected = -1;
 
 	menu->curr_screenful.first_entry = menu->last_screenful.first_entry = 0;
@@ -1758,7 +1760,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grab
 						menu->window_geometry.x,
 						menu->window_geometry.y + get_entry_ypos(menuctx, menu, menu->selected),
 						menu->window_geometry.width,
-						false, xev.xbutton.time, entry->label
+						false, xev.xbutton.time
 					);
 				}
 				goto recurse;
@@ -1814,7 +1816,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grab
 							menu->window_geometry.x,
 							menu->window_geometry.y + get_entry_ypos(menuctx, menu, menu->selected),
 							menu->window_geometry.width,
-							false, xev.xkey.time, entry->label
+							false, xev.xkey.time
 						);
 					}
 					submenu->selected = 0;
@@ -1916,7 +1918,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grab
 					menu->window_geometry.x,
 					menu->window_geometry.y + get_entry_ypos(menuctx, menu, menu->selected),
 					menu->window_geometry.width,
-					false, last_motion.time, sel_entry->label
+					false, last_motion.time
 				);
 			}
 			break;
@@ -2094,8 +2096,8 @@ ctrlmenu_handle_event(Display *display, struct ctrlmenu_menu *menu,
 
 void
 ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
-		struct ctrlmenu_menu *menu, char const *title,
-		Window leader, int x_root, int y_root, Time time)
+		struct ctrlmenu_menu *menu, Window leader,
+		int x_root, int y_root, Time time)
 {
 	struct ctrlmenu_context menuctx;
 
@@ -2106,7 +2108,7 @@ ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
 
 	menu_map(
 		&menuctx, NULL, menu, x_root, y_root,
-		0, false, time, title
+		0, false, time
 	);
 	(void)menu_run(&menuctx, menu, true);
 	menu_unmap(display, menu);
