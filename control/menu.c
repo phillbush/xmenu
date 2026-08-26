@@ -1580,21 +1580,20 @@ menu_map(struct ctrlmenu_context *menuctx,
 
 	if (menu->window == None) {
 		menu->window = create_window(
-			menuctx->display,
-			menuctx->root_window,
-			menuctx->visual,
-			menuctx->depth,
-			menuctx->colormap,
-			menu->window_geometry.x,
-			menu->window_geometry.y,
-			menu->window_geometry.width,
-			menu->window_geometry.height,
+			menuctx->display, menuctx->root_window,
+			menuctx->visual, menuctx->depth, menuctx->colormap,
+			0, 0, 1, 1,
 			menuctx->outer_border_width,
 			KeyPressMask | StructureNotifyMask |
 			EnterWindowMask | LeaveWindowMask |
 			ButtonPressMask | ButtonReleaseMask | PointerMotionMask
 		);
 	}
+	XMoveResizeWindow(
+		menuctx->display, menu->window,
+		menu->window_geometry.x, menu->window_geometry.y,
+		menu->window_geometry.width, menu->window_geometry.height
+	);
 	(void)XChangeWindowAttributes(
 		menuctx->display, menu->window, CWOverrideRedirect,
 		&(XSetWindowAttributes){
