@@ -1151,9 +1151,6 @@ is_menu_event(Display *, XEvent *event, XPointer arg)
 	case MotionNotify:
 		return True;
 	case ClientMessage:
-		for (struct ctrlmenu_menu *menu = top_menu; menu != NULL; menu = menu->next)
-			if (event->xclient.window == menu->window)
-				return True;
 		return False;
 	case ConfigureNotify:
 		for (struct ctrlmenu_menu *menu = top_menu; menu != NULL; menu = menu->next)
@@ -1181,7 +1178,8 @@ check_event(Display *display, struct ctrlmenu_menu *menu)
 }
 
 static int
-next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu, int *timeout)
+next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu,
+		int *timeout, bool grabbed)
 {
 	struct timespec then, now;
 	int elapsed;
@@ -1213,7 +1211,10 @@ next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu, int *tim
 		*timeout -= elapsed;
 
 	for (;;) {
-		(void)XIfEvent(display, event, is_menu_event, (void *)menu);
+		if (grabbed)
+			(void)XIfEvent(display, event, is_menu_event, (void *)menu);
+		else
+			(void)XNextEvent(display, event);
 		if (event->type != MotionNotify)
 			return event->type;
 		/* compress sequential motion events into a single one */
@@ -1275,7 +1276,7 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssize_
 	for (;;) {
 		XEvent event;
 
-		switch (next_event(menuctx->display, &event, menu, &timeout)) {
+		switch (next_event(menuctx->display, &event, menu, &timeout, true)) {
 		case MotionNotify: case ButtonPress: case ButtonRelease:
 			if (event.xmotion.window != menu->window)
 				return;
@@ -1653,11 +1654,20 @@ menu_map(struct ctrlmenu_context *menuctx,
 }
 
 static void
-menu_unmap(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
+menu_unmap(Display *display, struct ctrlmenu_menu *menu)
 {
 	if (menu == NULL || menu->tornoff || menu->window == None)
 		return;
-	XUnmapWindow(menuctx->display, menu->window);
+	XUnmapWindow(display, menu->window);
+}
+
+static void
+menu_untear(Display *display, struct ctrlmenu_menu *menu)
+{
+	if (menu == NULL || !menu->tornoff || menu->window == None)
+		return;
+	XUnmapWindow(display, menu->window);
+	menu->tornoff = false;
 }
 
 static void
@@ -1710,7 +1720,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 	bool close_all = false;
 
 	for (;;) {
-		switch (next_event(menuctx->display, &xev, menu, &timeout)) {
+		switch (next_event(menuctx->display, &xev, menu, &timeout, grabbed)) {
 		case ButtonPress:
 			if (xev.xbutton.button > Button3)
 				break;
@@ -1739,7 +1749,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 				break;
 			if (entry->type == CTRLMENU_CASCADE) {
 				if (submenu != entry->submenu) {
-					menu_unmap(menuctx, submenu);
+					menu_unmap(menuctx->display, submenu);
 					submenu = entry->submenu;
 					menu_map(
 						menuctx, menu, submenu,
@@ -1760,30 +1770,6 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 				close_all = true;
 				goto done;
 			}
-			break;
-		case ClientMessage:
-			if (xev.xclient.window != menu->window) {
-				XPutBackEvent(menuctx->display, &xev);
-				goto done;
-			}
-			if (xev.xclient.message_type != XInternAtom(
-				menuctx->display, "WM_PROTOCOLS", false
-			))
-				break;
-			if ((Atom)xev.xclient.data.l[0] != XInternAtom(
-				menuctx->display, "WM_DELETE_WINDOW", false
-			))
-				break;
-			//for (struct ctrlmenu_menu **ptr = &menuctx->menus;
-			//     *ptr != NULL;
-			//     ptr = &(*ptr)->next) {
-			//	if (*ptr == menu) {
-			//		*ptr = menu->next;
-			//		menu_close(menuctx, menu);
-			//		menu_unmap(menuctx, submenu);
-			//		return true;
-			//	}
-			//}
 			break;
 		case ConfigureNotify:
 			if (xev.xconfigure.window != menu->window) {
@@ -1820,7 +1806,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 					break;
 				if (entry->type == CTRLMENU_CASCADE) {
 					if (submenu != entry->submenu) {
-						menu_unmap(menuctx, submenu);
+						menu_unmap(menuctx->display, submenu);
 						submenu = entry->submenu;
 						menu_map(
 							menuctx, menu, submenu,
@@ -1938,7 +1924,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 		default:
 			if (grabbed)
 				break;
-			if (xev.xany.window == menu->window)
+			if (xev.type != ClientMessage && xev.xany.window == menu->window)
 				break;
 			if (submenu != NULL && xev.xany.window == submenu->window)
 				break;
@@ -1957,14 +1943,14 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 		 * selected entry changed; unmap previewed submenu
 		 */
 		if (sel_entry == NULL || submenu != sel_entry->submenu) {
-			menu_unmap(menuctx, submenu);
+			menu_unmap(menuctx->display, submenu);
 			timeout = MOTION_TIMEOUT;
 			submenu = NULL;
 		}
 	}
 done:
 	if (submenu != NULL)
-		menu_unmap(menuctx, submenu);
+		menu_unmap(menuctx->display, submenu);
 	menu->selected = -1;
 	draw_commit(menuctx, menu, menu->selected);
 	return close_all;
@@ -2076,16 +2062,32 @@ void
 ctrlmenu_handle_event(Display *display, struct ctrlmenu_menu *menu,
 		XrmDatabase xdb, Window leader, XEvent *event)
 {
-	struct ctrlmenu_context menuctx;
-
-	if (context_setup(&menuctx, display, menu->window, xdb) == RETURN_FAILURE)
+	if (event->type == ClientMessage) {
+		if (event->xclient.window != menu->window) {
+			XPutBackEvent(display, event);
+			return;
+		}
+		if (event->xclient.message_type != XInternAtom(
+			display, "WM_PROTOCOLS", false
+		))
+			return;
+		if ((Atom)event->xclient.data.l[0] != XInternAtom(
+			display, "WM_DELETE_WINDOW", false
+		))
+			return;
+		menu_untear(display, menu);
 		return;
+	} else {
+		struct ctrlmenu_context menuctx;
 
-	XPutBackEvent(display, event);
-	(void)menu_run(&menuctx, menu, leader, true);
-	XUngrabPointer(display, CurrentTime);
-	XUngrabKeyboard(display, CurrentTime);
-	context_cleanup(&menuctx);
+		if (context_setup(&menuctx, display, menu->window, xdb) == RETURN_FAILURE)
+			return;
+		XPutBackEvent(display, event);
+		(void)menu_run(&menuctx, menu, leader, false);
+		XUngrabPointer(display, CurrentTime);
+		XUngrabKeyboard(display, CurrentTime);
+		context_cleanup(&menuctx);
+	}
 }
 
 void
@@ -2103,7 +2105,7 @@ ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
 		0, leader, false, time, title
 	);
 	(void)menu_run(&menuctx, menu, leader, true);
-	menu_unmap(&menuctx, menu);
+	menu_unmap(display, menu);
 	XUngrabPointer(display, CurrentTime);
 	XUngrabKeyboard(display, CurrentTime);
 	context_cleanup(&menuctx);

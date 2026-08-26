@@ -500,13 +500,13 @@ popup:
 				display, DefaultRootWindow(display), resources,
 				menus, title, leader, x_root, y_root, CurrentTime
 			);
-			if (!rootmode && !has_tornoff(menus, nmenus)) {
-				goto done;
-			}
 		}
 		menu = find_menu(menus, nmenus, event.xany.window);
 		if (menu != NULL) {
 			ctrlmenu_handle_event(display, menu, resources, leader, &event);
+		}
+		if (!rootmode && !has_tornoff(menus, nmenus)) {
+			goto done;
 		}
 	}
 done:
