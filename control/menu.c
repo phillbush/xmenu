@@ -58,6 +58,7 @@ struct ctrlmenu_context {
 	Display *display;
 	int screen_number;
 	Window root_window;
+	Window leader;
 
 	Visual *visual;
 	int depth;
@@ -1443,7 +1444,7 @@ static void
 menu_map(struct ctrlmenu_context *menuctx,
 		struct ctrlmenu_menu *parent, struct ctrlmenu_menu *menu,
 		int x_root, int y_root, unsigned int button_width,
-		Window leader, bool windowed, Time time, char const *title)
+		bool windowed, Time time, char const *title)
 {
 	int max_height;
 	int xgap, ygap;
@@ -1600,8 +1601,11 @@ menu_map(struct ctrlmenu_context *menuctx,
 			.override_redirect = !menu->tornoff
 		}
 	);
-	if (leader != None)
-		(void)XSetTransientForHint(menuctx->display, menu->window, leader);
+	if (menuctx->leader != None) {
+		(void)XSetTransientForHint(
+			menuctx->display, menu->window, menuctx->leader
+		);
+	}
 	(void)XSetWMProtocols(
 		menuctx->display,
 		menu->window,
@@ -1705,8 +1709,7 @@ menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
 }
 
 static int
-menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
-		Window leader, bool grabbed)
+menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, bool grabbed)
 {
 	static int MOTION_TIMEOUT = 300;
 	struct ctrlmenu_menu *submenu = NULL;
@@ -1755,7 +1758,6 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 						menu->window_geometry.x,
 						menu->window_geometry.y + get_entry_ypos(menuctx, menu, menu->selected),
 						menu->window_geometry.width,
-						leader,
 						false, xev.xbutton.time, entry->label
 					);
 				}
@@ -1812,7 +1814,6 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 							menu->window_geometry.x,
 							menu->window_geometry.y + get_entry_ypos(menuctx, menu, menu->selected),
 							menu->window_geometry.width,
-							leader,
 							false, xev.xkey.time, entry->label
 						);
 					}
@@ -1844,7 +1845,7 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 		recurse:
 			if (submenu == NULL)
 				break;
-			close_all = menu_run(menuctx, submenu, leader, true);
+			close_all = menu_run(menuctx, submenu, true);
 			if (close_all)
 				goto done;
 			break;
@@ -1915,7 +1916,6 @@ menu_run(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 					menu->window_geometry.x,
 					menu->window_geometry.y + get_entry_ypos(menuctx, menu, menu->selected),
 					menu->window_geometry.width,
-					leader,
 					false, last_motion.time, sel_entry->label
 				);
 			}
@@ -1977,7 +1977,7 @@ context_cleanup(struct ctrlmenu_context *menuctx)
 
 static int
 context_setup(struct ctrlmenu_context *menuctx, Display *display,
-		Drawable reference, XrmDatabase xdb)
+		Drawable reference, Window leader, XrmDatabase xdb)
 {
 	XWindowAttributes attributes;
 
@@ -1995,6 +1995,7 @@ context_setup(struct ctrlmenu_context *menuctx, Display *display,
 		.visual = attributes.visual,
 		.depth = attributes.depth,
 		.colormap = attributes.colormap,
+		.leader = leader,
 
 		/* defaults [for color channels:  RED,  GREEN,   BLUE,  ALPHA] */
 		.colors[COLOR_BG].chans     = {0x3100, 0x3100, 0x3100, 0xFFFF},
@@ -2079,10 +2080,12 @@ ctrlmenu_handle_event(Display *display, struct ctrlmenu_menu *menu,
 	} else {
 		struct ctrlmenu_context menuctx;
 
-		if (context_setup(&menuctx, display, menu->window, xdb) == RETURN_FAILURE)
+		if (context_setup(
+			&menuctx, display, menu->window, leader, xdb
+		) == RETURN_FAILURE)
 			return;
 		XPutBackEvent(display, event);
-		(void)menu_run(&menuctx, menu, leader, false);
+		(void)menu_run(&menuctx, menu, false);
 		XUngrabPointer(display, CurrentTime);
 		XUngrabKeyboard(display, CurrentTime);
 		context_cleanup(&menuctx);
@@ -2096,14 +2099,16 @@ ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
 {
 	struct ctrlmenu_context menuctx;
 
-	if (context_setup(&menuctx, display, reference, xdb) == RETURN_FAILURE)
+	if (context_setup(
+		&menuctx, display, reference, leader, xdb
+	) == RETURN_FAILURE)
 		return;
 
 	menu_map(
 		&menuctx, NULL, menu, x_root, y_root,
-		0, leader, false, time, title
+		0, false, time, title
 	);
-	(void)menu_run(&menuctx, menu, leader, true);
+	(void)menu_run(&menuctx, menu, true);
 	menu_unmap(display, menu);
 	XUngrabPointer(display, CurrentTime);
 	XUngrabKeyboard(display, CurrentTime);
