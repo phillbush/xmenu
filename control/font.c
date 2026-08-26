@@ -60,10 +60,10 @@ error:
 	warnx("%s: could not open font", fontname);
 	if (pattern != NULL)
 		FcPatternDestroy(pattern);
-	if (match != NULL)
-		FcPatternDestroy(match);
 	if (font != NULL)
 		XftFontClose(display, font);
+	else if (match != NULL)
+		FcPatternDestroy(match);
 	return (struct FntPatt){
 		.xftfont = NULL,
 		.pattern = NULL,
@@ -133,10 +133,10 @@ done:
 	return fontset;
 error:
 	free(s);
-	if (font.pattern != NULL)
-		FcPatternDestroy(font.pattern);
 	if (font.xftfont != NULL)
 		XftFontClose(display, font.xftfont);
+	else if (font.pattern != NULL)
+		FcPatternDestroy(font.pattern);
 	if (fontset != NULL)
 		free(fontset->fonts);
 	free(fontset);
@@ -267,10 +267,10 @@ done:
 		FcCharSetDestroy(fccharset);
 	if (fcpattern != NULL)
 		FcPatternDestroy(fcpattern);
-	if (font.pattern != NULL)
-		XftPatternDestroy(font.pattern);
 	if (font.xftfont != NULL)
 		XftFontClose(fontset->display, font.xftfont);
+	else if (font.pattern != NULL)
+		XftPatternDestroy(font.pattern);
 #endif /* CTRLFNT_NO_SEARCH */
 	(void)glyph;
 	return retfont;
@@ -699,9 +699,6 @@ ctrlfnt_free(struct ctrlfnt *fontset)
 		return;
 	if (fontset->xft_fontset != NULL) {
 		for (size_t i = 0; i < fontset->xft_fontset->nmemb; i++) {
-			FcPatternDestroy(
-				fontset->xft_fontset->fonts[i].pattern
-			);
 			XftFontClose(
 				fontset->display,
 				fontset->xft_fontset->fonts[i].xftfont
