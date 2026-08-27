@@ -1178,7 +1178,7 @@ check_event(Display *display, struct ctrlmenu_menu *menu)
 	return false;
 }
 
-static int
+static bool
 next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu,
 		int *timeout, bool is_popup)
 {
@@ -1197,7 +1197,8 @@ next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu,
 	if (XPending(display) == 0 || !check_event(display, menu)) {
 		if (poll(&pfd, 1, *timeout?*timeout:-1) == 0) {
 			*timeout = 0;
-			return TimeoutNotify;
+			event->type = TimeoutNotify;
+			return true;
 		}
 	}
 
@@ -1212,12 +1213,17 @@ next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu,
 		*timeout -= elapsed;
 
 	for (;;) {
-		if (is_popup)
+		if (is_popup) {
 			(void)XIfEvent(display, event, is_menu_event, (void *)menu);
-		else
+		} else {
 			(void)XNextEvent(display, event);
+			if (!is_menu_event(display, event, (void *)menu)) {
+				XPutBackEvent(display, event);
+				return false;
+			}
+		}
 		if (event->type != MotionNotify)
-			return event->type;
+			return true;
 		/* compress sequential motion events into a single one */
 		while (XPending(display)) {
 			XEvent next;
@@ -1230,7 +1236,7 @@ next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu,
 				break;
 			XNextEvent(display, event);
 		}
-		return MotionNotify;
+		return true;
 	}
 }
 
@@ -1277,7 +1283,8 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssize_
 	for (;;) {
 		XEvent event;
 
-		switch (next_event(menuctx->display, &event, menu, &timeout, true)) {
+		next_event(menuctx->display, &event, menu, &timeout, true);
+		switch (event.type) {
 		case MotionNotify: case ButtonPress: case ButtonRelease:
 			if (event.xmotion.window != menu->window)
 				return;
@@ -1712,7 +1719,9 @@ menu_run(struct ctrlmenu_context *menuctx,
 	menu->next = parent;
 	prevselected = menu->selected;
 	for (;;) {
-		switch (next_event(menuctx->display, &xev, menu, &timeout, is_popup)) {
+		if (!next_event(menuctx->display, &xev, menu, &timeout, is_popup))
+			goto done;
+		switch (xev.type) {
 		case ButtonPress:
 			if (xev.xbutton.button > Button3)
 				break;
@@ -1961,9 +1970,6 @@ menu_run(struct ctrlmenu_context *menuctx,
 		default:
 			if (is_popup)
 				break;
-			if (xev.type != ClientMessage)
-				break;
-			XPutBackEvent(menuctx->display, &xev);
 			goto done;
 		}
 
