@@ -133,9 +133,10 @@ static void
 callback(void *ctx, void *self, bool alt)
 {
 	if (alt)
-		printf("%s", (char *)self);
+		printf("%s\n", (char *)self);
 	else
-		printf("%s", (char *)ctx);
+		printf("%s\n", (char *)ctx);
+	fflush(stdout);
 }
 
 static size_t
