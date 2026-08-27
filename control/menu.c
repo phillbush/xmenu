@@ -1976,6 +1976,18 @@ menu_run(struct ctrlmenu_context *menuctx,
 					goto done;
 			}
 			break;
+		case CirculateNotify:
+		case DestroyNotify:
+		case GravityNotify:
+		case MapNotify:
+		case ReparentNotify:
+		case UnmapNotify:
+			/*
+			 * By selecting StructureNotifyMask on menu
+			 * windows, we get all these events that we
+			 * dont care on those windows.
+			 */
+			continue;
 		default:
 			if (is_popup)
 				break;
