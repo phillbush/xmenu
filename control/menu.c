@@ -1443,7 +1443,7 @@ activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssi
 static void
 menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 		int x_root, int y_root, unsigned int button_width,
-		bool windowed, Time time)
+		bool windowed)
 {
 	int max_height;
 	int xgap, ygap;
@@ -1454,20 +1454,6 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 
 	if (title == NULL)
 		title = ctrlapp_getclass();
-	if (!windowed) {
-		if (XGrabPointer(
-			menuctx->display, menuctx->root_window, True,
-			ButtonPressMask|PointerMotionMask,
-			GrabModeAsync, GrabModeAsync,
-			None, menuctx->cursor, time
-		) != GrabSuccess)
-			return;
-		if (XGrabKeyboard(
-			menuctx->display, menuctx->root_window, True,
-			GrabModeAsync, GrabModeAsync, time
-		) != GrabSuccess)
-			return;
-	}
 	monitor.x = 0;
 	monitor.y = 0;
 	monitor.width = DisplayWidth(menuctx->display, menuctx->screen_number);
@@ -1506,6 +1492,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 
 	menu->curr_screenful.first_entry = menu->last_screenful.first_entry = 0;
 	menu->curr_screenful.offset = menu->last_screenful.offset = 0;
+	menu->tornoff = windowed;
 	menu->tearable = !windowed && menuctx->tearoff;
 	xgap = menuctx->outer_border_width;
 	ygap = -menuctx->inner_border_width;
@@ -1657,55 +1644,20 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 }
 
 static void
-menu_unmap(Display *display, struct ctrlmenu_menu *menu)
-{
-	if (menu == NULL || menu->tornoff || menu->window == None)
-		return;
-	XUnmapWindow(display, menu->window);
-}
-
-static void
 menu_untear(Display *display, struct ctrlmenu_menu *menu)
 {
-	if (menu == NULL || !menu->tornoff || menu->window == None)
-		return;
 	XUnmapWindow(display, menu->window);
 	menu->tornoff = false;
 }
 
 static void
-menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
+menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
+		int x, int y)
 {
-	(void)XChangeWindowAttributes(
-		menuctx->display, menu->window, CWOverrideRedirect,
-		&(XSetWindowAttributes){ .override_redirect = false, }
-	);
-	(void)XChangeProperty(
-		menuctx->display, menu->window,
-		XInternAtom(menuctx->display, "_NET_WM_WINDOW_TYPE", false),
-		XA_ATOM, 32, PropModeReplace,
-		(void *)(Atom[]){XInternAtom(
-			menuctx->display, "_NET_WM_WINDOW_TYPE_MENU", false
-		)}, 1
-	);
-	(void)XUnmapWindow(menuctx->display, menu->window);
-	if (menu->tearable) {
-		menu->window_geometry.x += menuctx->outer_border_width;
-		menu->window_geometry.y += menuctx->outer_border_width;
-		menu->window_geometry.y += menuctx->separatorh;
-		menu->window_geometry.height -= menuctx->separatorh;
-		XMoveResizeWindow(
-			menuctx->display, menu->window,
-			menu->window_geometry.x, menu->window_geometry.y,
-			menu->window_geometry.width, menu->window_geometry.height
-		);
-	}
-	menu->tearable = false;
+	x += menuctx->outer_border_width;
+	y += menuctx->outer_border_width + menuctx->separatorh;
+	menu_map(menuctx, menu, x, y, 0, true);
 	menu->tornoff = true;
-	menu->selected = -1;
-	draw_menu(menuctx, menu);
-	draw_commit(menuctx, menu, menu->selected);
-	(void)XMapWindow(menuctx->display, menu->window);
 }
 
 #define submenu_run(ctx, parent, menu, time) \
@@ -1713,24 +1665,39 @@ menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
 
 static int
 menu_run(struct ctrlmenu_context *menuctx,
-		struct ctrlmenu_menu *parent, struct ctrlmenu_menu *menu,
+		struct ctrlmenu_menu *parent, struct ctrlmenu_menu *orig_menu,
 		int x_root, int y_root, bool is_popup, Time time)
 {
 	static int MOTION_TIMEOUT = 300;
-	XEvent xev;
-	static XMotionEvent last_motion = {0};
-	ssize_t prevselected = menu->selected;
+	static XMotionEvent last_motion = {};
 	static int timeout = 0;
+	ssize_t prevselected;
+	struct ctrlmenu_menu *menu = &(struct ctrlmenu_menu){};
+	XEvent xev;
 	bool close_all = false;
 	bool entered = !is_popup || parent == NULL;
-	Window tornoff_save = None;
 
 	if (is_popup) {
 		unsigned int width = 0;
-		if (menu->tornoff) {
-			tornoff_save = menu->window;
-			menu->window = None;
-		}
+
+		*menu = (struct ctrlmenu_menu){
+			.window = None,
+			.title = orig_menu->title,
+			.entries = orig_menu->entries,
+			.nentries = orig_menu->nentries,
+		};
+		if (XGrabPointer(
+			menuctx->display, menuctx->root_window, True,
+			ButtonPressMask|PointerMotionMask,
+			GrabModeAsync, GrabModeAsync,
+			None, menuctx->cursor, time
+		) != GrabSuccess)
+			return true;
+		if (XGrabKeyboard(
+			menuctx->display, menuctx->root_window, True,
+			GrabModeAsync, GrabModeAsync, time
+		) != GrabSuccess)
+			return true;
 		if (parent != NULL) {
 			x_root = parent->window_geometry.x;
 			y_root = parent->window_geometry.y + get_entry_ypos(
@@ -1738,9 +1705,12 @@ menu_run(struct ctrlmenu_context *menuctx,
 			);
 			width = parent->window_geometry.width;
 		}
-		menu_map(menuctx, menu, x_root, y_root, width, false, time);
+		menu_map(menuctx, menu, x_root, y_root, width, false);
+	} else {
+		menu = orig_menu;
 	}
 	menu->next = parent;
+	prevselected = menu->selected;
 	for (;;) {
 		switch (next_event(menuctx->display, &xev, menu, &timeout, is_popup)) {
 		case ButtonPress:
@@ -1763,14 +1733,14 @@ menu_run(struct ctrlmenu_context *menuctx,
 			}
 			menu->selected = get_entry_index(menuctx, menu, xev.xbutton.y);
 			if (menu->selected == TEAROFF) {
-				if (tornoff_save != None) {
-					XDestroyWindow(menuctx->display, menu->window);
-					menu->window = tornoff_save;
-					tornoff_save = None;
-					menu_untear(menuctx->display, menu);
+				if (orig_menu->tornoff) {
+					menu_untear(menuctx->display, orig_menu);
 				} else {
-					menu_tear_off(menuctx, menu);
-					xev.xbutton.window = None;
+					menu_tear_off(
+						menuctx, orig_menu,
+						menu->window_geometry.x,
+						menu->window_geometry.y
+					);
 				}
 				close_all = true;
 				goto done;
@@ -1896,15 +1866,15 @@ menu_run(struct ctrlmenu_context *menuctx,
 					menuctx, m->next, xev.xmotion.y
 				);
 				above = get_entry(m->next, above_index);
-				if (above == NULL)
-					continue;
-				if (above->submenu == m)
+				if (above != NULL &&
+				    above->submenu->entries == m->entries)
 					break;
 				/*
 				 * Pointer on ancestor menu, over entry which
 				 * does not descends into current menu.
 				 */
-				if (!entered && above->submenu != menu &&
+				if (!entered && (above == NULL ||
+				    above->submenu->entries != menu->entries) &&
 				    xev.xmotion.window == last_motion.window &&
 				    (double)(xev.xmotion.x - last_motion.x)/
 				    (xev.xmotion.time - last_motion.time) < 0.01) {
@@ -1991,7 +1961,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 		default:
 			if (is_popup)
 				break;
-			if (xev.type != ClientMessage && xev.xany.window == menu->window)
+			if (xev.type != ClientMessage)
 				break;
 			XPutBackEvent(menuctx->display, &xev);
 			goto done;
@@ -2006,11 +1976,8 @@ menu_run(struct ctrlmenu_context *menuctx,
 done:
 	menu->selected = -1;
 	draw_commit(menuctx, menu, menu->selected);
-	if (is_popup)
-		menu_unmap(menuctx->display, menu);
-	if (tornoff_save != None) {
-		XDestroyWindow(menuctx->display, menu->window);
-		menu->window = tornoff_save;
+	if (is_popup) {
+		ctrlmenu_close(menuctx->display, menu);
 	}
 	menu->next = NULL;
 	return close_all;
