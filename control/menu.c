@@ -1151,7 +1151,13 @@ is_menu_event(Display *display, XEvent *event, XPointer arg)
 	case KeyPress: case KeyRelease:
 	case EnterNotify: case LeaveNotify:
 	case MotionNotify:
-		return True;
+		for (struct ctrlmenu *menu = top_menu; menu != NULL; menu = menu->next)
+			if (event->xconfigure.window == menu->window)
+				return True;
+		for (int screen = 0; screen < ScreenCount(display); screen++)
+			if (event->xconfigure.window == RootWindow(display, screen))
+				return True;
+		return False;
 	case ClientMessage:
 		return False;
 	case ConfigureNotify:
