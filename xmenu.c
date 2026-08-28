@@ -130,12 +130,9 @@ error:
 }
 
 static void
-callback(void *ctx, void *self, bool alt)
+callback(void *, void *self, bool)
 {
-	if (alt)
-		printf("%s\n", (char *)self);
-	else
-		printf("%s\n", (char *)ctx);
+	printf("%s\n", (char *)self);
 	fflush(stdout);
 }
 
@@ -209,18 +206,12 @@ fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 			else if (strcmp(output, ":") == 0)
 				output = NULL;
 			entry->self = output;
-			entry->ctx = entry->self;
 			if (entry->label == NULL)
 				entry->type = CTRLMENU_SEPARATOR;
 			else if (entry->self == NULL)
 				entry->disabled = true;
 			else
 				entry->type = CTRLMENU_COMMAND;
-			if (prev_entry != NULL && prev_entry->self != NULL &&
-			    entry->label != NULL && strcmp(entry->label, "''") == 0) {
-				prev_entry->ctx = entry->self;
-				continue;
-			}
 			prev_entry = entry;
 			nentries++;
 		}
