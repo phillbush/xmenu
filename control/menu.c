@@ -1661,7 +1661,6 @@ static void
 menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 		int x, int y)
 {
-	x += menuctx->outer_border_width;
 	y += menuctx->outer_border_width + menuctx->separatorh;
 	menu_map(menuctx, menu, x, y, 0, true);
 	menu->tornoff = true;
