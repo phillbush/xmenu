@@ -10,6 +10,16 @@
 .In control/application.h
 .In control/menu.h
 .Bd -literal
+struct ctrlmenu {
+	Window window;
+	char const *title;
+
+	struct ctrlmenu_entry *entries;
+	size_t nentries;
+
+	/* ...other members that the caller program shall not mess with*/
+};
+
 struct ctrlmenu_entry {
 	enum {
 		CTRLMENU_COMMAND,
@@ -25,17 +35,7 @@ struct ctrlmenu_entry {
 	void (*callback)(void *ctx, void *self, bool alt);
 	void *ctx, *self;
 
-	struct ctrlmenu_menu *submenu;
-};
-
-struct ctrlmenu_menu {
-	Window window;
-	char const *title;
-
-	struct ctrlmenu_entry *entries;
-	size_t nentries;
-
-	/* ...other members that the caller program shall not mess with*/
+	struct ctrlmenu *submenu;
 };
 .Ed
 .Pp
@@ -44,7 +44,7 @@ struct ctrlmenu_menu {
 .Fa "Display *display"
 .Fa "Drawable reference"
 .Fa "XrmDatabase resurces"
-.Fa "struct ctrlmenu_menu *menu"
+.Fa "struct ctrlmenu *menu"
 .Fa "Window leader"
 .Fa "int x_root"
 .Fa "int y_root"
@@ -89,7 +89,7 @@ The pointer to the context of the connection to the
 .Xr Xserver 1 .
 .It Fa menu
 The pointer to a
-.Ft struct ctrlmenu_menu
+.Ft struct ctrlmenu
 structure holding an array of menu entries that make the menu,
 and the number of members in such array.
 .Pp
@@ -218,7 +218,7 @@ union {
 		void *ctx, *self;
 	};
 	struct {
-		struct ctrlmenu_menu *submenu;
+		struct ctrlmenu *submenu;
 	};
 };
 .Ed

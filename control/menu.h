@@ -20,7 +20,7 @@ struct ctrlmenu_entry {
 	};
 	struct {
 #endif
-		struct ctrlmenu_menu *submenu;
+		struct ctrlmenu *submenu;
 #if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
 	};
 	};
@@ -34,14 +34,14 @@ enum {
 	CANVAS_LAST
 };
 
-struct ctrlmenu_menu {
+struct ctrlmenu {
 	Window window;
 	char const *title;
 
 	struct ctrlmenu_entry *entries;
 	size_t nentries;
 
-	struct ctrlmenu_menu *next;
+	struct ctrlmenu *next;
 	ssize_t selected;
 	XRectangle window_geometry;
 	int canvas_width, canvas_height;
@@ -65,7 +65,7 @@ void ctrlmenu_popup(
 	Display *display,
 	Drawable reference,
 	XrmDatabase xdb,
-	struct ctrlmenu_menu *menus,
+	struct ctrlmenu *menus,
 	Window leader,
 	int x_root,
 	int y_root,
@@ -74,10 +74,10 @@ void ctrlmenu_popup(
 
 void ctrlmenu_handle_event(
 	Display *display,
-	struct ctrlmenu_menu *menu,
+	struct ctrlmenu *menu,
 	XrmDatabase xdb,
 	Window leader,
 	XEvent *event
 );
 
-void ctrlmenu_close(Display *display, struct ctrlmenu_menu *menu);
+void ctrlmenu_close(Display *display, struct ctrlmenu *menu);

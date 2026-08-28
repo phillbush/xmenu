@@ -140,14 +140,14 @@ callback(void *ctx, void *self, bool alt)
 }
 
 static size_t
-fill_menu(struct ctrlmenu_menu **menus, struct ctrlmenu_entry **next_entry,
+fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 	size_t menu_indentlvl, char *data, size_t datasize, size_t *from, char *title)
 {
 	size_t nentries;
-	struct ctrlmenu_menu *menu = *menus;
+	struct ctrlmenu *menu = *menus;
 	struct ctrlmenu_entry *prev_entry = NULL;
 
-	*menu = (struct ctrlmenu_menu){
+	*menu = (struct ctrlmenu){
 		.entries = *next_entry,
 		.title = title
 	};
@@ -229,11 +229,11 @@ fill_menu(struct ctrlmenu_menu **menus, struct ctrlmenu_entry **next_entry,
 }
 
 static size_t
-parse_stdin(char **data, struct ctrlmenu_menu **menus_ret, char *title)
+parse_stdin(char **data, struct ctrlmenu **menus_ret, char *title)
 {
 	size_t last_indentlvl;
 	size_t nlines, nmenus;
-	struct ctrlmenu_menu *menus;
+	struct ctrlmenu *menus;
 	struct ctrlmenu_entry *entries;
 	FILE *stream;
 	char buf[BUFSIZ];
@@ -294,8 +294,8 @@ parse_stdin(char **data, struct ctrlmenu_menu **menus_ret, char *title)
 	return nmenus;
 }
 
-static struct ctrlmenu_menu *
-find_menu(struct ctrlmenu_menu *menus, size_t nmenus, Window window)
+static struct ctrlmenu *
+find_menu(struct ctrlmenu *menus, size_t nmenus, Window window)
 {
 	for (size_t i = 0; i < nmenus; i++)
 		if (window == menus[i].window)
@@ -304,7 +304,7 @@ find_menu(struct ctrlmenu_menu *menus, size_t nmenus, Window window)
 }
 
 static bool
-has_tornoff(struct ctrlmenu_menu *menus, size_t nmenus)
+has_tornoff(struct ctrlmenu *menus, size_t nmenus)
 {
 	for (size_t i = 0; i < nmenus; i++)
 		if (menus[i].tornoff)
@@ -327,7 +327,7 @@ main(int argc, char *argv[])
 	XrmDatabase resources = NULL;
 	Window leader = None;
 	bool rootmode = false;
-	struct ctrlmenu_menu *menus = NULL;
+	struct ctrlmenu *menus = NULL;
 	size_t nmenus = 0;
 	unsigned int button = 0;
 	unsigned int modifier = 0;
@@ -482,7 +482,7 @@ main(int argc, char *argv[])
 		goto popup;
 	for (;;) {
 		XEvent event;
-		struct ctrlmenu_menu *menu;
+		struct ctrlmenu *menu;
 		static unsigned int MODS = ShiftMask|ControlMask|Mod1Mask|Mod4Mask;
 
 		(void)XNextEvent(display, &event);

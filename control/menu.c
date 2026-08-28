@@ -364,7 +364,7 @@ reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase xdb)
  */
 
 static struct ctrlmenu_entry *
-get_entry(struct ctrlmenu_menu *menu, ssize_t entryc)
+get_entry(struct ctrlmenu *menu, ssize_t entryc)
 {
 	if (entryc >= 0 && entryc < (ssize_t)menu->nentries)
 		return &menu->entries[entryc];
@@ -372,7 +372,7 @@ get_entry(struct ctrlmenu_menu *menu, ssize_t entryc)
 }
 
 static ssize_t
-get_entry_index(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, long y)
+get_entry_index(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 {
 	long h;
 
@@ -413,7 +413,7 @@ get_entry_index(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, lo
 }
 
 static int
-get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int selected)
+get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, int selected)
 {
 	if (menu->tearable && selected == TEAROFF)
 		return menuctx->separatorh;
@@ -428,7 +428,7 @@ get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, i
 }
 
 static int
-get_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int selected)
+get_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, int selected)
 {
 	int ypos = menuctx->inner_border_width;
 
@@ -461,7 +461,7 @@ get_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int
 }
 
 static int
-get_first_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
+get_first_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	int y;
 
@@ -760,7 +760,7 @@ draw_triangle(struct ctrlmenu_context *menuctx, Picture picture, Picture src, in
 //}
 
 static void
-draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu)
+draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	XRectangle entry_geometry;
 	int textx, textw, y;
@@ -1034,7 +1034,7 @@ next:
 }
 
 static void
-draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssize_t selected)
+draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t selected)
 {
 	int src_canvas_y, dst_canvas_y;
 
@@ -1143,7 +1143,7 @@ draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssize_
 static Bool
 is_menu_event(Display *, XEvent *event, XPointer arg)
 {
-	struct ctrlmenu_menu *top_menu = (void *)arg;
+	struct ctrlmenu *top_menu = (void *)arg;
 
 	switch (event->type) {
 	case ButtonPress: case ButtonRelease:
@@ -1154,12 +1154,12 @@ is_menu_event(Display *, XEvent *event, XPointer arg)
 	case ClientMessage:
 		return False;
 	case ConfigureNotify:
-		for (struct ctrlmenu_menu *menu = top_menu; menu != NULL; menu = menu->next)
+		for (struct ctrlmenu *menu = top_menu; menu != NULL; menu = menu->next)
 			if (event->xconfigure.window == menu->window)
 				return True;
 		return False;
 	default:
-		for (struct ctrlmenu_menu *menu = top_menu; menu != NULL; menu = menu->next)
+		for (struct ctrlmenu *menu = top_menu; menu != NULL; menu = menu->next)
 			if (event->xany.window == menu->window)
 				return True;
 		return False;
@@ -1167,7 +1167,7 @@ is_menu_event(Display *, XEvent *event, XPointer arg)
 }
 
 static bool
-check_event(Display *display, struct ctrlmenu_menu *menu)
+check_event(Display *display, struct ctrlmenu *menu)
 {
 	XEvent event;
 
@@ -1179,7 +1179,7 @@ check_event(Display *display, struct ctrlmenu_menu *menu)
 }
 
 static bool
-next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu,
+next_event(Display *display, XEvent *event, struct ctrlmenu *menu,
 		int *timeout, bool is_popup)
 {
 	struct timespec then, now;
@@ -1246,7 +1246,7 @@ next_event(Display *display, XEvent *event, struct ctrlmenu_menu *menu,
  */
 
 static void
-scroll_down(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int diff)
+scroll_down(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, int diff)
 {
 	int height = 0;
 
@@ -1262,7 +1262,7 @@ scroll_down(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int di
 }
 
 static void
-scroll_up(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int diff)
+scroll_up(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, int diff)
 {
 	int height = 0;
 
@@ -1274,7 +1274,7 @@ scroll_up(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, int diff
 }
 
 static void
-scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssize_t nentry)
+scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t nentry)
 {
 	static int const SCROLL_TIME = 32;
 	int timeout = SCROLL_TIME;
@@ -1316,7 +1316,7 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssize_
  */
 
 static ssize_t
-select_first_entry(struct ctrlmenu_context *, struct ctrlmenu_menu *menu)
+select_first_entry(struct ctrlmenu_context *, struct ctrlmenu *menu)
 {
 	menu->curr_screenful.first_entry = 0;
 	menu->curr_screenful.offset = 0;
@@ -1330,7 +1330,7 @@ select_first_entry(struct ctrlmenu_context *, struct ctrlmenu_menu *menu)
 }
 
 static ssize_t
-select_last_entry(struct ctrlmenu_context *, struct ctrlmenu_menu *menu)
+select_last_entry(struct ctrlmenu_context *, struct ctrlmenu *menu)
 {
 	menu->curr_screenful = menu->last_screenful;
 	for (ssize_t entryc = menu->nentries - 1; entryc >= 0; entryc--) {
@@ -1343,7 +1343,7 @@ select_last_entry(struct ctrlmenu_context *, struct ctrlmenu_menu *menu)
 }
 
 static ssize_t
-select_prev_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssize_t selected)
+select_prev_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t selected)
 {
 	int ypos, height;
 	int scroll_threshold;
@@ -1373,7 +1373,7 @@ select_prev_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, 
 }
 
 static ssize_t
-select_next_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssize_t selected)
+select_next_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t selected)
 {
 	int ypos, height;
 	int scroll_threshold = menu->window_geometry.height
@@ -1418,7 +1418,7 @@ xsleep(unsigned int usec)
 }
 
 static void
-activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssize_t nentry, bool alt)
+activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t nentry, bool alt)
 {
 	struct ctrlmenu_entry *entry;
 
@@ -1448,7 +1448,7 @@ activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu, ssi
  */
 
 static void
-menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
+menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		int x_root, int y_root, unsigned int button_width,
 		bool windowed)
 {
@@ -1651,14 +1651,14 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 }
 
 static void
-menu_untear(Display *display, struct ctrlmenu_menu *menu)
+menu_untear(Display *display, struct ctrlmenu *menu)
 {
 	XUnmapWindow(display, menu->window);
 	menu->tornoff = false;
 }
 
 static void
-menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
+menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		int x, int y)
 {
 	y += menuctx->outer_border_width + menuctx->separatorh;
@@ -1671,14 +1671,14 @@ menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu_menu *menu,
 
 static int
 menu_run(struct ctrlmenu_context *menuctx,
-		struct ctrlmenu_menu *parent, struct ctrlmenu_menu *orig_menu,
+		struct ctrlmenu *parent, struct ctrlmenu *orig_menu,
 		int x_root, int y_root, bool is_popup, Time time)
 {
 	static int MOTION_TIMEOUT = 300;
 	static XMotionEvent last_motion = {};
 	static int timeout = 0;
 	ssize_t prevselected;
-	struct ctrlmenu_menu *menu = &(struct ctrlmenu_menu){};
+	struct ctrlmenu *menu = &(struct ctrlmenu){};
 	XEvent xev;
 	bool close_all = false;
 	bool entered = !is_popup || parent == NULL;
@@ -1686,7 +1686,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 	if (is_popup) {
 		unsigned int width = 0;
 
-		*menu = (struct ctrlmenu_menu){
+		*menu = (struct ctrlmenu){
 			.window = None,
 			.title = orig_menu->title,
 			.entries = orig_menu->entries,
@@ -1864,7 +1864,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				goto done;
 			break;
 		case MotionNotify:
-			for (struct ctrlmenu_menu *m = menu; m->next != NULL; m = m->next) {
+			for (struct ctrlmenu *m = menu; m->next != NULL; m = m->next) {
 				struct ctrlmenu_entry *above;
 				ssize_t above_index;
 
@@ -2075,7 +2075,7 @@ error:
  */
 
 void
-ctrlmenu_close(Display *display, struct ctrlmenu_menu *menu)
+ctrlmenu_close(Display *display, struct ctrlmenu *menu)
 {
 	if (menu->window != None)
 		XDestroyWindow(display, menu->window);
@@ -2085,14 +2085,14 @@ ctrlmenu_close(Display *display, struct ctrlmenu_menu *menu)
 		if (menu->canvas[i].pixmap != None)
 			XFreePixmap(display, menu->canvas[i].pixmap);
 	}
-	*menu = (struct ctrlmenu_menu){
+	*menu = (struct ctrlmenu){
 		.entries = menu->entries,
 		.nentries = menu->nentries,
 	};
 }
 
 void
-ctrlmenu_handle_event(Display *display, struct ctrlmenu_menu *menu,
+ctrlmenu_handle_event(Display *display, struct ctrlmenu *menu,
 		XrmDatabase xdb, Window leader, XEvent *event)
 {
 	if (event->type == ClientMessage) {
@@ -2127,7 +2127,7 @@ ctrlmenu_handle_event(Display *display, struct ctrlmenu_menu *menu,
 
 void
 ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
-		struct ctrlmenu_menu *menu, Window leader,
+		struct ctrlmenu *menu, Window leader,
 		int x_root, int y_root, Time time)
 {
 	struct ctrlmenu_context menuctx;
