@@ -33,7 +33,7 @@ struct ctrlmenu_entry {
 	bool disabled;
 
 	void (*callback)(void *ctx, void *self, bool alt);
-	void *ctx, *self;
+	void *self;
 
 	struct ctrlmenu *submenu;
 };
@@ -41,14 +41,15 @@ struct ctrlmenu_entry {
 .Pp
 .Ft void
 .Fo ctrlmenu_popup
+.Fa "void *context"
 .Fa "Display *display"
 .Fa "Drawable reference"
 .Fa "XrmDatabase resurces"
-.Fa "struct ctrlmenu *menu"
 .Fa "Window leader"
 .Fa "int x_root"
 .Fa "int y_root"
 .Fa "Time timestamp"
+.Fa "struct ctrlmenu *menu"
 .Fc
 .Sh DESCRIPTION
 The ctrlmenu library implements both a pop-up menu
@@ -84,6 +85,12 @@ structure specifies one of the entries listed in a menu.
 An array of such entries makes a menu.
 .Ss Parameters
 .Bl -tag -width Ds
+.It Fa context
+The pointer to the context of the caller program.
+It is passed to the
+.Fa callback
+routine defined by the caller.
+How the context is used for by the callback routine for is up to the program.
 .It Fa display
 The pointer to the context of the connection to the
 .Xr Xserver 1 .
@@ -151,13 +158,11 @@ The
 structure holds the definition of a menu entry.
 Its members are as follows:
 .Bl -tag -width Ds
-.It Fa callback , ctx , self
+.It Fa callback , self
 Function to be called when the entry is activated.
-The opaque pointers
-.Fa ctx
-and
+The opaque pointer
 .Fa self
-are given to the
+is given to the
 .Fa callback
 function.
 These members must only be set on
@@ -198,7 +203,7 @@ and the disabled versions of command and submenu entries.
 .El
 .Pp
 The members
-.Fa callback Ns / Ns Fa ctx Ns / Ns Fa self
+.Fa callback Ns / Ns Fa self
 and the member
 .Fa submenu
 must not be set at the same time,
@@ -215,7 +220,7 @@ if the compiler supports it:
 union {
 	struct {
 		void (*callback)(void *ctx, void *self, bool alt);
-		void *ctx, *self;
+		void *self;
 	};
 	struct {
 		struct ctrlmenu *submenu;
@@ -281,7 +286,7 @@ are given to the
 function.
 The idea is that
 .Fa ctx
-is a context object common to all entries, while
+is a context object holding the current status of the program, while
 .Fa self
 is some data relevant for that particular entry.
 But the program can use them the way it likes.

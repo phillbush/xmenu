@@ -491,13 +491,15 @@ popup:
 				);
 			}
 			ctrlmenu_popup(
-				display, DefaultRootWindow(display), resources,
-				menus, leader, x_root, y_root, CurrentTime
+				NULL, display, DefaultRootWindow(display), resources,
+				leader, x_root, y_root, CurrentTime, menus
 			);
 		}
 		menu = find_menu(menus, nmenus, event.xany.window);
 		if (menu != NULL) {
-			ctrlmenu_handle_event(display, menu, resources, leader, &event);
+			ctrlmenu_handle_event(
+				NULL, display, resources, leader, &event, menu
+			);
 		}
 		if (!rootmode && !has_tornoff(menus, nmenus)) {
 			goto done;

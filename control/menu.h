@@ -15,7 +15,7 @@ struct ctrlmenu_entry {
 	struct {
 #endif
 		void (*callback)(void *ctx, void *self, bool alt);
-		void *ctx, *self;
+		void *self;
 #if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
 	};
 	struct {
@@ -62,22 +62,24 @@ struct ctrlmenu {
 };
 
 void ctrlmenu_popup(
+	void *context,
 	Display *display,
 	Drawable reference,
 	XrmDatabase resources,
-	struct ctrlmenu *menus,
 	Window leader,
 	int x_root,
 	int y_root,
-	Time timestamp
+	Time timestamp,
+	struct ctrlmenu *menu
 );
 
 void ctrlmenu_handle_event(
+	void *context,
 	Display *display,
-	struct ctrlmenu *menu,
 	XrmDatabase xdb,
 	Window leader,
-	XEvent *event
+	XEvent *event,
+	struct ctrlmenu *menu
 );
 
 void ctrlmenu_close(Display *display, struct ctrlmenu *menu);

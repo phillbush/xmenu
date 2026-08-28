@@ -55,6 +55,7 @@ enum {
 };
 
 struct ctrlmenu_context {
+	void *ctx;
 	Display *display;
 	int screen_number;
 	Window root_window;
@@ -1439,7 +1440,7 @@ activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t 
 
 	entry = get_entry(menu, menu->selected);
 	if (entry != NULL && entry->type == CTRLMENU_COMMAND)
-		entry->callback(entry->ctx, entry->self, alt);
+		entry->callback(menuctx->ctx, entry->self, alt);
 }
 
 
@@ -2009,7 +2010,7 @@ context_cleanup(struct ctrlmenu_context *menuctx)
 }
 
 static int
-context_setup(struct ctrlmenu_context *menuctx, Display *display,
+context_setup(struct ctrlmenu_context *menuctx, void *ctx, Display *display,
 		Drawable reference, Window leader, XrmDatabase xdb)
 {
 	XWindowAttributes attributes;
@@ -2021,6 +2022,7 @@ context_setup(struct ctrlmenu_context *menuctx, Display *display,
 		goto error;
 
 	*menuctx = (struct ctrlmenu_context){
+		.ctx = ctx,
 		.display = display,
 		.cursor = XCreateFontCursor(display, XC_left_ptr),
 		.screen_number = XScreenNumberOfScreen(attributes.screen),
@@ -2092,8 +2094,8 @@ ctrlmenu_close(Display *display, struct ctrlmenu *menu)
 }
 
 void
-ctrlmenu_handle_event(Display *display, struct ctrlmenu *menu,
-		XrmDatabase xdb, Window leader, XEvent *event)
+ctrlmenu_handle_event(void *ctx, Display *display, XrmDatabase xdb,
+		Window leader, XEvent *event, struct ctrlmenu *menu)
 {
 	if (event->type == ClientMessage) {
 		if (event->xclient.window != menu->window) {
@@ -2114,7 +2116,7 @@ ctrlmenu_handle_event(Display *display, struct ctrlmenu *menu,
 		struct ctrlmenu_context menuctx;
 
 		if (context_setup(
-			&menuctx, display, menu->window, leader, xdb
+			&menuctx, ctx, display, menu->window, leader, xdb
 		) == RETURN_FAILURE)
 			return;
 		XPutBackEvent(display, event);
@@ -2126,18 +2128,18 @@ ctrlmenu_handle_event(Display *display, struct ctrlmenu *menu,
 }
 
 void
-ctrlmenu_popup(Display *display, Drawable reference, XrmDatabase xdb,
-		struct ctrlmenu *menu, Window leader,
-		int x_root, int y_root, Time time)
+ctrlmenu_popup(void *ctx, Display *display, Drawable reference,
+		XrmDatabase xdb, Window leader, int x_root, int y_root,
+		Time timestamp, struct ctrlmenu *menu)
 {
 	struct ctrlmenu_context menuctx;
 
 	if (context_setup(
-		&menuctx, display, reference, leader, xdb
+		&menuctx, ctx, display, reference, leader, xdb
 	) == RETURN_FAILURE)
 		return;
 
-	(void)menu_run(&menuctx, NULL, menu, x_root, y_root, true, time);
+	(void)menu_run(&menuctx, NULL, menu, x_root, y_root, true, timestamp);
 	XUngrabPointer(display, CurrentTime);
 	XUngrabKeyboard(display, CurrentTime);
 	context_cleanup(&menuctx);
