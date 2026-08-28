@@ -64,12 +64,12 @@ struct ctrlmenu {
 void ctrlmenu_popup(
 	Display *display,
 	Drawable reference,
-	XrmDatabase xdb,
+	XrmDatabase resources,
 	struct ctrlmenu *menus,
 	Window leader,
 	int x_root,
 	int y_root,
-	Time time
+	Time timestamp
 );
 
 void ctrlmenu_handle_event(
