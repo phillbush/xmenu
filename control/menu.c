@@ -1882,8 +1882,10 @@ menu_run(struct ctrlmenu_context *menuctx,
 		//		goto done;
 		//	break;
 		case LeaveNotify:
-			if (is_popup)
+			if (is_popup) {
+				menu->selected = -1;
 				break;
+			}
 			if (xev.xcrossing.window == menu->window)
 				goto done;
 			break;
