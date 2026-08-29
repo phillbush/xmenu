@@ -1930,12 +1930,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				nentry = get_entry_index(menuctx, menu, xev.xmotion.y);
 				if (nentry == SCROLLUP || nentry == SCROLLDOWN)
 					scroll_loop(menuctx, menu, nentry);
-				if (nentry == TEAROFF)
-					menu->selected = nentry;
-				if ((double)(xev.xmotion.x - last_motion.x)/
-				    (xev.xmotion.time - last_motion.time) < 0.01) {
-					menu->selected = nentry;
-				}
+				menu->selected = nentry;
 			}
 			last_motion = xev.xmotion;
 			break;
