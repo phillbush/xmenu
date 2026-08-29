@@ -501,11 +501,9 @@ popup:
 				NULL, display, resources, leader, &event, menu
 			);
 		}
-		if (!rootmode && !has_tornoff(menus, nmenus)) {
-			goto done;
-		}
+		if (!rootmode && !has_tornoff(menus, nmenus))
+			break;
 	}
-done:
 
 	free(read_data);
 	free(menus[0].entries);
