@@ -37,11 +37,9 @@ Each entry read from standard input has the following tab-separated format
 (bracket groups optional elements):
 .D1 Oo Cm \et Ns ... Oc Oo Ar IMAGE Cm \et Ns ... Oc Ar LABEL Oo Cm \et Ns ... Ar OUTPUT Oc Cm "\en"
 or
-.D1 Oo Cm \et Ns ... Oc Oo Ar IMAGE Cm \et Ns ... Oc Cm "\(aq\(aq" Oo Cm \et Ns ... Ar OUTPUT Oc Cm "\en"
-or
 .D1 Oo Cm \et Ns ... Oc Oo Cm ":\)" Oc Cm "\en"
 .Pp
-The components are as follows:
+The syntactical elements are as follows:
 .Bl -tag -width "XXXXXX"
 .It Cm \et
 The initial tabs indicate the menu hierarchy:
@@ -62,13 +60,10 @@ the file is searched on the paths specified in the
 environment variable.
 .It Ar LABEL
 String that will be shown as an entry in the menu.
-An entry without label or with a single colon
-.Pq Ic \&:
-as label is considered a separator and is drawn as a thin line in the menu
-separating the entry above from the entry below.
 .It Ar OUTPUT
 String that will be output after selecting the entry.
-If an entry does not have tabs after the label, its label is used as its output.
+If an entry does not have tabs after the label,
+the label itself is used as its output.
 .Pp
 If the output is empty or is a colon
 .Pq Ic \&: ,
@@ -85,6 +80,14 @@ A directory's path can be output by selecting it with the middle mouse button.
 .It Cm "\en"
 The newline terminates the entry specification.
 .El
+.Pp
+On the second form, an empty entry with only the indentation tabs
+(and an optional colon
+.Pq Ic \&: ,
+to avoid having a blank line)
+is a separator, rather than an actual entry.
+The separator is drawn as a thin line in the menu,
+and separates the entries above from the entries below it.
 .Sh USAGE
 .Bl -tag -width "Left-/right-click" -compact
 .It Ic Left- Ns / Ns Ic right-click
