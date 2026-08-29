@@ -1874,13 +1874,6 @@ menu_run(struct ctrlmenu_context *menuctx,
 				break;
 			}
 			break;
-		//recurse:
-		//	if (submenu == NULL)
-		//		break;
-		//	close_all = submenu_run(menuctx, submenu, true);
-		//	if (close_all)
-		//		goto done;
-		//	break;
 		case LeaveNotify:
 			if (is_popup) {
 				menu->selected = -1;
