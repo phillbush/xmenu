@@ -1751,7 +1751,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				above = get_entry(
 					menuctx, menu->next, xev.xmotion.y
 				);
-				if (above != NULL &&
+				if (above != NULL && above->submenu != NULL &&
 				    above->submenu->entries == menu->entries) {
 					/*
 					 * Clicking, on ancestor menu, on entry
@@ -1891,8 +1891,9 @@ menu_run(struct ctrlmenu_context *menuctx,
 				above = get_entry(
 					menuctx, m->next, xev.xmotion.y
 				);
-				if (above != NULL &&
-				    above->submenu->entries == m->entries)
+				if (above == NULL || above->submenu == NULL)
+					continue;
+				if (above->submenu->entries == m->entries)
 					break;
 				/*
 				 * Pointer on ancestor menu, over entry which
