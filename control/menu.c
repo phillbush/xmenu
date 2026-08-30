@@ -1956,6 +1956,13 @@ menu_run(struct ctrlmenu_context *menuctx,
 			 */
 			if (entered && menu->selected != NULL &&
 			    menu->selected->type == CTRLMENU_CASCADE) {
+				struct ctrlmenu_entry *pointed_entry;
+
+				pointed_entry = get_entry(
+					menuctx, menu, last_motion.y
+				);
+				if (menu->selected != pointed_entry)
+					break;
 				close_all = submenu_run(
 					menuctx, menu,
 					menu->selected->submenu,
