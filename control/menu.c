@@ -1835,10 +1835,6 @@ menu_run(struct ctrlmenu_context *menuctx,
 				if (menu->selected == NULL)
 					break;
 				if (menu->selected->type == CTRLMENU_CASCADE) {
-					draw_commit(
-						menuctx, menu->selected->submenu,
-						menu->selected->submenu->selected = 0
-					);
 					close_all = submenu_run(
 						menuctx, menu,
 						menu->selected->submenu,
