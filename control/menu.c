@@ -1506,8 +1506,6 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			x_root--;
 	}
 
-	menu->selected = NULL;
-
 	menu->curr_screenful.first_entry = menu->last_screenful.first_entry = 0;
 	menu->curr_screenful.offset = menu->last_screenful.offset = 0;
 	menu->tornoff = windowed;
@@ -1658,7 +1656,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	);
 
 	draw_menu(menuctx, menu);
-	draw_commit(menuctx, menu, NULL);
+	draw_commit(menuctx, menu, menu->selected);
 	XMapRaised(menuctx->display, menu->window);
 }
 
@@ -1678,13 +1676,19 @@ menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	menu->tornoff = true;
 }
 
-#define submenu_run(ctx, parent, menu, entered, time) \
-	menu_run((ctx), (parent), (menu), 0, 0, true, (entered), (time))
+#define submenu_run(ctx, parent, menu, flags, time) \
+	menu_run((ctx), (parent), (menu), 0, 0, RUN_POPUP|(flags), (time))
+
+enum {
+	RUN_POPUP   = 0x01,     /* map menu before running its event loop */
+	RUN_ENTERED = 0x02,     /* run as if pointer has entered menu */
+	RUN_SELECT  = 0x04,     /* automatically select first entry */
+};
 
 static int
 menu_run(struct ctrlmenu_context *menuctx,
 		struct ctrlmenu *parent, struct ctrlmenu *orig_menu,
-		int x_root, int y_root, bool is_popup, bool entered, Time time)
+		int x_root, int y_root, int flags, Time time)
 {
 	static int MOTION_TIMEOUT = 300;
 	static XMotionEvent last_motion = {};
@@ -1694,7 +1698,11 @@ menu_run(struct ctrlmenu_context *menuctx,
 	XEvent xev;
 	bool close_all = false;
 
-	if (is_popup) {
+	if (flags & RUN_SELECT)
+		orig_menu->selected = select_first_entry(menuctx, orig_menu);
+	else
+		orig_menu->selected = NULL;
+	if (flags & RUN_POPUP) {
 		unsigned int width = 0;
 
 		*menu = (struct ctrlmenu){
@@ -1702,6 +1710,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			.title = orig_menu->title,
 			.entries = orig_menu->entries,
 			.nentries = orig_menu->nentries,
+			.selected = orig_menu->selected,
 		};
 		if (XGrabPointer(
 			menuctx->display, menuctx->root_window, True,
@@ -1729,7 +1738,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 	menu->next = parent;
 	prevselected = menu->selected;
 	for (;;) {
-		if (!next_event(menuctx->display, &xev, menu, &timeout, is_popup))
+		if (!next_event(menuctx->display, &xev, menu, &timeout, flags&RUN_POPUP))
 			goto done;
 		switch (xev.type) {
 		case ButtonPress:
@@ -1757,7 +1766,8 @@ menu_run(struct ctrlmenu_context *menuctx,
 					 * Clicking, on ancestor menu, on entry
 					 * which triggers current menu.
 					 */
-					if (!entered) entered = true;
+					if (!(flags&RUN_ENTERED))
+						flags |= RUN_ENTERED;
 					else goto done;
 					break;
 				}
@@ -1786,7 +1796,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			if (menu->selected->type == CTRLMENU_CASCADE) {
 				close_all = submenu_run(
 					menuctx, menu, menu->selected->submenu,
-					true, xev.xbutton.time
+					RUN_ENTERED, xev.xbutton.time
 				);
 				if (close_all)
 					goto done;
@@ -1838,7 +1848,8 @@ menu_run(struct ctrlmenu_context *menuctx,
 					close_all = submenu_run(
 						menuctx, menu,
 						menu->selected->submenu,
-						true, xev.xbutton.time
+						RUN_ENTERED|RUN_SELECT,
+						xev.xbutton.time
 					);
 					if (close_all)
 						goto done;
@@ -1865,13 +1876,13 @@ menu_run(struct ctrlmenu_context *menuctx,
 		case EnterNotify:
 			if (xev.xcrossing.window != menu->window)
 				break;
-			if (!entered) {
-				entered = true;
+			if (!(flags&RUN_ENTERED)) {
+				flags |= RUN_ENTERED;
 				break;
 			}
 			break;
 		case LeaveNotify:
-			if (is_popup) {
+			if (flags & RUN_POPUP) {
 				menu->selected = NULL;
 				break;
 			}
@@ -1895,7 +1906,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				 * Pointer on ancestor menu, over entry which
 				 * does not descends into current menu.
 				 */
-				if (!entered && (above == NULL ||
+				if (!(flags&RUN_ENTERED) && (above == NULL ||
 				    above->submenu->entries != menu->entries) &&
 				    xev.xmotion.window == last_motion.window &&
 				    (double)(xev.xmotion.x - last_motion.x)/
@@ -1908,7 +1919,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 					XPutBackEvent(menuctx->display, &xev);
 					goto done;
 				}
-				if (!entered) {
+				if (!(flags&RUN_ENTERED)) {
 					timeout = MOTION_TIMEOUT;
 					break;
 				}
@@ -1951,7 +1962,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			 * no submenu is being previewed and a time has passed;
 			 * preview a submenu if possible
 			 */
-			if (entered && menu->selected != NULL &&
+			if ((flags&RUN_ENTERED) && menu->selected != NULL &&
 			    menu->selected->type == CTRLMENU_CASCADE) {
 				struct ctrlmenu_entry *pointed_entry;
 
@@ -1963,7 +1974,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				close_all = submenu_run(
 					menuctx, menu,
 					menu->selected->submenu,
-					false, last_motion.time
+					0, last_motion.time
 				);
 				if (close_all)
 					goto done;
@@ -1982,7 +1993,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			 */
 			continue;
 		default:
-			if (is_popup)
+			if (flags & RUN_POPUP)
 				break;
 			goto done;
 		}
@@ -1996,9 +2007,8 @@ menu_run(struct ctrlmenu_context *menuctx,
 done:
 	menu->selected = NULL;
 	draw_commit(menuctx, menu, menu->selected);
-	if (is_popup) {
+	if (flags & RUN_POPUP)
 		ctrlmenu_close(menuctx->display, menu);
-	}
 	menu->next = NULL;
 	return close_all;
 }
@@ -2134,7 +2144,10 @@ ctrlmenu_handle_event(void *ctx, Display *display, XrmDatabase xdb,
 		) == RETURN_FAILURE)
 			return;
 		XPutBackEvent(display, event);
-		(void)menu_run(&menuctx, NULL, menu, 0, 0, false, true, CurrentTime);
+		(void)menu_run(
+			&menuctx, NULL, menu, 0, 0,
+			RUN_ENTERED, CurrentTime
+		);
 		XUngrabPointer(display, CurrentTime);
 		XUngrabKeyboard(display, CurrentTime);
 		context_cleanup(&menuctx);
@@ -2153,7 +2166,10 @@ ctrlmenu_popup(void *ctx, Display *display, Drawable reference,
 	) == RETURN_FAILURE)
 		return;
 
-	(void)menu_run(&menuctx, NULL, menu, x_root, y_root, true, true, timestamp);
+	(void)menu_run(
+		&menuctx, NULL, menu, x_root, y_root,
+		RUN_POPUP|RUN_ENTERED, timestamp
+	);
 	XUngrabPointer(display, CurrentTime);
 	XUngrabKeyboard(display, CurrentTime);
 	context_cleanup(&menuctx);
