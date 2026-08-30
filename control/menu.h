@@ -42,7 +42,7 @@ struct ctrlmenu {
 	size_t nentries;
 
 	struct ctrlmenu *next;
-	ssize_t selected;
+	struct ctrlmenu_entry *selected;
 	XRectangle window_geometry;
 	int canvas_width, canvas_height;
 	int total_height;

@@ -31,9 +31,14 @@
 #define TRIANGLE_PAD(wid)       TRIANGLE_HEIGHT(wid)
 
 /* unindexable indices for special entries */
-static ssize_t TEAROFF    = -100;
-static ssize_t SCROLLUP   = -200;
-static ssize_t SCROLLDOWN = -300;
+#define MAKE_DUMMY_ENTRY(str) (&(struct ctrlmenu_entry){\
+	.type = CTRLMENU_SEPARATOR,\
+	.label = (str),\
+	.labellen = sizeof(str)-1\
+})
+static struct ctrlmenu_entry *TEAR_OFF    = MAKE_DUMMY_ENTRY("TEAR_OFF");
+static struct ctrlmenu_entry *SCROLL_UP   = MAKE_DUMMY_ENTRY("SCROLL_UP");
+static struct ctrlmenu_entry *SCROLL_DOWN = MAKE_DUMMY_ENTRY("SCROLL_DOWN");
 
 enum {
 	DIR_UP,
@@ -365,34 +370,25 @@ reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase xdb)
  */
 
 static struct ctrlmenu_entry *
-get_entry(struct ctrlmenu *menu, ssize_t entryc)
+get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 {
-	if (entryc >= 0 && entryc < (ssize_t)menu->nentries)
-		return &menu->entries[entryc];
-	return NULL;
-}
+	long h = menuctx->inner_border_width;
 
-static ssize_t
-get_entry_index(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
-{
-	long h;
-
-	h = menuctx->inner_border_width;
 	if (menu->tearable) {
 		if (y < h + menuctx->separatorh)
-			return TEAROFF;
+			return TEAR_OFF;
 		h += menuctx->separatorh;
 	}
 	if (menu->overflow && y < h + menuctx->separatorh) {
-		return SCROLLUP;
+		return SCROLL_UP;
 	}
 	if (menu->overflow && y >= menu->window_geometry.height - menuctx->separatorh) {
-		return SCROLLDOWN;
+		return SCROLL_DOWN;
 	}
 	if (menu->overflow)
 		h += menuctx->separatorh;
-	for (size_t entryc = menu->curr_screenful.first_entry; entryc < menu->nentries; entryc++) {
-		struct ctrlmenu_entry *entry = &menu->entries[entryc];
+	for (size_t i = menu->curr_screenful.first_entry; i < menu->nentries; i++) {
+		struct ctrlmenu_entry *entry = &menu->entries[i];
 		if (entry->type == CTRLMENU_SEPARATOR) {
 			h += menuctx->separatorh;
 			continue;
@@ -402,7 +398,7 @@ get_entry_index(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 			continue;
 		}
 		if (y >= h && y < (long)h + menuctx->entryh)
-			return entryc;
+			return entry;
 		h += menuctx->entryh;
 		if (menu->overflow &&
 		    h + menuctx->entryh + menuctx->inner_border_width >=
@@ -410,50 +406,47 @@ get_entry_index(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 			break;
 		}
 	}
-	return -1;
+	return NULL;
 }
 
 static int
-get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, int selected)
+get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu_entry *entry)
 {
-	if (menu->tearable && selected == TEAROFF)
-		return menuctx->separatorh;
-	if (menu->overflow && (selected == SCROLLDOWN || selected == SCROLLUP))
-		return menuctx->separatorh;
-	if (selected < 0 || selected >= (ssize_t)menu->nentries)
+	if (entry == NULL)
 		return 0;
-	if (menu->entries[selected].label != NULL)
-		return menuctx->entryh;
-	else
+	if (entry->type == CTRLMENU_SEPARATOR)
 		return menuctx->separatorh;
+	else
+		return menuctx->entryh;
 }
 
 static int
-get_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, int selected)
+get_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
+		struct ctrlmenu_entry *entry)
 {
 	int ypos = menuctx->inner_border_width;
 
+	if (entry == NULL)
+		return -1;
 	if (menu->tearable) {
-		if (selected == TEAROFF)
+		if (entry == TEAR_OFF)
 			return ypos;
 		ypos += menuctx->separatorh;
 	}
 	if (menu->overflow) {
-		if (selected == SCROLLDOWN)
+		if (entry == SCROLL_DOWN)
 			return menu->total_height - menuctx->separatorh
 			- menuctx->inner_border_width;
-		if (selected == SCROLLUP)
+		if (entry == SCROLL_UP)
 			return ypos;
 		ypos += menuctx->separatorh;
 	}
-	if (selected < 0 || selected >= (ssize_t)menu->nentries)
-		return -1;
-	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
-		struct ctrlmenu_entry *entry = &menu->entries[entryc];
+	for (size_t i = 0; i < menu->nentries; i++) {
+		struct ctrlmenu_entry *e = &menu->entries[i];
 
-		if ((ssize_t)entryc == selected)
+		if (e == entry)
 			return ypos;
-		if (entry->type == CTRLMENU_SEPARATOR)
+		if (e->type == CTRLMENU_SEPARATOR)
 			ypos += menuctx->separatorh;
 		else
 			ypos += menuctx->entryh;
@@ -1035,7 +1028,8 @@ next:
 }
 
 static void
-draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t selected)
+draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
+		struct ctrlmenu_entry *entry)
 {
 	int src_canvas_y, dst_canvas_y;
 
@@ -1067,11 +1061,11 @@ draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t sel
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
-			0, get_entry_ypos(menuctx, menu, TEAROFF),
+			0, get_entry_ypos(menuctx, menu, TEAR_OFF),
 			0, 0,
-			0, get_entry_ypos(menuctx, menu, TEAROFF),
+			0, get_entry_ypos(menuctx, menu, TEAR_OFF),
 			menu->window_geometry.width,
-			get_entry_height(menuctx, menu, TEAROFF)
+			get_entry_height(menuctx, TEAR_OFF)
 		);
 	}
 	if (menu->overflow) {
@@ -1081,11 +1075,11 @@ draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t sel
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
-			0, get_entry_ypos(menuctx, menu, SCROLLUP),
+			0, get_entry_ypos(menuctx, menu, SCROLL_UP),
 			0, 0,
-			0, get_entry_ypos(menuctx, menu, SCROLLUP),
+			0, get_entry_ypos(menuctx, menu, SCROLL_UP),
 			menu->window_geometry.width,
-			get_entry_height(menuctx, menu, SCROLLUP)
+			get_entry_height(menuctx, SCROLL_UP)
 		);
 		XRenderComposite(
 			menuctx->display,
@@ -1093,20 +1087,20 @@ draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t sel
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
-			0, get_entry_ypos(menuctx, menu, SCROLLDOWN),
+			0, get_entry_ypos(menuctx, menu, SCROLL_DOWN),
 			0, 0,
 			0, menu->window_geometry.height
-			- get_entry_height(menuctx, menu, SCROLLDOWN)
+			- get_entry_height(menuctx, SCROLL_DOWN)
 			- menuctx->inner_border_width,
 			menu->window_geometry.width,
-			get_entry_height(menuctx, menu, SCROLLDOWN)
+			get_entry_height(menuctx, SCROLL_DOWN)
 		);
 	}
-	src_canvas_y = get_entry_ypos(menuctx, menu, selected);
-	if (selected == SCROLLDOWN)
+	src_canvas_y = get_entry_ypos(menuctx, menu, entry);
+	if (entry == SCROLL_DOWN)
 		dst_canvas_y = menu->window_geometry.height
 		             - menuctx->separatorh - menuctx->inner_border_width;
-	else if (selected == SCROLLUP || selected == TEAROFF)
+	else if (entry == SCROLL_UP || entry == TEAR_OFF)
 		dst_canvas_y = src_canvas_y;
 	else
 		dst_canvas_y = src_canvas_y - menu->curr_screenful.offset;
@@ -1121,7 +1115,7 @@ draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t sel
 			0, 0,
 			0, dst_canvas_y,
 			menu->window_geometry.width,
-			get_entry_height(menuctx, menu, selected)
+			get_entry_height(menuctx, entry)
 		);
 	}
 	draw_shadows(
@@ -1262,7 +1256,10 @@ scroll_down(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, int diff)
 		return;
 	}
 	while (height < diff && menu->curr_screenful.first_entry + 1 < menu->nentries) {
-		height = get_entry_height(menuctx, menu, menu->curr_screenful.first_entry);
+		height = get_entry_height(
+			menuctx,
+			&menu->entries[menu->curr_screenful.first_entry]
+		);
 		menu->curr_screenful.first_entry++;
 		menu->curr_screenful.offset += height;
 	}
@@ -1274,14 +1271,18 @@ scroll_up(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, int diff)
 	int height = 0;
 
 	while (height < diff && menu->curr_screenful.first_entry > 0) {
-		height = get_entry_height(menuctx, menu, menu->curr_screenful.first_entry);
+		height = get_entry_height(
+			menuctx,
+			&menu->entries[menu->curr_screenful.first_entry]
+		);
 		menu->curr_screenful.first_entry--;
 		menu->curr_screenful.offset -= height;
 	}
 }
 
 static void
-scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t nentry)
+scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
+		struct ctrlmenu_entry *entry)
 {
 	static int const SCROLL_TIME = 32;
 	int timeout = SCROLL_TIME;
@@ -1295,19 +1296,19 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t nen
 		case MotionNotify: case ButtonPress: case ButtonRelease:
 			if (event.xmotion.window != menu->window)
 				return;
-			if (get_entry_index(menuctx, menu, event.xmotion.y) != nentry) {
+			if (get_entry(menuctx, menu, event.xmotion.y) != entry) {
 				XPutBackEvent(menuctx->display, &event);
 				return;
 			}
 			break;
 		case TimeoutNotify:
 			timeout = SCROLL_TIME;
-			if (nentry == SCROLLDOWN)
+			if (entry == SCROLL_DOWN)
 				scroll_down(menuctx, menu, menuctx->entryh);
 			else
 				scroll_up(menuctx, menu, menuctx->entryh);
 			if (menu->curr_screenful.offset != last_offset)
-				draw_commit(menuctx, menu, nentry);
+				draw_commit(menuctx, menu, entry);
 			last_offset = menu->curr_screenful.offset;
 			XFlush(menuctx->display);
 			break;
@@ -1322,86 +1323,92 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t nen
  * entry selection routines
  */
 
-static ssize_t
+static struct ctrlmenu_entry *
 select_first_entry(struct ctrlmenu_context *, struct ctrlmenu *menu)
 {
 	menu->curr_screenful.first_entry = 0;
 	menu->curr_screenful.offset = 0;
-	for (ssize_t entryc = 0; entryc < (ssize_t)menu->nentries; entryc++) {
-		struct ctrlmenu_entry *entry = &menu->entries[entryc];
+	for (size_t i = 0; i < menu->nentries; i++) {
+		struct ctrlmenu_entry *entry = &menu->entries[i];
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return entryc;
+			return entry;
 		}
 	}
-	return -1;
+	return NULL;
 }
 
-static ssize_t
+static struct ctrlmenu_entry *
 select_last_entry(struct ctrlmenu_context *, struct ctrlmenu *menu)
 {
 	menu->curr_screenful = menu->last_screenful;
-	for (ssize_t entryc = menu->nentries - 1; entryc >= 0; entryc--) {
-		struct ctrlmenu_entry *entry = &menu->entries[entryc];
+	if (menu->nentries == 0)
+		return NULL;
+	for (size_t i = menu->nentries - 1; i >= 0; i--) {
+		struct ctrlmenu_entry *entry = &menu->entries[i];
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return entryc;
+			return entry;
 		}
 	}
-	return -1;
+	return NULL;
 }
 
-static ssize_t
-select_prev_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t selected)
+static struct ctrlmenu_entry *
+select_prev_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	int ypos, height;
 	int scroll_threshold;
 
-	if (selected < 0)
+	if (menu->selected == NULL || menu->selected == SCROLL_DOWN ||
+	    menu->selected == TEAR_OFF || menu->selected == SCROLL_UP ||
+	    menu->selected == menu->entries)
 		return select_last_entry(menuctx, menu);
-	scroll_threshold = menuctx->inner_border_width + get_entry_height(menuctx, menu, SCROLLUP);
+	scroll_threshold = menuctx->inner_border_width
+	                 + get_entry_height(menuctx, SCROLL_UP);
 	if (menu->tearable)
-		scroll_threshold += get_entry_height(menuctx, menu, TEAROFF);
-	ypos = get_entry_ypos(menuctx, menu, selected);
-	height = get_entry_height(menuctx, menu, selected);
-	for (ssize_t entryc = selected - 1; entryc >= 0; entryc--) {
-		struct ctrlmenu_entry *entry = &menu->entries[entryc];
-
+		scroll_threshold += get_entry_height(menuctx, TEAR_OFF);
+	ypos = get_entry_ypos(menuctx, menu, menu->selected);
+	height = get_entry_height(menuctx, menu->selected);
+	for (struct ctrlmenu_entry *entry = menu->selected;
+	     entry > menu->entries; ) {
+		entry--;
 		if (menu->overflow) {
 			ypos -= height;
-			height = get_entry_height(menuctx, menu, entryc);
+			height = get_entry_height(menuctx, entry);
 			if (ypos - menu->curr_screenful.offset < scroll_threshold) {
 				scroll_up(menuctx, menu, height);
 			}
 		}
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return entryc;
+			return entry;
 		}
 	}
 	return select_last_entry(menuctx, menu);
 }
 
-static ssize_t
-select_next_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t selected)
+static struct ctrlmenu_entry *
+select_next_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	int ypos, height;
 	int scroll_threshold = menu->window_geometry.height
 	                     - menuctx->separatorh - menuctx->inner_border_width;
 
-	if (selected < 0)
+	if (menu->selected == NULL || menu->selected == SCROLL_DOWN ||
+	    menu->selected == TEAR_OFF || menu->selected == SCROLL_UP ||
+	    menu->selected == menu->entries + menu->nentries - 1)
 		return select_first_entry(menuctx, menu);
-	ypos = get_entry_ypos(menuctx, menu, selected);
-	height = get_entry_height(menuctx, menu, selected);
-	for (ssize_t entryc = selected+1; entryc < (ssize_t)menu->nentries; entryc++) {
-		struct ctrlmenu_entry *entry = &menu->entries[entryc];
-
+	ypos = get_entry_ypos(menuctx, menu, menu->selected);
+	height = get_entry_height(menuctx, menu->selected);
+	for (struct ctrlmenu_entry *entry = menu->selected;
+	     ++entry < menu->entries + menu->nentries; ) {
 		if (menu->overflow) {
 			ypos += height;
-			height = get_entry_height(menuctx, menu, entryc);
+			height = get_entry_height(menuctx, entry);
 			if (ypos - menu->curr_screenful.offset > scroll_threshold) {
 				scroll_down(menuctx, menu, height);
 			}
 		}
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return entryc;
+			return entry;
 		}
 	}
 	return select_first_entry(menuctx, menu);
@@ -1425,18 +1432,16 @@ xsleep(unsigned int usec)
 }
 
 static void
-activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t nentry, bool alt)
+activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, bool alt)
 {
-	struct ctrlmenu_entry *entry;
-
 	/* blink */
-	draw_commit(menuctx, menu, -1);
+	draw_commit(menuctx, menu, NULL);
 	XSync(menuctx->display, False); xsleep(60000);
-	draw_commit(menuctx, menu, nentry);
+	draw_commit(menuctx, menu, menu->selected);
 	XSync(menuctx->display, False); xsleep(60000);
-	draw_commit(menuctx, menu, -1);
+	draw_commit(menuctx, menu, NULL);
 	XSync(menuctx->display, False); xsleep(60000);
-	draw_commit(menuctx, menu, nentry);
+	draw_commit(menuctx, menu, menu->selected);
 	while (XCheckMaskEvent(
 		menuctx->display,
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
@@ -1444,9 +1449,8 @@ activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, ssize_t 
 	))
 		;
 
-	entry = get_entry(menu, menu->selected);
-	if (entry != NULL && entry->type == CTRLMENU_COMMAND)
-		entry->callback(menuctx->ctx, entry->self, alt);
+	if (menu->selected != NULL && menu->selected->type == CTRLMENU_COMMAND)
+		menu->selected->callback(menuctx->ctx, menu->selected->self, alt);
 }
 
 
@@ -1502,7 +1506,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			x_root--;
 	}
 
-	menu->selected = -1;
+	menu->selected = NULL;
 
 	menu->curr_screenful.first_entry = menu->last_screenful.first_entry = 0;
 	menu->curr_screenful.offset = menu->last_screenful.offset = 0;
@@ -1539,7 +1543,8 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		menu->window_geometry.width = MAX(menu->window_geometry.width, textw);
 		if (menu->overflow) {
 			menu->last_screenful.offset += get_entry_height(
-				menuctx, menu, menu->last_screenful.first_entry
+				menuctx,
+				&menu->entries[menu->last_screenful.first_entry]
 			);
 			menu->last_screenful.first_entry++;
 			continue;
@@ -1653,7 +1658,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	);
 
 	draw_menu(menuctx, menu);
-	draw_commit(menuctx, menu, -1);
+	draw_commit(menuctx, menu, NULL);
 	XMapRaised(menuctx->display, menu->window);
 }
 
@@ -1684,7 +1689,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 	static int MOTION_TIMEOUT = 300;
 	static XMotionEvent last_motion = {};
 	static int timeout = 0;
-	ssize_t prevselected;
+	struct ctrlmenu_entry *prevselected;
 	struct ctrlmenu *menu = &(struct ctrlmenu){};
 	XEvent xev;
 	bool close_all = false;
@@ -1737,17 +1742,15 @@ menu_run(struct ctrlmenu_context *menuctx,
 			break;
 		case ButtonRelease:
 		{
-			struct ctrlmenu_entry *entry;
-
 			if (xev.xbutton.button > Button3)
 				break;
 			if (menu->next != NULL &&
 			    xev.xbutton.window == menu->next->window) {
 				struct ctrlmenu_entry *above;
 
-				above = get_entry(menu->next, get_entry_index(
+				above = get_entry(
 					menuctx, menu->next, xev.xmotion.y
-				));
+				);
 				if (above != NULL &&
 				    above->submenu->entries == menu->entries) {
 					/*
@@ -1763,8 +1766,8 @@ menu_run(struct ctrlmenu_context *menuctx,
 				XPutBackEvent(menuctx->display, &xev);
 				goto done;
 			}
-			menu->selected = get_entry_index(menuctx, menu, xev.xbutton.y);
-			if (menu->selected == TEAROFF) {
+			menu->selected = get_entry(menuctx, menu, xev.xbutton.y);
+			if (menu->selected == TEAR_OFF) {
 				if (orig_menu->tornoff) {
 					menu_untear(menuctx->display, orig_menu);
 				} else {
@@ -1778,20 +1781,19 @@ menu_run(struct ctrlmenu_context *menuctx,
 				goto done;
 			}
 			draw_commit(menuctx, menu, menu->selected);
-			entry = get_entry(menu, menu->selected);
-			if (entry == NULL)
+			if (menu->selected == NULL)
 				break;
-			if (entry->type == CTRLMENU_CASCADE) {
+			if (menu->selected->type == CTRLMENU_CASCADE) {
 				close_all = submenu_run(
-					menuctx, menu, entry->submenu,
+					menuctx, menu, menu->selected->submenu,
 					true, xev.xbutton.time
 				);
 				if (close_all)
 					goto done;
 				break;
-			} else if (entry->type == CTRLMENU_COMMAND) {
+			} else if (menu->selected->type == CTRLMENU_COMMAND) {
 				activate_entry(
-					menuctx, menu, menu->selected,
+					menuctx, menu,
 					(xev.xbutton.state & ShiftMask) ||
 					(xev.xbutton.button == Button2)
 				);
@@ -1821,27 +1823,25 @@ menu_run(struct ctrlmenu_context *menuctx,
 			if (ksym == XK_Tab && FLAG(xev.xkey.state, ShiftMask))
 				ksym = XK_ISO_Left_Tab;
 			if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab) {
-				menu->selected = select_prev_entry(menuctx, menu, menu->selected);
+				menu->selected = select_prev_entry(menuctx, menu);
 			} else if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab) {
-				menu->selected = select_next_entry(menuctx, menu, menu->selected);
+				menu->selected = select_next_entry(menuctx, menu);
 			} else if (ksym == XK_Home || ksym == XK_KP_Home) {
 				menu->selected = select_first_entry(menuctx, menu);
 			} else if (ksym == XK_End || ksym == XK_KP_End) {
 				menu->selected = select_last_entry(menuctx, menu);
 			} else if (ksym == XK_Right || ksym == XK_KP_Right ||
 			           ksym == XK_Return || ksym == XK_KP_Enter) {
-				struct ctrlmenu_entry *entry;
-
-				entry = get_entry(menu, menu->selected);
-				if (entry == NULL)
+				if (menu->selected == NULL)
 					break;
-				if (entry->type == CTRLMENU_CASCADE) {
+				if (menu->selected->type == CTRLMENU_CASCADE) {
 					draw_commit(
-						menuctx, entry->submenu,
-						entry->submenu->selected = 0
+						menuctx, menu->selected->submenu,
+						menu->selected->submenu->selected = 0
 					);
 					close_all = submenu_run(
-						menuctx, menu, entry->submenu,
+						menuctx, menu,
+						menu->selected->submenu,
 						true, xev.xbutton.time
 					);
 					if (close_all)
@@ -1849,7 +1849,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 					break;
 				} else {
 					activate_entry(
-						menuctx, menu, menu->selected,
+						menuctx, menu,
 						xev.xkey.state & ShiftMask
 					);
 					xev.xkey.keycode = XKeysymToKeycode(
@@ -1876,7 +1876,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			break;
 		case LeaveNotify:
 			if (is_popup) {
-				menu->selected = -1;
+				menu->selected = NULL;
 				break;
 			}
 			if (xev.xcrossing.window == menu->window)
@@ -1885,14 +1885,12 @@ menu_run(struct ctrlmenu_context *menuctx,
 		case MotionNotify:
 			for (struct ctrlmenu *m = menu; m->next != NULL; m = m->next) {
 				struct ctrlmenu_entry *above;
-				ssize_t above_index;
 
 				if (xev.xmotion.window != m->next->window)
 					continue;
-				above_index = get_entry_index(
+				above = get_entry(
 					menuctx, m->next, xev.xmotion.y
 				);
-				above = get_entry(m->next, above_index);
 				if (above != NULL &&
 				    above->submenu->entries == m->entries)
 					break;
@@ -1905,7 +1903,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				    xev.xmotion.window == last_motion.window &&
 				    (double)(xev.xmotion.x - last_motion.x)/
 				    (xev.xmotion.time - last_motion.time) < 0.01) {
-					m->next->selected = above_index;
+					m->next->selected = above;
 					draw_commit(
 						menuctx, m->next,
 						m->next->selected
@@ -1921,30 +1919,29 @@ menu_run(struct ctrlmenu_context *menuctx,
 				goto done;
 			}
 			if (xev.xmotion.window == menu->window) {
-				ssize_t nentry;
-				nentry = get_entry_index(menuctx, menu, xev.xmotion.y);
-				if (nentry == SCROLLUP || nentry == SCROLLDOWN)
-					scroll_loop(menuctx, menu, nentry);
-				menu->selected = nentry;
+				struct ctrlmenu_entry *entry;
+				entry = get_entry(menuctx, menu, xev.xmotion.y);
+				if (entry == SCROLL_UP || entry == SCROLL_DOWN)
+					scroll_loop(menuctx, menu, entry);
+				menu->selected = entry;
 			}
 			last_motion = xev.xmotion;
 			break;
 		case TimeoutNotify:
-			ssize_t pointed_index;
-			struct ctrlmenu_entry *sel_entry;
-
 			/*
 			 * select entry below pointer after a delay, to
 			 * allow user move pointer into subwindow.
 			 */
 			if (menu->next != NULL &&
 			    last_motion.window == menu->next->window) {
-				pointed_index = get_entry_index(
+				struct ctrlmenu_entry *pointed_entry;
+
+				pointed_entry = get_entry(
 					menuctx, menu->next, last_motion.y
 				);
-				if (menu->next->selected == pointed_index)
+				if (menu->next->selected == pointed_entry)
 					break;
-				menu->next->selected = pointed_index;
+				menu->next->selected = pointed_entry;
 				draw_commit(
 					menuctx, menu->next,
 					menu->next->selected
@@ -1957,11 +1954,11 @@ menu_run(struct ctrlmenu_context *menuctx,
 			 * no submenu is being previewed and a time has passed;
 			 * preview a submenu if possible
 			 */
-			sel_entry = get_entry(menu, menu->selected);
-			if (entered && sel_entry != NULL &&
-			    sel_entry->type == CTRLMENU_CASCADE) {
+			if (entered && menu->selected != NULL &&
+			    menu->selected->type == CTRLMENU_CASCADE) {
 				close_all = submenu_run(
-					menuctx, menu, sel_entry->submenu,
+					menuctx, menu,
+					menu->selected->submenu,
 					false, last_motion.time
 				);
 				if (close_all)
@@ -1993,7 +1990,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 		}
 	}
 done:
-	menu->selected = -1;
+	menu->selected = NULL;
 	draw_commit(menuctx, menu, menu->selected);
 	if (is_popup) {
 		ctrlmenu_close(menuctx->display, menu);
