@@ -1903,7 +1903,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 					if (close_all)
 						goto done;
 					break;
-				} else {
+				} else if (ksym == XK_Return || ksym == XK_KP_Enter) {
 					activate_entry(
 						menuctx, menu,
 						xev.xkey.state & ShiftMask
@@ -1920,7 +1920,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				goto done;
 			} else if (ksym == XK_Left || ksym == XK_KP_Left) {
 				if (menu->next == NULL)
-					goto done;
+					break;
 				if (menu->selected == NULL) {
 					XPutBackEvent(menuctx->display, &xev);
 					goto done;
