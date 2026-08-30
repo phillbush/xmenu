@@ -1833,15 +1833,64 @@ menu_run(struct ctrlmenu_context *menuctx,
 			if (ksym == XK_Tab && FLAG(xev.xkey.state, ShiftMask))
 				ksym = XK_ISO_Left_Tab;
 			if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab) {
-				menu->selected = select_prev_entry(menuctx, menu);
+				if (flags & RUN_ENTERED) {
+					menu->selected = select_prev_entry(menuctx, menu);
+				} else if (menu->next != NULL) {
+					/* navigating on parent menu */
+					menu->next->selected = select_prev_entry(
+						menuctx, menu->next
+					);
+					draw_commit(
+						menuctx, menu->next,
+						menu->next->selected
+					);
+				}
 			} else if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab) {
-				menu->selected = select_next_entry(menuctx, menu);
+				if (flags & RUN_ENTERED) {
+					menu->selected = select_next_entry(menuctx, menu);
+				} else if (menu->next != NULL) {
+					/* navigating on parent menu */
+					menu->next->selected = select_next_entry(
+						menuctx, menu->next
+					);
+					draw_commit(
+						menuctx, menu->next,
+						menu->next->selected
+					);
+				}
 			} else if (ksym == XK_Home || ksym == XK_KP_Home) {
-				menu->selected = select_first_entry(menuctx, menu);
+				if (flags & RUN_ENTERED) {
+					menu->selected = select_first_entry(menuctx, menu);
+				} else if (menu->next != NULL) {
+					/* navigating on parent menu */
+					menu->next->selected = select_first_entry(
+						menuctx, menu->next
+					);
+					draw_commit(
+						menuctx, menu->next,
+						menu->next->selected
+					);
+				}
 			} else if (ksym == XK_End || ksym == XK_KP_End) {
-				menu->selected = select_last_entry(menuctx, menu);
+				if (flags & RUN_ENTERED) {
+					menu->selected = select_last_entry(menuctx, menu);
+				} else if (menu->next != NULL) {
+					/* navigating on parent menu */
+					menu->next->selected = select_last_entry(
+						menuctx, menu->next
+					);
+					draw_commit(
+						menuctx, menu->next,
+						menu->next->selected
+					);
+				}
 			} else if (ksym == XK_Right || ksym == XK_KP_Right ||
 			           ksym == XK_Return || ksym == XK_KP_Enter) {
+				if (!(flags & RUN_ENTERED) && menu->next != NULL) {
+					/* navigating on parent menu */
+					XPutBackEvent(menuctx->display, &xev);
+					goto done;
+				}
 				if (menu->selected == NULL)
 					break;
 				if (menu->selected->type == CTRLMENU_CASCADE) {
@@ -1870,7 +1919,18 @@ menu_run(struct ctrlmenu_context *menuctx,
 				close_all = true;
 				goto done;
 			} else if (ksym == XK_Left || ksym == XK_KP_Left) {
-				goto done;
+				if (menu->next == NULL)
+					goto done;
+				if (menu->selected == NULL) {
+					XPutBackEvent(menuctx->display, &xev);
+					goto done;
+				}
+				if (flags & RUN_ENTERED) {
+					/* navigate on parent menu */
+					menu->selected = NULL;
+					flags &= ~RUN_ENTERED;
+					break;
+				}
 			}
 			break;
 		case EnterNotify:
