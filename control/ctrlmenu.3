@@ -11,13 +11,15 @@
 .In control/menu.h
 .Bd -literal
 struct ctrlmenu {
-	Window window;
+	/* caller program must set these: */
 	char const *title;
-
 	struct ctrlmenu_entry *entries;
 	size_t nentries;
 
-	/* ...other members that the caller program shall not mess with*/
+	/* caller program can get these: */
+	Window window;
+
+	/* caller program shall ignore remaining members */
 };
 
 struct ctrlmenu_entry {
@@ -28,7 +30,6 @@ struct ctrlmenu_entry {
 	} type;
 
 	char *label;
-
 	bool disabled;
 
 	void (*callback)(void *ctx, void *self, bool alt);
