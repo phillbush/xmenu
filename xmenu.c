@@ -168,7 +168,6 @@ fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 		size_t linelen = strcspn(line, "\n");
 
 		entry_indentlvl = strspn(line, "\t");
-		entry->callback = callback;
 		if (entry_indentlvl < menu_indentlvl) {
 			break;
 		} else if (entry_indentlvl > menu_indentlvl) {
@@ -199,6 +198,7 @@ fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 			output = entry->label + labellen;
 			output += strspn(output, "\t");
 			entry->label[labellen] = '\0';
+			entry->callback = callback;
 
 			if (*entry->label == '\0')
 				entry->label = NULL;
