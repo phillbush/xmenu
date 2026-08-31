@@ -34,7 +34,6 @@
 #define MAKE_DUMMY_ENTRY(str) (&(struct ctrlmenu_entry){\
 	.type = CTRLMENU_SEPARATOR,\
 	.label = (str),\
-	.labellen = sizeof(str)-1\
 })
 static struct ctrlmenu_entry *TEAR_OFF    = MAKE_DUMMY_ENTRY("TEAR_OFF");
 static struct ctrlmenu_entry *SCROLL_UP   = MAKE_DUMMY_ENTRY("SCROLL_UP");
@@ -824,6 +823,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	entry_geometry.width = menu->window_geometry.width;
 	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
 		struct ctrlmenu_entry *entry = &menu->entries[entryc];
+		size_t labellen;
 		//Imlib_Image image;
 
 		if (entry->type == CTRLMENU_SEPARATOR) {
@@ -886,11 +886,8 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 				DIR_RIGHT
 			);
 		}
-		textw = ctrlfnt_width(
-			menuctx->fontset,
-			entry->label,
-			entry->labellen
-		);
+		labellen = strlen(entry->label);
+		textw = ctrlfnt_width(menuctx->fontset, entry->label, labellen);
 		if (menuctx->alignment == ALIGN_RIGHT && menu->hassubmenu)
 			textx = entry_geometry.width - textw - PADDING - TRIANGLE_WIDTH(menuctx) - TRIANGLE_PAD(menuctx);
 		else if (menuctx->alignment == ALIGN_RIGHT)
@@ -910,8 +907,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 					.width = entry_geometry.width,
 					.height = entry_geometry.height,
 				},
-				entry->label,
-				entry->labellen
+				entry->label, labellen
 			);
 			ctrlfnt_draw(
 				menuctx->fontset,
@@ -923,8 +919,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 					.width = entry_geometry.width,
 					.height = entry_geometry.height,
 				},
-				entry->label,
-				entry->labellen
+				entry->label, labellen
 			);
 		} else {
 			ctrlfnt_draw(
@@ -937,8 +932,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 					.width = entry_geometry.width,
 					.height = entry_geometry.height,
 				},
-				entry->label,
-				entry->labellen
+				entry->label, labellen
 			);
 			ctrlfnt_draw(
 				menuctx->fontset,
@@ -950,8 +944,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 					.width = entry_geometry.width,
 					.height = entry_geometry.height,
 				},
-				entry->label,
-				entry->labellen
+				entry->label, labellen
 			);
 			ctrlfnt_draw(
 				menuctx->fontset,
@@ -963,8 +956,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 					.width = entry_geometry.width,
 					.height = entry_geometry.height,
 				},
-				entry->label,
-				entry->labellen
+				entry->label, labellen
 			);
 			ctrlfnt_draw(
 				menuctx->fontset,
@@ -976,8 +968,7 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 					.width = entry_geometry.width,
 					.height = entry_geometry.height,
 				},
-				entry->label,
-				entry->labellen
+				entry->label, labellen
 			);
 		}
 next:
@@ -1528,7 +1519,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			textw = ctrlfnt_width(
 				menuctx->fontset,
 				entry->label,
-				entry->labellen
+				strlen(entry->label)
 			);
 		} else {
 			textw = 0;

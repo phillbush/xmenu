@@ -182,6 +182,7 @@ fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 			);
 		} else {
 			char *output;
+			size_t labellen;
 
 			line[linelen] = '\0';
 			*from += linelen + 1;
@@ -194,10 +195,10 @@ fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 			//	entry->label += strspn(entry->label, "\t");
 			//	entry->file[pathlen] = '\0';
 			//}
-			entry->labellen = strcspn(entry->label, "\t");
-			output = entry->label + entry->labellen;
+			labellen = strcspn(entry->label, "\t");
+			output = entry->label + labellen;
 			output += strspn(output, "\t");
-			entry->label[entry->labellen] = '\0';
+			entry->label[labellen] = '\0';
 
 			if (*entry->label == '\0')
 				entry->label = NULL;

@@ -6,7 +6,6 @@ struct ctrlmenu_entry {
 	} type;
 
 	char *label;
-	size_t labellen;
 
 	bool disabled;
 
@@ -35,12 +34,15 @@ enum {
 };
 
 struct ctrlmenu {
-	Window window;
+	/* caller program must set these: */
 	char const *title;
-
 	struct ctrlmenu_entry *entries;
 	size_t nentries;
 
+	/* caller program can get these: */
+	Window window;
+
+	/* caller program shall ignore these: */
 	struct ctrlmenu *next;
 	struct ctrlmenu_entry *selected;
 	XRectangle window_geometry;

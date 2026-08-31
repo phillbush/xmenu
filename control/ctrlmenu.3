@@ -28,7 +28,6 @@ struct ctrlmenu_entry {
 	} type;
 
 	char *label;
-	size_t labellen;
 
 	bool disabled;
 
@@ -247,8 +246,8 @@ entries.
 .It Fa disabled
 Whether the menu entry is disabled.
 It is only relevant for command and cascade menu entries.
-.It Fa label , labellen
-UTF-8 string to be displayed on the entry; and its length.
+.It Fa label
+Pointer to NUL-terminated string of UTF-8 characters to be displayed on the entry.
 .It Fa submenu
 The pointer to the menu that pops up when the entry is activated.
 This member must only be set on
