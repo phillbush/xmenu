@@ -73,10 +73,20 @@ void ctrlmenu_popup(
 	struct ctrlmenu *menu
 );
 
+void ctrlmenu_tearoff(
+	Display *display,
+	Drawable reference,
+	XrmDatabase resources,
+	Window leader,
+	int x_root,
+	int y_root,
+	struct ctrlmenu *menu
+);
+
 void ctrlmenu_handle_event(
 	void *context,
 	Display *display,
-	XrmDatabase xdb,
+	XrmDatabase resources,
 	Window leader,
 	XEvent *event,
 	struct ctrlmenu *menu

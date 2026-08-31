@@ -14,14 +14,6 @@ Some code got commented out while refactoring.
 Either delete or reimplement them.
 
 
-§ Implement ctrlmenu_tearoff()
-
-Add a routine for opening windowed/torn-off menus.
-
-It should be just like ctrlmenu_popup(), except that it opens torn-off
-menu, rather than a popup menu.
-
-
 § Implement ctrlmenu_radial(), make πmenu(1) based on ctrlmenu(3)
 
 Implement a ctrlmenu_radial() for pop-up pie menus; and rewrite πmenu(1)

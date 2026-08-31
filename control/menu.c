@@ -1873,7 +1873,6 @@ menu_run(struct ctrlmenu_context *menuctx,
 				    menu->next->selected->submenu->entries ==
 				    menu->entries) {
 					/* navigating on parent menu to current one */
-					flags |= RUN_ENTERED;
 					menu->selected = select_first_entry(menuctx, menu);
 					break;
 				}
@@ -2216,5 +2215,21 @@ ctrlmenu_popup(void *ctx, Display *display, Drawable reference,
 	);
 	XUngrabPointer(display, CurrentTime);
 	XUngrabKeyboard(display, CurrentTime);
+	context_cleanup(&menuctx);
+}
+
+void
+ctrlmenu_tearoff(Display *display, Drawable reference,
+		XrmDatabase xdb, Window leader, int x_root, int y_root,
+		struct ctrlmenu *menu)
+{
+	struct ctrlmenu_context menuctx;
+
+	if (context_setup(
+		&menuctx, NULL, display, reference, leader, xdb
+	) == RETURN_FAILURE)
+		return;
+	menu_map(&menuctx, menu, x_root, y_root, 0, true);
+	menu->tornoff = true;
 	context_cleanup(&menuctx);
 }

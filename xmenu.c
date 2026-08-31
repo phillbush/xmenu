@@ -310,7 +310,8 @@ main(int argc, char *argv[])
 	Visual *visual;
 	Colormap colormap;
 	int depth;
-	int x_root, y_root;
+	int x_root = 0;
+	int y_root = 0;
 	int geometry_flags = 0;
 	char *name = "xmenu";
 	char *title = "XMenu";
@@ -379,10 +380,10 @@ main(int argc, char *argv[])
 			goto usage;
 		}
 	}
+	if (windowed)
+		rootmode = false;
 	if (rootmode)
 		leader = None;
-	else if (windowed)
-		rootmode = false;
 	nmenus = parse_stdin(&read_data, &menus, title);
 	if (nmenus == 0)
 		errx(EXIT_FAILURE, "no menu generated");
@@ -469,8 +470,14 @@ main(int argc, char *argv[])
 		if (db != NULL)
 			XrmCombineDatabase(db, &resources, False);
 	}
-	if (!rootmode)
+	if (windowed) {
+		ctrlmenu_tearoff(
+			display, DefaultRootWindow(display), resources,
+			leader, x_root, y_root, menus
+		);
+	} else if (!rootmode) {
 		goto popup;
+	}
 	for (;;) {
 		XEvent event;
 		struct ctrlmenu *menu;
