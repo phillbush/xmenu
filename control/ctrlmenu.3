@@ -572,7 +572,16 @@ If not set, these resources are computed from
 .Ic background .
 .El
 .Sh EXAMPLES
-Consider the following menu hierarchy for a context menu:
+The following program illustrates the creation of a menu hierarchy,
+popping it up on user event,
+and dispatching events to torn-off menus.
+.Pp
+It creates a dummy empty window,
+which is supposed to be some kind of text input
+where the user can select a typed in text and open a context menu for that selection.
+For practical purposes, suppose the selected text is "lorem ipsum".
+.Pp
+The menu hierarchy is as follows:
 .Bd -literal -offset indent
 ┌─────────────┐
 │ Copy        │
@@ -584,25 +593,36 @@ Consider the following menu hierarchy for a context menu:
                └───────────────────┘
 .Ed
 .Pp
-The following program illustrates a program
-that pops up such context menu on right mouse button press,
-and dispatching events to any torn-off menu:
+First,
+we list the entries for both menus in the hierarchy (the root menu and the submenu),
+and create the menus themselves.
+Then, at the main loop, we call
+.Fn ctrlmenu_popup
+when a user action triggers the context menu.
+This function blocks until the pop-up menu closes or is torn-off (if enabled).
+.Pp
+If a menu has been torn-off by the user,
+events for it are dispatched asynchronously with
+.Fn ctrlmenu_handle_event .
+.Pp
+At the end, torn-off menus (if any) are closed with
+.Fn ctrlmenu_close .
 .Bd -literal
 #include <X11/Xlib.h>
-#include <X11/Xresource.h>
 #include <control/menu.h>
 
-#include <stdio.h>      /* for printf(3) */
-#include <X11/keysym.h> /* for XK_Escape */
+#include <stdio.h>
+#include <X11/keysym.h>
 
-#define countof(x) (sizeof(x)/sizeof((x)[0]))
+Display *display;
+
+struct ctrlmenu search_menu;
 
 void snarf(void *ctx, void *also_delete, bool);
 void search(void *ctx, void *, bool);
 void plumb(void *ctx, void *, bool);
 
-struct ctrlmenu context_menu;
-struct ctrlmenu search_menu;
+#define countof(x) (sizeof(x)/sizeof((x)[0]))
 
 struct ctrlmenu_entry context_menu_entries[] = {
 	{CTRLMENU_COMMAND, "Copy",      .callback = snarf,  .self = &(int){0}},
@@ -630,6 +650,7 @@ struct ctrlmenu search_menu = {
 	.nentries = countof(search_menu_entries),
 };
 
+/* cut or copy selection; depending if *self is non-zero */
 void snarf(void *ctx, void *self, bool ignore) {
 	int also_delete = *(int *)self;
 	char *selection = ctx;
@@ -642,6 +663,7 @@ void snarf(void *ctx, void *self, bool ignore) {
 	fflush(stdout);
 }
 
+/* search selection on given web search engine */
 void search(void *ctx, void *self, bool ignore) {
 	char *selection = ctx;
 	char *engine = self;
@@ -651,6 +673,7 @@ void search(void *ctx, void *self, bool ignore) {
 	fflush(stdout);
 }
 
+/* open selection; on middle-click, open on new tab */
 void plumb(void *ctx, void *self, bool new_tab) {
 	char *selection = ctx;
 
@@ -663,7 +686,6 @@ void plumb(void *ctx, void *self, bool new_tab) {
 }
 
 int main(void) {
-	Display *display;
 	Window window;
 	XEvent event;
 	char *selection = "lorem ipsum";
