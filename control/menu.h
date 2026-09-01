@@ -53,8 +53,8 @@ struct ctrlmenu {
 		int offset;
 	} curr_screenful, last_screenful;
 	struct Canvas {
-		Pixmap pixmap;
-		Picture picture;
+		XID pixmap;
+		XID picture;
 	} canvas[CANVAS_LAST];
 	bool tearable;
 	bool overflow;
