@@ -1,3 +1,5 @@
+#include <X11/Xresource.h>
+
 struct ctrlmenu_entry {
 	enum {
 		CTRLMENU_COMMAND,
