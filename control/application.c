@@ -9,10 +9,10 @@
 
 #include <control/application.h>
 
-static char const *saved_name;
-static char const *saved_class;
-static char **saved_argv;
-static int saved_argc;
+static char const *saved_name = NULL;
+static char const *saved_class = NULL;
+static char **saved_argv = NULL;
+static int saved_argc = 0;
 
 void
 ctrlapp_set(char const *name, char const *class, int argc, char **argv)
@@ -26,12 +26,16 @@ ctrlapp_set(char const *name, char const *class, int argc, char **argv)
 char const *
 ctrlapp_getname(void)
 {
+	if (saved_name == NULL)
+		return getprogname();
 	return saved_name;
 }
 
 char const *
 ctrlapp_getclass(void)
 {
+	if (saved_class == NULL)
+		return getprogname();
 	return saved_class;
 }
 
