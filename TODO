@@ -64,14 +64,3 @@ some other image object to ctrlmenu(3).
 Also, readd ICONPATH.
 
 
-§ Fill in gaps in documentation
-
-• document new routines: ctrlmenu_handle_event(), ctrlmenu_close().
-
-
-§ Add §EXAMPLES section to manual
-
-Add an example of program using ctrlmenu(3)
-
-
-

@@ -40,6 +40,20 @@ struct ctrlmenu_entry {
 .Ed
 .Pp
 .Ft void
+.Fo ctrlmenu_handle_event
+.Fa "void *context"
+.Fa "Display *display"
+.Fa "XrmDatabase resources"
+.Fa "Window leader"
+.Fa "XEvent *event"
+.Fa "struct ctrlmenu *menu"
+.Fc
+.Ft void
+.Fo ctrlmenu_close
+.Fa "Display *display"
+.Fa "struct ctrlmenu *menu"
+.Fc
+.Ft void
 .Fo ctrlmenu_popup
 .Fa "void *context"
 .Fa "Display *display"
@@ -123,6 +137,10 @@ objects, check if the
 member matches the event's window, and call
 .Fn ctrlmenu_handle_event
 on it.
+.Pp
+The
+.Fn ctrlmenu_close
+function closes any open torn off menu.
 .Ss Parameters
 .Bl -tag -width Ds
 .It Fa context
@@ -554,7 +572,144 @@ If not set, these resources are computed from
 .Ic background .
 .El
 .Sh EXAMPLES
-TODO
+Consider the following menu hierarchy for a context menu:
+.Bd -literal -offset indent
+┌─────────────┐
+│ Copy        │
+│ Cut         │┌───────────────────┐
+│ Search at > ││ Internet Archive  │
+│─────────────││ Wikipedia         │
+│ Save        ││ Wiktionary        │
+└─────────────┘│ Marginalia Search │
+               └───────────────────┘
+.Ed
+.Pp
+The following program illustrates a program
+that pops up such context menu on right mouse button press,
+and dispatching events to any torn-off menu:
+.Bd -literal
+#include <X11/Xlib.h>
+#include <X11/Xresource.h>
+#include <control/application.h>
+#include <control/menu.h>
+
+#include <stdio.h>
+#include <X11/keysym.h>
+
+Display *display;
+
+struct ctrlmenu search_menu;
+
+void snarf(void *ctx, void *also_delete, bool);
+void search(void *ctx, void *, bool);
+void plumb(void *ctx, void *, bool);
+
+#define countof(x) (sizeof(x)/sizeof((x)[0]))
+
+struct ctrlmenu_entry context_menu_entries[] = {
+	{CTRLMENU_COMMAND, "Copy",      .callback = snarf,  .self = &(int){0}},
+	{CTRLMENU_COMMAND, "Cut",       .callback = snarf,  .self = &(int){1}},
+	{CTRLMENU_CASCADE, "Search at", .submenu = &search_menu},
+	{CTRLMENU_SEPARATOR},
+	{CTRLMENU_COMMAND, "Open",      .callback = plumb,  .self = NULL},
+};
+
+struct ctrlmenu_entry search_menu_entries[] = {
+	{CTRLMENU_COMMAND, "Wikipedia",  .callback = search, .self = "wikipedia"},
+	{CTRLMENU_COMMAND, "Wiktionary", .callback = search, .self = "wiktionary"},
+	{CTRLMENU_COMMAND, "Marginalia", .callback = search, .self = "marginalia"},
+};
+
+struct ctrlmenu context_menu = {
+	.title = "Context Menu",
+	.entries = context_menu_entries,
+	.nentries = countof(context_menu_entries),
+};
+
+struct ctrlmenu search_menu = {
+	.title = "Search at",
+	.entries = search_menu_entries,
+	.nentries = countof(search_menu_entries),
+};
+
+void snarf(void *ctx, void *self, bool ignore) {
+	int also_delete = *(int *)self;
+	char *selection = ctx;
+
+	(void)ignore;
+	if (also_delete)
+		printf("Cutting selection: \"%s\"\n", selection);
+	else
+		printf("Copying selection: \"%s\"\n", selection);
+	fflush(stdout);
+}
+
+void search(void *ctx, void *self, bool ignore) {
+	char *selection = ctx;
+	char *engine = self;
+
+	(void)ignore;
+	printf("Searching string \"%s\" at %s\n", selection, engine);
+	fflush(stdout);
+}
+
+void plumb(void *ctx, void *self, bool new_tab) {
+	char *selection = ctx;
+
+	(void)self;
+	if (new_tab)
+		printf("Opening \"%s\" at new tab\n", selection);
+	else
+		printf("Opening \"%s\"\n", selection);
+	fflush(stdout);
+}
+
+int main(void) {
+	Window window;
+	XEvent event;
+	char *selection = "lorem ipsum";
+
+	display = XOpenDisplay(NULL);
+	window = XCreateSimpleWindow(display, DefaultRootWindow(display),
+	                             0, 0, 100, 100, 0, 0, 0);
+	XSelectInput(display, window, ButtonPressMask|KeyPressMask);
+	XMapWindow(display, window);
+	for (;;) {
+		XNextEvent(display, &event);
+		if (event.type == ButtonPress &&
+		    event.xbutton.button == Button3 && 
+		    event.xbutton.window == window) {
+			ctrlmenu_popup(
+				selection, display, window, NULL, window,
+				event.xbutton.x_root, event.xbutton.y_root,
+				event.xbutton.time, &context_menu
+			);
+		} else if (event.xany.window == context_menu.window) {
+			ctrlmenu_handle_event(
+				selection, display, NULL, window,
+				&event, &context_menu
+			);
+		} else if (event.xany.window == search_menu.window) {
+			ctrlmenu_handle_event(
+				selection, display, NULL, window,
+				&event, &search_menu
+			);
+		} else if (event.type == KeyPress &&
+		           event.xkey.keycode == XKeysymToKeycode(display, XK_q)) {
+			break;
+		}
+	}
+	ctrlmenu_close(display, &context_menu);
+	ctrlmenu_close(display, &search_menu);
+	XDestroyWindow(display, window);
+	XCloseDisplay(display);
+}
+.Ed
+.Pp
+If user-customization is intended,
+first set the global variables for the application with
+.Xr ctrlapp_set 3 ,
+and create a resource database:
 .Sh SEE ALSO
 .Xr X 7
 .Rs
