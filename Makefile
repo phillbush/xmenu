@@ -1,8 +1,9 @@
 PROG = xmenu
+BINS = ${PROG} examples/ctrlmenu-example
 LIB_OBJS = util/color.o \
 	control/application.o control/font.o control/menu.o \
 	control/resources.o
-OBJS = ${PROG:=.o} ${LIB_OBJS}
+OBJS = ${BINS:=.o} ${LIB_OBJS}
 SRCS = ${OBJS:.o=.c}
 MANS = ${PROG:=.1} \
 	control/ctrlapp.3 control/ctrlfnt.3 \
@@ -20,8 +21,8 @@ mandir = ${DESTDIR}${MANPREFIX}/man1
 .PHONY: all
 all: ${PROG}
 
-${PROG}: ${OBJS}
-	${CC} -o $@ ${OBJS} \
+${BINS}: ${@:=.o} ${LIB_OBJS}
+	${CC} -o $@ ${@:=.o} ${LIB_OBJS} \
 	-lfontconfig -lXft -lX11 -lXrandr -lXrender -lImlib2 ${LDLIBS} \
 	-L/usr{,/local,/X11R6}/lib ${LDFLAGS}
 
@@ -35,7 +36,7 @@ debug:
 	${CC} ${_cflags} -o $@ -c $<
 
 ${OBJS}: util/defs.h
-${PROG:=.o}: ${LIB_OBJS:.o=.h}
+${BINS:=.o}: ${LIB_OBJS:.o=.h}
 ${LIB_OBJS}: ${@:.o=.h}
 control/menu: control/application.h control/font.h control/resources.h
 
@@ -50,13 +51,13 @@ lint: ${SRCS} ${MANS}
 
 .PHONY: clean
 clean:
-	rm -f ${OBJS} ${PROG} ${PROG:=.core} tags
+	rm -f ${OBJS} ${BINS} ${BINS:=.core} tags
 
 .PHONY: install
 install: all
 	mkdir -p ${bindir}
 	mkdir -p ${mandir}
-	install -m 755 ${PROG} ${bindir}/${PROG}
+	install -m 755 xmenu ${bindir}/xmenu
 	install -m 644 ${PROG:=.1} ${mandir}/${PROG:=.1}
 
 .PHONY: uninstall
