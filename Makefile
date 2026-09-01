@@ -35,7 +35,9 @@ debug:
 	${CC} ${_cflags} -o $@ -c $<
 
 ${OBJS}: util/defs.h
-xmenu.o ${LIB_OBJS}: ${LIB_OBJS:.o=.h}
+${PROG:=.o}: ${LIB_OBJS:.o=.h}
+${LIB_OBJS}: ${@:.o=.h}
+control/menu: control/application.h control/font.h control/resources.h
 
 .PHONY: tags
 tags: ${SRCS}
