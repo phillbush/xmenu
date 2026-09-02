@@ -9,8 +9,6 @@ struct ctrlmenu_entry {
 
 	char *label;
 
-	bool disabled;
-
 #if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
 	union {
 	struct {
@@ -26,6 +24,11 @@ struct ctrlmenu_entry {
 	};
 	};
 #endif
+
+	XImage *icons;
+	size_t nicons;
+
+	bool disabled;
 };
 
 enum {

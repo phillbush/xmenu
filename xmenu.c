@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -26,6 +27,11 @@
 
 #include "util/color.h"
 #include "util/defs.h"
+
+static Display *display;
+static Visual *visual;
+static Colormap colormap;
+static int depth;
 
 static int
 parse_geometry(char *geometry_spec, int *x_root, int *y_root, char **monitor_name)
@@ -136,6 +142,82 @@ callback(void *, void *self, bool)
 	fflush(stdout);
 }
 
+static XImage *
+load_icon(const char *file)
+{
+	void *data;
+	static bool has_init = false;
+	Imlib_Image imlimg = NULL;
+	Imlib_Load_Error errcode;
+	const char *errstr;
+	int width, height;
+
+	if (file == NULL)
+		return NULL;
+	if (*file == '\0') {
+		warnx("could not load icon (file name is blank)");
+		return NULL;
+	}
+	if (!has_init) {
+		has_init = true;
+		imlib_set_cache_size(2048 * 1024);
+		imlib_context_set_display(display);
+	}
+	imlimg = imlib_load_image_with_error_return(file, &errcode);
+	if (imlimg == NULL) {
+		switch (errcode) {
+		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
+			errstr = "file does not exist";
+			break;
+		case IMLIB_LOAD_ERROR_FILE_IS_DIRECTORY:
+			errstr = "file is directory";
+			break;
+		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_READ:
+		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_WRITE:
+			errstr = "permission denied";
+			break;
+		case IMLIB_LOAD_ERROR_NO_LOADER_FOR_FILE_FORMAT:
+			errstr = "unknown file format";
+			break;
+		case IMLIB_LOAD_ERROR_PATH_TOO_LONG:
+			errstr = "path too long";
+			break;
+		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NON_EXISTANT:
+		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NOT_DIRECTORY:
+		case IMLIB_LOAD_ERROR_PATH_POINTS_OUTSIDE_ADDRESS_SPACE:
+			errstr = "improper path";
+			break;
+		case IMLIB_LOAD_ERROR_TOO_MANY_SYMBOLIC_LINKS:
+			errstr = "too many symbolic links";
+			break;
+		case IMLIB_LOAD_ERROR_OUT_OF_MEMORY:
+			errstr = "out of memory";
+			break;
+		case IMLIB_LOAD_ERROR_OUT_OF_FILE_DESCRIPTORS:
+			errstr = "out of file descriptors";
+			break;
+		default:
+			errstr = "unknown error";
+			break;
+		}
+		warnx("could not load icon (%s): %s", errstr, file);
+		return NULL;
+	}
+
+	imlib_context_set_image(imlimg);
+	width = imlib_image_get_width();
+	height = imlib_image_get_height();
+	if ((data = malloc(4 * width * height)) == NULL) {
+		imlib_free_image();
+		return NULL;
+	}
+	memcpy(data, imlib_image_get_data_for_reading_only(), 4 * width * height);
+	imlib_free_image();
+	return XCreateImage(
+		display, NULL, 32, ZPixmap, 0, data, width, height, 32, 0
+	);
+}
+
 static size_t
 fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 	size_t menu_indentlvl, char *data, size_t datasize, size_t *from, char *title)
@@ -186,14 +268,18 @@ fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 			line[linelen] = '\0';
 			*from += linelen + 1;
 			entry->label = line + entry_indentlvl;
-			//if (strncmp(entry->label, "IMG:", 4) == 0) {
-			//	size_t pathlen;
-			//	entry->file = entry->label + 4;
-			//	pathlen = strcspn(entry->file, "\t");
-			//	entry->label = entry->file + pathlen;
-			//	entry->label += strspn(entry->label, "\t");
-			//	entry->file[pathlen] = '\0';
-			//}
+			if (strncmp(entry->label, "IMG:", 4) == 0) {
+				size_t pathlen;
+				char *path;
+
+				path = entry->label + 4;
+				pathlen = strcspn(path, "\t");
+				entry->label = path + pathlen;
+				entry->label += strspn(entry->label, "\t");
+				path[pathlen] = '\0';
+				entry->icons = load_icon(path);
+				entry->nicons = 1;
+			}
 			labellen = strcspn(entry->label, "\t");
 			output = entry->label + labellen;
 			output += strspn(output, "\t");
@@ -221,10 +307,10 @@ fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 }
 
 static size_t
-parse_stdin(char **data, struct ctrlmenu **menus_ret, char *title)
+parse_stdin(char **data, struct ctrlmenu **menus_ret, size_t *nlines, char *title)
 {
 	size_t last_indentlvl;
-	size_t nlines, nmenus;
+	size_t nmenus;
 	struct ctrlmenu *menus;
 	struct ctrlmenu_entry *entries;
 	FILE *stream;
@@ -242,7 +328,7 @@ parse_stdin(char **data, struct ctrlmenu **menus_ret, char *title)
 	}
 	fflush(stream);
 	if (size == 0)
-		return false;
+		return 0;
 	if ((*data)[size-1] != '\n' && (*data)[size-1] != '\0')
 		if (fwrite("\0", 1, 1, stream) != 1)
 			err(EXIT_FAILURE, "fwrite");
@@ -250,7 +336,7 @@ parse_stdin(char **data, struct ctrlmenu **menus_ret, char *title)
 	if (fclose(stream) == EOF)
 			err(EXIT_FAILURE, "fclose");
 
-	nlines = 0;
+	*nlines = 0;
 	nmenus = 1;
 	last_indentlvl = strspn(*data, "\t");
 	for (size_t len = 0; len < size; len += strcspn((*data)+len, "\n") + 1) {
@@ -258,13 +344,13 @@ parse_stdin(char **data, struct ctrlmenu **menus_ret, char *title)
 		if (curr_indentlvl > last_indentlvl)
 			nmenus++;
 		last_indentlvl = curr_indentlvl;
-		nlines++;
+		(*nlines)++;
 	}
-	if (nlines == 0 || nmenus == 0)
+	if (*nlines == 0 || nmenus == 0)
 		return 0;
 	if ((menus = calloc(nmenus, sizeof(*menus))) == NULL)
 		err(EXIT_FAILURE, "calloc");
-	if ((entries = calloc(nlines, sizeof(*entries))) == NULL)
+	if ((entries = calloc(*nlines, sizeof(*entries))) == NULL)
 		err(EXIT_FAILURE, "calloc");
 	*menus_ret = &menus[0];
 	/*
@@ -307,10 +393,6 @@ has_tornoff(struct ctrlmenu *menus, size_t nmenus)
 int
 main(int argc, char *argv[])
 {
-	Display *display;
-	Visual *visual;
-	Colormap colormap;
-	int depth;
 	int x_root = 0;
 	int y_root = 0;
 	int geometry_flags = 0;
@@ -319,9 +401,11 @@ main(int argc, char *argv[])
 	char *read_data = NULL;
 	XrmDatabase resources = NULL;
 	Window leader = None;
+	Window reference = None;
 	bool rootmode = false;
 	struct ctrlmenu *menus = NULL;
 	size_t nmenus = 0;
+	size_t nentries = 0;
 	unsigned int button = 0;
 	unsigned int modifier = 0;
 	bool windowed = false;
@@ -385,9 +469,6 @@ main(int argc, char *argv[])
 		rootmode = false;
 	if (rootmode)
 		leader = None;
-	nmenus = parse_stdin(&read_data, &menus, title);
-	if (nmenus == 0)
-		errx(EXIT_FAILURE, "no menu generated");
 
 	ctrlapp_set(name, "XMenu", argc, argv);
 	if ((display = ctrlapp_open()) == NULL)
@@ -396,6 +477,23 @@ main(int argc, char *argv[])
 		display, DefaultScreen(display),
 		&visual, &depth, &colormap
 	);
+	if (!XRenderQueryExtension(display, &(int){}, &(int){}))
+		errx(EXIT_FAILURE, "X server does not support XRender extension");
+	reference = XCreateWindow(
+		display,
+		DefaultRootWindow(display),
+		0, 0, 1, 1, 1,
+		depth, InputOutput, visual,
+		CWBackPixel|CWColormap|CWBorderPixel,
+		&(XSetWindowAttributes){
+			.colormap = colormap,
+		}
+	);
+	if (reference == None)
+		errx(EXIT_FAILURE, "could not create reference window");
+	nmenus = parse_stdin(&read_data, &menus, &nentries, title);
+	if (nmenus == 0)
+		errx(EXIT_FAILURE, "no menu generated");
 
 	if (rootmode) {
 		XGrabButton(
@@ -473,7 +571,7 @@ main(int argc, char *argv[])
 	}
 	if (windowed) {
 		ctrlmenu_tearoff(
-			display, DefaultRootWindow(display), resources,
+			display, reference, resources,
 			leader, x_root, y_root, menus
 		);
 	} else if (!rootmode) {
@@ -499,7 +597,7 @@ popup:
 				);
 			}
 			ctrlmenu_popup(
-				NULL, display, DefaultRootWindow(display), resources,
+				NULL, display, reference, resources,
 				leader, x_root, y_root, CurrentTime, menus
 			);
 		}
@@ -514,8 +612,13 @@ popup:
 	}
 
 	free(read_data);
+	for (size_t i = 0; i < nentries; i++)
+		if (menus[0].entries[i].icons != NULL)
+			XDestroyImage(menus[0].entries[i].icons);
 	free(menus[0].entries);
 	free(menus);
+	XDestroyWindow(display, reference);
 	XrmDestroyDatabase(resources);
+	XCloseDisplay(display);
 	return EXIT_SUCCESS;
 }

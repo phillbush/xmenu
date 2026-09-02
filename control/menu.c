@@ -77,7 +77,6 @@ struct ctrlmenu_context {
 	int outer_border_width;  /* X11 border, not counted on window size */
 	int iconsize;
 	int maxentries;
-	bool initimlib;
 	bool tearoff;
 	enum alignment {
 		ALIGN_LEFT,
@@ -192,6 +191,7 @@ setfont(struct ctrlmenu_context *menuctx, const char *facename, double facesize)
 	menuctx->fonth = ctrlfnt_height(fontset);
 	menuctx->entryh = menuctx->fonth + PADDING * 2;
 	menuctx->entryh = MAX(menuctx->entryh, MIN_HEIGHT);
+	menuctx->iconsize = menuctx->fonth;
 	menuctx->separatorh = menuctx->entryh / 2;
 }
 
@@ -660,104 +660,11 @@ draw_triangle(struct ctrlmenu_context *menuctx, Picture picture, Picture src, in
 	);
 }
 
-//static void
-//initimlib(struct ctrlmenu_context *menuctx)
-//{
-//	if (menuctx->initimlib)
-//		return;
-//	menuctx->initimlib = true;
-//	imlib_set_cache_size(2048 * 1024);
-//	imlib_context_set_dither(1);
-//	imlib_context_set_blend(1);
-//	imlib_context_set_display(ctrlapp->display);
-//	imlib_context_set_visual(ctrlapp->visual);
-//	imlib_context_set_colormap(ctrlapp->colormap);
-//}
-//
-//static Imlib_Image
-//loadicon(struct ctrlmenu_context *menuctx, const char *file, int size, int *width_ret, int *height_ret)
-//{
-//	Imlib_Image icon = NULL;
-//	Imlib_Load_Error errcode;
-//	const char *errstr;
-//	int width;
-//	int height;
-//
-//	if (file == NULL)
-//		return NULL;
-//	if (*file == '\0') {
-//		warnx("could not load icon (file name is blank)");
-//		return NULL;
-//	}
-//	initimlib(menuctx);
-//	icon = imlib_load_image_with_error_return(file, &errcode);
-//	if (icon == NULL) {
-//		switch (errcode) {
-//		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
-//			errstr = "file does not exist";
-//			break;
-//		case IMLIB_LOAD_ERROR_FILE_IS_DIRECTORY:
-//			errstr = "file is directory";
-//			break;
-//		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_READ:
-//		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_WRITE:
-//			errstr = "permission denied";
-//			break;
-//		case IMLIB_LOAD_ERROR_NO_LOADER_FOR_FILE_FORMAT:
-//			errstr = "unknown file format";
-//			break;
-//		case IMLIB_LOAD_ERROR_PATH_TOO_LONG:
-//			errstr = "path too long";
-//			break;
-//		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NON_EXISTANT:
-//		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NOT_DIRECTORY:
-//		case IMLIB_LOAD_ERROR_PATH_POINTS_OUTSIDE_ADDRESS_SPACE:
-//			errstr = "improper path";
-//			break;
-//		case IMLIB_LOAD_ERROR_TOO_MANY_SYMBOLIC_LINKS:
-//			errstr = "too many symbolic links";
-//			break;
-//		case IMLIB_LOAD_ERROR_OUT_OF_MEMORY:
-//			errstr = "out of memory";
-//			break;
-//		case IMLIB_LOAD_ERROR_OUT_OF_FILE_DESCRIPTORS:
-//			errstr = "out of file descriptors";
-//			break;
-//		default:
-//			errstr = "unknown error";
-//			break;
-//		}
-//		warnx("could not load icon (%s): %s", errstr, file);
-//		return NULL;
-//	}
-//
-//	imlib_context_set_image(icon);
-//
-//	width = imlib_image_get_width();
-//	height = imlib_image_get_height();
-//
-//	if (width > height) {
-//		*width_ret = size;
-//		*height_ret = (height * size) / width;
-//	} else {
-//		*width_ret = (width * size) / height;
-//		*height_ret = size;
-//	}
-//
-//	icon = imlib_create_cropped_scaled_image(
-//		0, 0,
-//		width, height,
-//		*width_ret, *height_ret
-//	);
-//	return icon;
-//}
-
 static void
 draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	XRectangle entry_geometry;
 	int textx, textw, y;
-	// int iconw, iconh;
 
 	if (menu->canvas_width  < menu->window_geometry.width ||
 	    menu->canvas_height < menu->window_geometry.height) {
@@ -824,7 +731,9 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
 		struct ctrlmenu_entry *entry = &menu->entries[entryc];
 		size_t labellen;
-		//Imlib_Image image;
+		int size_diff = menuctx->iconsize;
+		XImage *icon = NULL;
+		XImage *largest_icon = NULL;
 
 		if (entry->type == CTRLMENU_SEPARATOR) {
 			entry_geometry.height = menuctx->separatorh;
@@ -841,33 +750,104 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 			goto next;
 		}
 		entry_geometry.height = menuctx->entryh;
-		//image = loadicon(
-		//	menuctx,
-		//	entry->file,
-		//	menuctx->iconsize,
-		//	&iconw,
-		//	&iconh
-		//);
-		//if (image != NULL) {
-		//	imlib_context_set_image(image);
-		//	imlib_context_set_drawable(
-		//		menu->canvas[CANVAS_NORMAL].pixmap
-		//	);
-		//	imlib_render_image_on_drawable(
-		//		menuctx->inner_border_width + PADDING
-		//		+ (menuctx->iconsize - iconw) / 2,
-		//		entry_geometry.y + (menuctx->entryh - iconh) / 2
-		//	);
-		//	imlib_context_set_drawable(
-		//		menu->canvas[CANVAS_SELECT].pixmap
-		//	);
-		//	imlib_render_image_on_drawable(
-		//		menuctx->inner_border_width + PADDING
-		//		+ (menuctx->iconsize - iconw) / 2,
-		//		entry_geometry.y + (menuctx->entryh - iconh) / 2
-		//	);
-		//	imlib_free_image();
-		//}
+
+		/* find best-sized icon */
+		largest_icon = entry->icons;
+		size_diff = menuctx->iconsize;
+		for (size_t nicon = 0; nicon < entry->nicons; nicon++) {
+			if (entry->icons[nicon].width > largest_icon->width &&
+			    entry->icons[nicon].height > largest_icon->height)
+				largest_icon = &entry->icons[nicon];
+			if (MAX(entry->icons[nicon].width,
+			        entry->icons[nicon].height) >
+				menuctx->iconsize)
+				continue;
+			if (menuctx->iconsize - entry->icons[nicon].height <= size_diff)
+				continue;
+			size_diff = menuctx->iconsize - entry->icons[nicon].height;
+			icon = &entry->icons[nicon];
+		}
+		if (icon == NULL)
+			icon = largest_icon;
+		if (icon != NULL) {
+			Pixmap pixmap;
+			Picture picture;
+			GC gc;
+			int width = icon->width;
+			int height = icon->height;
+
+			pixmap = XCreatePixmap(
+				menuctx->display,
+				menuctx->root_window,
+				icon->width, icon->height,
+				icon->depth
+			);
+			picture = XRenderCreatePicture(
+				menuctx->display, pixmap,
+				XRenderFindFormat(
+					menuctx->display,
+					PictFormatDepth,
+					&(XRenderPictFormat){
+						.depth = icon->depth,
+					}, 0
+				), 0, NULL
+			);
+			gc = XCreateGC(menuctx->display, pixmap, 0, NULL),
+
+			XPutImage(
+				menuctx->display, pixmap, gc, icon,
+				0, 0, 0, 0, icon->width, icon->height
+			);
+
+			if (size_diff > PADDING) {
+				/* image is too small/large; scale it */
+				if (width > height) {
+					height = (height * menuctx->iconsize) / width;
+					width = menuctx->iconsize;
+				} else {
+					width = (width * menuctx->iconsize) / height;
+					height = menuctx->iconsize;
+				}
+
+				XRenderSetPictureFilter(
+					menuctx->display, picture, FilterBilinear, NULL, 0
+				);
+				XRenderSetPictureTransform(
+					menuctx->display, picture, &(XTransform){
+						{{(icon->width<<16u)/width, 0, 0},
+						{0, (icon->height<<16u)/height, 0},
+						{0, 0, 0x10000}},
+					}
+				);
+			}
+
+			XRenderComposite(
+				menuctx->display, PictOpOver,
+				picture, None,
+				menu->canvas[CANVAS_NORMAL].picture,
+				0, 0, 0, 0,
+				menuctx->inner_border_width + PADDING
+				+ (menuctx->iconsize - width)/2,
+				entry_geometry.y
+				+ (menuctx->entryh - height)/2,
+				width, height
+			);
+			XRenderComposite(
+				menuctx->display, PictOpOver,
+				picture, None,
+				menu->canvas[CANVAS_SELECT].picture,
+				0, 0, 0, 0,
+				menuctx->inner_border_width + PADDING
+				+ (menuctx->iconsize - width)/2,
+				entry_geometry.y
+				+ (menuctx->entryh - height)/2,
+				width, height
+			);
+
+			XFreeGC(menuctx->display, gc);
+			XRenderFreePicture(menuctx->display, picture);
+			XFreePixmap(menuctx->display, pixmap);
+		}
 		if (entry->type == CTRLMENU_CASCADE) {
 			draw_triangle(
 				menuctx,
@@ -1525,8 +1505,8 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			textw = 0;
 			menu->total_height += menuctx->separatorh;
 		}
-		//if (entry->file != NULL)
-		//	menu->hasicon = true;
+		if (entry->nicons > 0)
+			menu->hasicon = true;
 		if (entry->type == CTRLMENU_CASCADE)
 			menu->hassubmenu = true;
 		menu->window_geometry.width = MAX(menu->window_geometry.width, textw);
