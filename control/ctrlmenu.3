@@ -6,8 +6,6 @@
 .Nd pop-up menu routines
 .Sh SYNOPSIS
 .In X11/Xlib.h
-.In X11/Xresource.h
-.In control/application.h
 .In control/menu.h
 .Bd -literal
 struct ctrlmenu {
@@ -84,15 +82,31 @@ The ctrlmenu library implements both a pop-up menu
 (used as context menu, or start menu, for example),
 and a torn-off menu.
 .Pp
+Menus are defined with the
+.Ft struct ctrlmenu
+structure.
+A menu holds a pointer to an array of
+.Ft struct ctrlmenu_entry
+structures, each defining a menu entry.
+Nested menus can be created by defining a special type of entry,
+the cascade entry, holding a pointer to another menu.
+Activating a cascade entry pops up its submenu.
+.Pp
 The routines
 .Fn ctrlmenu_popup
 and
 .Fn ctrlmenu_tearoff
-create a menu.
-The first creates a input-grabbing menu,
-and blocks and handle events as the menu is visible.
-The second creates a pallete window,
-and depends on the caller program to dispatch events to it.
+create a menu:
+.Bl -bullet -compact -width ""
+.It
+The first routine creates an input-grabbing pop-up menu,
+and blocks and handles events for the menu as long as the menu is visible.
+.It
+The second routine creates a pallete-like torn-off menu and return immediately,
+and depends on the caller program to dispatch events to the menu with the
+.Fn ctrlmenu_handle_event
+routine.
+.El
 .Pp
 The menu windows created by these routines are controlled by the user
 (see the section
