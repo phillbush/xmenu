@@ -29,9 +29,6 @@
 #include "util/defs.h"
 
 static Display *display;
-static Visual *visual;
-static Colormap colormap;
-static int depth;
 
 static int
 parse_geometry(char *geometry_spec, int *x_root, int *y_root, char **monitor_name)
@@ -427,8 +424,8 @@ main(int argc, char *argv[])
 	char *title = "XMenu";
 	char *read_data = NULL;
 	XrmDatabase resources = NULL;
+	Window reference;
 	Window leader = None;
-	Window reference = None;
 	bool rootmode = false;
 	struct ctrlmenu *menus = NULL;
 	size_t nmenus = 0;
@@ -500,24 +497,25 @@ main(int argc, char *argv[])
 	ctrlapp_set(name, "XMenu", argc, argv);
 	if ((display = ctrlapp_open()) == NULL)
 		errx(EXIT_FAILURE, "cannot open application");
-	(void)ctrlapp_visuals(
-		display, DefaultScreen(display),
-		&visual, &depth, &colormap
-	);
 	if (!XRenderQueryExtension(display, &(int){}, &(int){}))
 		errx(EXIT_FAILURE, "X server does not support XRender extension");
-	reference = XCreateWindow(
-		display,
-		DefaultRootWindow(display),
-		0, 0, 1, 1, 1,
-		depth, InputOutput, visual,
-		CWBackPixel|CWColormap|CWBorderPixel,
-		&(XSetWindowAttributes){
-			.colormap = colormap,
-		}
-	);
-	if (reference == None)
-		errx(EXIT_FAILURE, "could not create reference window");
+	{
+		Visual *visual;
+		Colormap colormap;
+		int depth;
+		(void)ctrlapp_visuals(
+			display, DefaultScreen(display),
+			&visual, &depth, &colormap
+		);
+		reference = XCreateWindow(
+			display, DefaultRootWindow(display),
+			0, 0, 1, 1, 1, depth, InputOutput, visual,
+			CWBackPixel|CWColormap|CWBorderPixel,
+			&(XSetWindowAttributes){.colormap = colormap}
+		);
+		if (reference == None)
+			errx(EXIT_FAILURE, "cannot create reference window");
+	}
 	nmenus = parse_stdin(&read_data, &menus, &nentries, title);
 	if (nmenus == 0)
 		errx(EXIT_FAILURE, "no menu generated");

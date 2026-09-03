@@ -2058,7 +2058,6 @@ context_setup(struct ctrlmenu_context *menuctx, void *ctx, Display *display,
 		goto error;
 	if (!XGetWindowAttributes(display, reference, &attributes))
 		goto error;
-
 	*menuctx = (struct ctrlmenu_context){
 		.ctx = ctx,
 		.display = display,
@@ -2169,7 +2168,7 @@ ctrlmenu_handle_event(void *ctx, Display *display, XrmDatabase xdb,
 }
 
 void
-ctrlmenu_popup(void *ctx, Display *display, Drawable reference,
+ctrlmenu_popup(void *ctx, Display *display, Window reference,
 		XrmDatabase xdb, Window leader, int x_root, int y_root,
 		Time timestamp, struct ctrlmenu *menu)
 {
@@ -2190,7 +2189,7 @@ ctrlmenu_popup(void *ctx, Display *display, Drawable reference,
 }
 
 void
-ctrlmenu_tearoff(Display *display, Drawable reference,
+ctrlmenu_tearoff(Display *display, Window reference,
 		XrmDatabase xdb, Window leader, int x_root, int y_root,
 		struct ctrlmenu *menu)
 {

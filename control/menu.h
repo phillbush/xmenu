@@ -71,7 +71,7 @@ struct ctrlmenu {
 void ctrlmenu_popup(
 	void *context,
 	Display *display,
-	Drawable reference,
+	Window reference,
 	XrmDatabase resources,
 	Window leader,
 	int x_root,
@@ -82,7 +82,7 @@ void ctrlmenu_popup(
 
 void ctrlmenu_tearoff(
 	Display *display,
-	Drawable reference,
+	Window reference,
 	XrmDatabase resources,
 	Window leader,
 	int x_root,
