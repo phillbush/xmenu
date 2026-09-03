@@ -145,25 +145,51 @@ callback(void *, void *self, bool)
 static XImage *
 load_icon(const char *file)
 {
-	void *data;
 	static bool has_init = false;
+	static char *iconpath = NULL;
 	Imlib_Image imlimg = NULL;
 	Imlib_Load_Error errcode;
 	const char *errstr;
 	int width, height;
+	void *data;
 
 	if (file == NULL)
 		return NULL;
 	if (*file == '\0') {
-		warnx("could not load icon (file name is blank)");
+		warnx("cannot load icon (file name is blank)");
 		return NULL;
 	}
 	if (!has_init) {
 		has_init = true;
 		imlib_set_cache_size(2048 * 1024);
 		imlib_context_set_display(display);
+		iconpath = getenv("ICONPATH");
 	}
-	imlimg = imlib_load_image_with_error_return(file, &errcode);
+	if (strncmp(file, "/", 1) &&
+	    strncmp(file, "./", 1) &&
+	    strncmp(file, "../", 1)) {
+		char buf[PATH_MAX];
+
+		if (iconpath == NULL) {
+			warnx("%s, cannot load icon ($ICONPATH unset)", file);
+			return NULL;
+		}
+		for (char *next, *s = iconpath;
+		     (s += strspn(s, ":"))[0] != '\0';
+		     s = next) {
+			next = s + strcspn(s, ":");
+			if (next - s == 0)
+				continue;
+			snprintf(buf, sizeof(buf), "%.*s/%s", (int)(next-s), s, file);
+			imlimg = imlib_load_image_with_error_return(buf, &errcode);
+			if (imlimg != NULL)
+				break;
+			if (errcode != IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST)
+				break;
+		}
+	} else {
+		imlimg = imlib_load_image_with_error_return(file, &errcode);
+	}
 	if (imlimg == NULL) {
 		switch (errcode) {
 		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
@@ -200,7 +226,7 @@ load_icon(const char *file)
 			errstr = "unknown error";
 			break;
 		}
-		warnx("could not load icon (%s): %s", errstr, file);
+		warnx("cannot load icon (%s): %s", errstr, file);
 		return NULL;
 	}
 
@@ -278,7 +304,8 @@ fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 				entry->label += strspn(entry->label, "\t");
 				path[pathlen] = '\0';
 				entry->icons = load_icon(path);
-				entry->nicons = 1;
+				if (entry->icons != NULL)
+					entry->nicons = 1;
 			}
 			labellen = strcspn(entry->label, "\t");
 			output = entry->label + labellen;

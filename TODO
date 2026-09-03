@@ -52,15 +52,3 @@ I implemented a XParseGeometry(3)-compatible geometry parsed with
 extensions for setting placement based on monitor size.
 
 I am not sure whether i should re-implement it before a major release.
-
-
-§ Re-implement icons
-
-I do not want ctrlmenu(3) to depend on imlib2.
-
-What i have in mind is for xmenu(1) to use imlib2 and pass pixmaps or
-some other image object to ctrlmenu(3).
-
-Also, readd ICONPATH.
-
-
