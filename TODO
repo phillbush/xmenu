@@ -8,12 +8,6 @@ sync, use some preprocessor or ed script to generate them from a common
 file for those sections.
 
 
-§ Delete // comments
-
-Some code got commented out while refactoring.
-Either delete or reimplement them.
-
-
 § Implement ctrlmenu_radial(), make πmenu(1) based on ctrlmenu(3)
 
 Implement a ctrlmenu_radial() for pop-up pie menus; and rewrite πmenu(1)
