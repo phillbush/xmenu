@@ -30,12 +30,16 @@ struct ctrlmenu_entry {
 	} type;
 
 	char *label;
-	bool disabled;
 
 	void (*callback)(void *ctx, void *self, bool alt);
 	void *self;
 
 	struct ctrlmenu *submenu;
+
+	XImage *icons;
+	size_t nicons;
+
+	bool disabled;
 };
 .Ed
 .Pp
@@ -57,7 +61,7 @@ struct ctrlmenu_entry {
 .Fo ctrlmenu_popup
 .Fa "void *context"
 .Fa "Display *display"
-.Fa "Drawable reference"
+.Fa "Window reference"
 .Fa "XrmDatabase resurces"
 .Fa "Window leader"
 .Fa "int x_root"
@@ -68,7 +72,7 @@ struct ctrlmenu_entry {
 .Ft void
 .Fo ctrlmenu_tearoff
 .Fa "Display *display"
-.Fa "Drawable reference"
+.Fa "Window reference"
 .Fa "XrmDatabase resurces"
 .Fa "Window leader"
 .Fa "int x_root"
@@ -79,6 +83,16 @@ struct ctrlmenu_entry {
 The ctrlmenu library implements both a pop-up menu
 (used as context menu, or start menu, for example),
 and a torn-off menu.
+.Pp
+The routines
+.Fn ctrlmenu_popup
+and
+.Fn ctrlmenu_tearoff
+create a menu.
+The first creates a input-grabbing menu,
+and blocks and handle events as the menu is visible.
+The second creates a pallete window,
+and depends on the caller program to dispatch events to it.
 .Pp
 The menu windows created by these routines are controlled by the user
 (see the section
@@ -93,54 +107,6 @@ the program must call
 .Xr ctrlapp_set 3
 to set a global name and class for the application.
 .Pp
-The
-.Fn ctrlmenu_popup
-function creates a pop-up menu on an override-redirect window
-(i'e', not managed by the window manager)
-for the given
-.Fa menu .
-It blocks as long as the menu is popped up
-(i'e', until an entry is selected, a menu tears off, or the menu is closed).
-.Pp
-The
-.Fn ctrlmenu_tearoff
-function creates a torn-off menu on a framed/regular window
-(i'e', managed by the window manager)
-for the given
-.Fa menu .
-The entry
-.Fa menu->window
-is filled with the mapped window that contains the menu.
-Whenever the caller program gets an
-.Xr XEvent 3
-for this window, it must call
-.Fa ctrlmenu_handle_event
-on this
-.Fa menu .
-.Pp
-The
-.Fn ctrlmenu_handle_event
-function handles an
-.Fa event
-received for the given
-.Fa menu .
-A menu tears off
-either because the user clicked on the tear-off entry of a pop-up menu created by
-.Fn ctrlmenu_popup ,
-or the menu was already created as such by
-.Fn ctrlmenu_tearoff .
-Whenever the caller program gets an event for a window it does not directly manage,
-it must loop through all its
-.Ft "struct ctrlmenu"
-objects, check if the
-.Fa ".window"
-member matches the event's window, and call
-.Fn ctrlmenu_handle_event
-on it.
-.Pp
-The
-.Fn ctrlmenu_close
-function closes any open torn off menu.
 .Ss Parameters
 .Bl -tag -width Ds
 .It Fa context
@@ -152,6 +118,16 @@ How the context is used for by the callback routine for is up to the program.
 .It Fa display
 The pointer to the context of the connection to the
 .Xr Xserver 1 .
+.It Fa leader
+The ID of the client window that the menu is a context of.
+If the menu is not a context menu (or transient for a main window),
+this argument should be
+.Dv None .
+.Pp
+If an existing window is given,
+it should be a descendant of the same root window of the
+.Fa reference
+window.
 .It Fa menu
 The pointer to a
 .Ft struct ctrlmenu
@@ -169,21 +145,16 @@ must be zeroed before the first
 call of
 .Fn ctrlmenu_popup .
 All the other members are filled by ctrlmenu routines.
-.It Fa leader
-The ID of the client window that the menu is a context of.
-If the menu is not a context menu (or transient for a main window),
-this argument should be
-.Dv None .
-.Pp
-If an existing window is given,
-it should be a descendant of the same root window of the
-.Fa reference
-one.
+.It Fa resources
+The resource database with configuration for the menu look and feel.
+If its value is
+.Dv NULL ,
+resource is not processed.
 .It Fa reference
-A window or pixmap whose screen, visual type, color depth, and colormap
-are used for the menu window.
-The window/pixmap itself is ignored;
-it is only relevant for its attributes.
+A window whose screen, visual type, color depth, and colormap
+are used for creating the menu.
+The window itself is ignored;
+it is used solely as reference, and is only relevant for its attributes.
 .Pp
 You should just pass the root window,
 unless you want to use a custom visual/depth/colormap for the menu,
@@ -194,15 +165,10 @@ The reference window replaces four parameters that were used previously:
 the screen number, the visual type, the color depth, and the colormap.
 Most often, the programmer just wants to use the default values.
 So, to simplify the API and make falling back to the defaults easier,
-just pass a dummy reference window.
+the API requires a dummy reference window.
 Lots of Xlib routines do that anyway
 (but in their case that's mostly a need of the X protocol,
-rather than the API design).
-.It Fa resources
-The resource database with configuration for the menu look and feel.
-If its value is
-.Dv NULL ,
-resource is not processed.
+rather than an intentional API design).
 .It Fa timestamp
 The time of the event that triggered the menu to pop up.
 .It Fa x_root , y_root
@@ -265,6 +231,14 @@ entries.
 .It Fa disabled
 Whether the menu entry is disabled.
 It is only relevant for command and cascade menu entries.
+.It Fa icons, nicons
+Pointer to array of
+.Ft XImage Ns s
+containing the icons to be displayed at the left of menu entries;
+and the number of elements in this array.
+.Pp
+The icon whose size best fits the menu entry is the displayed one.
+If no size fits, one icon is scaled to fit the menu entry.
 .It Fa label
 Pointer to NUL-terminated string of UTF-8 characters to be displayed on the entry.
 .It Fa submenu
@@ -373,13 +347,64 @@ argument is
 The idea is that the program can do a different action on an
 .Dq alternate activation .
 But it is not required to do so.
-.Ss Popup function
+.Ss Menu creation routines
 The
-.Fa ctrlmenu_popup
-function pops up a menu with the given
-.Fa entries ,
-and blocks until the menu is closed
-(either by activating an entry or closing the menu).
+.Fn ctrlmenu_popup
+function creates a pop-up menu on an override-redirect window
+(i'e', not managed by the window manager)
+for the given
+.Fa menu .
+It blocks as long as the menu is popped up
+(i'e', until an entry is selected, a menu tears off, or the menu is closed).
+.Pp
+The
+.Fn ctrlmenu_tearoff
+function creates a torn-off menu on a framed/regular window
+(i'e', managed by the window manager)
+for the given
+.Fa menu .
+It does not block, and returns as soon as the menu is created.
+The entry
+.Fa menu->window
+is filled with the mapped window that contains the menu.
+Whenever the caller program gets an
+.Xr XEvent 3
+for this window, it must call
+.Fa ctrlmenu_handle_event
+on this
+.Fa menu .
+.Ss Menu event dispatcher
+The
+.Fn ctrlmenu_handle_event
+function handles an
+.Fa event
+received for the given
+.Fa menu .
+.Pp
+A menu tears off
+either because the user clicked on the tear-off entry of a pop-up menu created by
+.Fn ctrlmenu_popup ,
+or the menu was already created as such by
+.Fn ctrlmenu_tearoff .
+Whenever the caller program gets an event for a window it does not directly manage,
+it must loop through all its
+.Ft "struct ctrlmenu"
+objects, check if the
+.Fa ".window"
+member matches the event's window, and call
+.Fn ctrlmenu_handle_event
+on it.
+.Ss Menu termination routine
+The
+.Fn ctrlmenu_close
+function closes any open torn off menu.
+.Pp
+The caller program should not dispatch events with
+.Fn ctrlmenu_handle_event
+to a closed menu, until it is opened again by
+.Fn ctrlmenu_popup
+or
+.Fn ctrlmenu_tearoff .
 .Sh USAGE
 A menu is a window listing entries for the user to select.
 The types of menu entries are as follows:
