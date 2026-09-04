@@ -125,29 +125,6 @@ create_picture(Display *display, Window root_window,
 	return RETURN_SUCCESS;
 }
 
-static Window
-create_window(Display *display, Window root_window,
-		Visual *visual, int depth, Colormap colormap,
-		int x, int y, unsigned width, unsigned height, unsigned border,
-		long eventmask)
-{
-	return XCreateWindow(
-		display,
-		root_window,
-		x, y, width, height, border,
-		depth, InputOutput, visual,
-		CWBackPixel | CWEventMask | CWColormap |
-		CWBorderPixel | CWSaveUnder,
-		&(XSetWindowAttributes){
-			.border_pixel = 0,
-			.background_pixel = 0,
-			.colormap = colormap,
-			.event_mask = eventmask,
-			.save_under = True,
-		}
-	);
-}
-
 /*
  * resource parsers and setters
  */
@@ -427,11 +404,9 @@ get_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 
 	if (entry == NULL)
 		return -1;
-	if (menu->tearable) {
-		if (entry == TEAR_OFF)
-			return ypos;
-		ypos += menuctx->separatorh;
-	}
+	if (entry == TEAR_OFF)
+		return ypos;
+	ypos += menuctx->separatorh;
 	if (menu->overflow) {
 		if (entry == SCROLL_DOWN)
 			return menu->total_height - menuctx->separatorh
@@ -459,8 +434,7 @@ get_first_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	int y;
 
 	y = menuctx->inner_border_width;
-	if (menu->tearable)
-		y += menuctx->separatorh;
+	y += get_entry_height(menuctx, TEAR_OFF);
 	if (menu->overflow)
 		y += menuctx->separatorh;
 	return y;
@@ -661,10 +635,10 @@ draw_triangle(struct ctrlmenu_context *menuctx, Picture picture, Picture src, in
 }
 
 static void
-draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
+canvas_reset(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	XRectangle entry_geometry;
-	int textx, textw, y;
+	int textx, textw;
 
 	if (menu->canvas_width  < menu->window_geometry.width ||
 	    menu->canvas_height < menu->window_geometry.height) {
@@ -954,21 +928,23 @@ draw_menu(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 next:
 		entry_geometry.y += entry_geometry.height;
 	}
+
+	/* draw tear-off line */
+	draw_dashline(
+		menuctx,
+		menu->canvas[CANVAS_NORMAL].picture,
+		menu->window_geometry.width,
+		menuctx->inner_border_width
+	);
+	draw_dashline(
+		menuctx,
+		menu->canvas[CANVAS_SELECT].picture,
+		menu->window_geometry.width,
+		menuctx->inner_border_width
+	);
+
 	for (size_t i = 0; i < CANVAS_FINAL; i++) {
-		y = menuctx->inner_border_width;
-		if (menu->tearable) {
-			draw_dashline(
-				menuctx,
-				menu->canvas[CANVAS_NORMAL].picture,
-				menu->window_geometry.width, y
-			);
-			draw_dashline(
-				menuctx,
-				menu->canvas[CANVAS_SELECT].picture,
-				menu->window_geometry.width, y
-			);
-			y += menuctx->separatorh;
-		}
+		int y = menuctx->inner_border_width + get_entry_height(menuctx, TEAR_OFF);
 		if (menu->overflow) {
 			draw_triangle(
 				menuctx,
@@ -999,7 +975,7 @@ next:
 }
 
 static void
-draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
+canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		struct ctrlmenu_entry *entry)
 {
 	int src_canvas_y, dst_canvas_y;
@@ -1025,20 +1001,6 @@ draw_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		menu->window_geometry.width,
 		menu->window_geometry.height
 	);
-	if (menu->tearable) {
-		XRenderComposite(
-			menuctx->display,
-			PictOpOver,
-			menu->canvas[CANVAS_NORMAL].picture,
-			None,
-			menu->canvas[CANVAS_FINAL].picture,
-			0, get_entry_ypos(menuctx, menu, TEAR_OFF),
-			0, 0,
-			0, get_entry_ypos(menuctx, menu, TEAR_OFF),
-			menu->window_geometry.width,
-			get_entry_height(menuctx, TEAR_OFF)
-		);
-	}
 	if (menu->overflow) {
 		XRenderComposite(
 			menuctx->display,
@@ -1279,7 +1241,7 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			else
 				scroll_up(menuctx, menu, menuctx->entryh);
 			if (menu->curr_screenful.offset != last_offset)
-				draw_commit(menuctx, menu, entry);
+				canvas_commit(menuctx, menu, entry);
 			last_offset = menu->curr_screenful.offset;
 			XFlush(menuctx->display);
 			break;
@@ -1295,10 +1257,13 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
  */
 
 static struct ctrlmenu_entry *
-select_first_entry(struct ctrlmenu_context *, struct ctrlmenu *menu)
+select_first_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	menu->curr_screenful.first_entry = 0;
-	menu->curr_screenful.offset = 0;
+	if (menu->tearable)
+		menu->curr_screenful.offset = 0;
+	else
+		menu->curr_screenful.offset = get_entry_height(menuctx, TEAR_OFF);
 	for (size_t i = 0; i < menu->nentries; i++) {
 		struct ctrlmenu_entry *entry = &menu->entries[i];
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
@@ -1406,13 +1371,13 @@ static void
 activate_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, bool alt)
 {
 	/* blink */
-	draw_commit(menuctx, menu, NULL);
+	canvas_commit(menuctx, menu, NULL);
 	XSync(menuctx->display, False); xsleep(60000);
-	draw_commit(menuctx, menu, menu->selected);
+	canvas_commit(menuctx, menu, menu->selected);
 	XSync(menuctx->display, False); xsleep(60000);
-	draw_commit(menuctx, menu, NULL);
+	canvas_commit(menuctx, menu, NULL);
 	XSync(menuctx->display, False); xsleep(60000);
-	draw_commit(menuctx, menu, menu->selected);
+	canvas_commit(menuctx, menu, menu->selected);
 	while (XCheckMaskEvent(
 		menuctx->display,
 		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
@@ -1478,9 +1443,13 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	}
 
 	menu->curr_screenful.first_entry = menu->last_screenful.first_entry = 0;
-	menu->curr_screenful.offset = menu->last_screenful.offset = 0;
-	menu->tornoff = windowed;
 	menu->tearable = !windowed && menuctx->tearoff;
+	if (menu->tearable)
+		menu->curr_screenful.offset = 0;
+	else
+		menu->curr_screenful.offset = get_entry_height(menuctx, TEAR_OFF);
+	menu->last_screenful.offset = menu->curr_screenful.offset;
+	menu->tornoff = windowed;
 	xgap = menuctx->outer_border_width;
 	ygap = -menuctx->inner_border_width;
 	if (menu->tearable)
@@ -1555,20 +1524,40 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	}
 
 	if (menu->window == None) {
-		menu->window = create_window(
+		menu->window = XCreateWindow(
 			menuctx->display, menuctx->root_window,
-			menuctx->visual, menuctx->depth, menuctx->colormap,
-			0, 0, 1, 1,
+			menu->window_geometry.x, menu->window_geometry.y,
+			menu->window_geometry.width,
+			menu->window_geometry.height,
 			menuctx->outer_border_width,
-			KeyPressMask | StructureNotifyMask |
-			EnterWindowMask | LeaveWindowMask |
-			ButtonPressMask | ButtonReleaseMask | PointerMotionMask
+			menuctx->depth, InputOutput, menuctx->visual,
+			CWBackPixel|CWColormap|CWBorderPixel|CWSaveUnder,
+			&(XSetWindowAttributes){
+				.border_pixel = 0,
+				.background_pixel = 0,
+				.colormap = menuctx->colormap,
+				.save_under = True,
+				.override_redirect = !windowed
+			}
 		);
 	}
-	XMoveResizeWindow(
+
+	/*
+	 * Wrap XSelectInput(3) around with no input to avoid getting
+	 * spurious events that we generated ourselves
+	 */
+	(void)XSelectInput(menuctx->display, menu->window, 0);
+	(void)XSync(menuctx->display, False);
+	(void)XConfigureWindow(
 		menuctx->display, menu->window,
-		menu->window_geometry.x, menu->window_geometry.y,
-		menu->window_geometry.width, menu->window_geometry.height
+		CWX|CWY|CWWidth|CWHeight|CWBorderWidth,
+		&(XWindowChanges){
+			.x = menu->window_geometry.x,
+			.y = menu->window_geometry.y,
+			.width = menu->window_geometry.width,
+			.height = menu->window_geometry.height,
+			.border_width = menuctx->outer_border_width,
+		}
 	);
 	(void)XChangeWindowAttributes(
 		menuctx->display, menu->window, CWOverrideRedirect,
@@ -1626,9 +1615,22 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		)}, 1
 	);
 
-	draw_menu(menuctx, menu);
-	draw_commit(menuctx, menu, menu->selected);
+	for (size_t i = 0; i < CANVAS_LAST; i++) {
+		if (menu->canvas[i].pixmap == None ||
+		    menu->canvas[i].picture == None) {
+			canvas_reset(menuctx, menu);
+			break;
+		}
+	}
+	canvas_commit(menuctx, menu, menu->selected);
 	XMapRaised(menuctx->display, menu->window);
+	(void)XSelectInput(
+		menuctx->display, menu->window,
+		KeyPressMask | StructureNotifyMask |
+		EnterWindowMask | LeaveWindowMask |
+		ButtonPressMask | ButtonReleaseMask | PointerMotionMask
+	);
+	(void)XSync(menuctx->display, False);
 }
 
 static void
@@ -1642,9 +1644,9 @@ static void
 menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		int x, int y)
 {
-	y += menuctx->outer_border_width + menuctx->separatorh;
-	menu_map(menuctx, menu, x, y, 0, true);
+	y += menuctx->outer_border_width + get_entry_height(menuctx, TEAR_OFF);
 	menu->tornoff = true;
+	menu_map(menuctx, menu, x, y, 0, true);
 }
 
 #define submenu_run(ctx, parent, menu, flags, time) \
@@ -1665,7 +1667,8 @@ menu_run(struct ctrlmenu_context *menuctx,
 	static XMotionEvent last_motion = {};
 	static int timeout = 0;
 	struct ctrlmenu_entry *prevselected;
-	struct ctrlmenu *menu = &(struct ctrlmenu){};
+	struct ctrlmenu buf_menu = {};
+	struct ctrlmenu *menu = &buf_menu;
 	XEvent xev;
 	bool close_all = false;
 
@@ -1673,6 +1676,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 		orig_menu->selected = select_first_entry(menuctx, orig_menu);
 	else
 		orig_menu->selected = NULL;
+	orig_menu->canvas = orig_menu->canvas_orig;
 	if (flags & RUN_POPUP) {
 		unsigned int width = 0;
 
@@ -1682,6 +1686,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			.entries = orig_menu->entries,
 			.nentries = orig_menu->nentries,
 			.selected = orig_menu->selected,
+			.canvas = orig_menu->canvas_orig,
 		};
 		if (XGrabPointer(
 			menuctx->display, menuctx->root_window, True,
@@ -1700,11 +1705,16 @@ menu_run(struct ctrlmenu_context *menuctx,
 			y_root = parent->window_geometry.y + get_entry_ypos(
 				menuctx, parent, parent->selected
 			);
+			if (!parent->tearable)
+				y_root -= get_entry_height(menuctx, TEAR_OFF);
+			if (parent->tornoff)
+				y_root -= menuctx->outer_border_width;
 			width = parent->window_geometry.width;
 		}
 		menu_map(menuctx, menu, x_root, y_root, width, false);
 	} else {
 		menu = orig_menu;
+		canvas_commit(menuctx, menu, menu->selected);
 	}
 	menu->next = parent;
 	prevselected = menu->selected;
@@ -1761,7 +1771,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				close_all = true;
 				goto done;
 			}
-			draw_commit(menuctx, menu, menu->selected);
+			canvas_commit(menuctx, menu, menu->selected);
 			if (menu->selected == NULL)
 				break;
 			if (menu->selected->type == CTRLMENU_CASCADE) {
@@ -1795,8 +1805,8 @@ menu_run(struct ctrlmenu_context *menuctx,
 				break;       /* size not changed */
 			menu->window_geometry.width = xev.xconfigure.width;
 			menu->window_geometry.height = xev.xconfigure.height;
-			draw_menu(menuctx, menu);
-			draw_commit(menuctx, menu, menu->selected);
+			canvas_reset(menuctx, menu);
+			canvas_commit(menuctx, menu, menu->selected);
 			break;
 		case KeyPress:
 			KeySym ksym = XkbKeycodeToKeysym(menuctx->display, xev.xkey.keycode, 0, 0);
@@ -1933,7 +1943,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				    (double)(xev.xmotion.x - last_motion.x)/
 				    (xev.xmotion.time - last_motion.time) < 0.01) {
 					m->next->selected = above;
-					draw_commit(
+					canvas_commit(
 						menuctx, m->next,
 						m->next->selected
 					);
@@ -1971,7 +1981,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				if (menu->next->selected == pointed_entry)
 					break;
 				menu->next->selected = pointed_entry;
-				draw_commit(
+				canvas_commit(
 					menuctx, menu->next,
 					menu->next->selected
 				);
@@ -2013,16 +2023,19 @@ menu_run(struct ctrlmenu_context *menuctx,
 		}
 
 		if (menu->selected != prevselected) {
-			draw_commit(menuctx, menu, menu->selected);
+			canvas_commit(menuctx, menu, menu->selected);
 			prevselected = menu->selected;
 			timeout = MOTION_TIMEOUT;
 		}
 	}
 done:
 	menu->selected = NULL;
-	draw_commit(menuctx, menu, menu->selected);
-	if (flags & RUN_POPUP)
-		ctrlmenu_close(menuctx->display, menu);
+	canvas_commit(menuctx, menu, menu->selected);
+	if (buf_menu.window != None) {
+		XSelectInput(menuctx->display, buf_menu.window, 0);
+		XSync(menuctx->display, false);
+		XDestroyWindow(menuctx->display, buf_menu.window);
+	}
 	menu->next = NULL;
 	return close_all;
 }
@@ -2118,11 +2131,14 @@ ctrlmenu_close(Display *display, struct ctrlmenu *menu)
 {
 	if (menu->window != None)
 		XDestroyWindow(display, menu->window);
+	menu->window = None;
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		if (menu->canvas[i].picture != None)
 			XRenderFreePicture(display, menu->canvas[i].picture);
 		if (menu->canvas[i].pixmap != None)
 			XFreePixmap(display, menu->canvas[i].pixmap);
+		menu->canvas[i].pixmap = None;
+		menu->canvas[i].picture = None;
 	}
 	*menu = (struct ctrlmenu){
 		.entries = menu->entries,

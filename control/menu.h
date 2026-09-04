@@ -60,7 +60,7 @@ struct ctrlmenu {
 	struct Canvas {
 		XID pixmap;
 		XID picture;
-	} canvas[CANVAS_LAST];
+	} canvas_orig[CANVAS_LAST], *canvas;
 	bool tearable;
 	bool overflow;
 	bool hasicon;
