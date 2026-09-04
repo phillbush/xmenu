@@ -2133,12 +2133,12 @@ ctrlmenu_close(Display *display, struct ctrlmenu *menu)
 		XDestroyWindow(display, menu->window);
 	menu->window = None;
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
-		if (menu->canvas[i].picture != None)
-			XRenderFreePicture(display, menu->canvas[i].picture);
-		if (menu->canvas[i].pixmap != None)
-			XFreePixmap(display, menu->canvas[i].pixmap);
-		menu->canvas[i].pixmap = None;
-		menu->canvas[i].picture = None;
+		if (menu->canvas_orig[i].picture != None)
+			XRenderFreePicture(display, menu->canvas_orig[i].picture);
+		if (menu->canvas_orig[i].pixmap != None)
+			XFreePixmap(display, menu->canvas_orig[i].pixmap);
+		menu->canvas_orig[i].pixmap = None;
+		menu->canvas_orig[i].picture = None;
 	}
 	*menu = (struct ctrlmenu){
 		.entries = menu->entries,

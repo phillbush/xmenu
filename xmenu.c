@@ -641,6 +641,8 @@ popup:
 		if (menus[0].entries[i].icons != NULL)
 			XDestroyImage(menus[0].entries[i].icons);
 	free(menus[0].entries);
+	for (size_t i = 0; i < nmenus; i++)
+		ctrlmenu_close(display, &menus[i]);
 	free(menus);
 	XDestroyWindow(display, reference);
 	XrmDestroyDatabase(resources);
