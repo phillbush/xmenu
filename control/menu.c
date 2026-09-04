@@ -1930,19 +1930,22 @@ menu_run(struct ctrlmenu_context *menuctx,
 				above = get_entry(
 					menuctx, m->next, xev.xmotion.y
 				);
-				if (above == NULL || above->submenu == NULL)
+				if (above == NULL)
 					continue;
-				if (above->submenu->entries == m->entries)
+				if (above->type == CTRLMENU_CASCADE &&
+				    above->submenu->entries == m->entries)
 					break;
-				/*
-				 * Pointer on ancestor menu, over entry which
-				 * does not descends into current menu.
-				 */
-				if (!(flags&RUN_ENTERED) && (above == NULL ||
-				    above->submenu->entries != menu->entries) &&
+				/* user selected another entry on parent menu */
+				if (!(flags&RUN_ENTERED) &&
+				    (above->type != CTRLMENU_CASCADE ||
+				     above->submenu->entries != menu->entries) &&
 				    xev.xmotion.window == last_motion.window &&
 				    (double)(xev.xmotion.x - last_motion.x)/
 				    (xev.xmotion.time - last_motion.time) < 0.01) {
+					/*
+					 * Current menu has not been entered yet;
+					 * Motion is not quick rightwards movement.
+					 */
 					m->next->selected = above;
 					canvas_commit(
 						menuctx, m->next,
@@ -1950,13 +1953,23 @@ menu_run(struct ctrlmenu_context *menuctx,
 					);
 					XPutBackEvent(menuctx->display, &xev);
 					goto done;
-				}
-				if (!(flags&RUN_ENTERED)) {
+				} else if (!(flags&RUN_ENTERED)) {
+					/*
+					 * Current menu has not been entered yet;
+					 * Motion is a quick rightwards movement,
+					 * that we should ignore (user may be
+					 * aiming an entry on current menu)
+					 */
 					timeout = MOTION_TIMEOUT;
 					break;
+				} else {
+					/*
+					 * Current menu has already been entered;
+					 * now should be closed.
+					 */
+					XPutBackEvent(menuctx->display, &xev);
+					goto done;
 				}
-				XPutBackEvent(menuctx->display, &xev);
-				goto done;
 			}
 			if (xev.xmotion.window == menu->window) {
 				struct ctrlmenu_entry *entry;
