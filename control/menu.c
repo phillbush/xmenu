@@ -1644,7 +1644,8 @@ static void
 menu_tear_off(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		int x, int y)
 {
-	y += menuctx->outer_border_width + get_entry_height(menuctx, TEAR_OFF);
+	y += get_entry_height(menuctx, TEAR_OFF);
+	y += menuctx->inner_border_width + menuctx->outer_border_width;
 	menu->tornoff = true;
 	menu_map(menuctx, menu, x, y, 0, true);
 }
