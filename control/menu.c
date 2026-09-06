@@ -1781,7 +1781,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				above = get_entry(
 					menuctx, menu->next, xev.xmotion.y
 				);
-				if (above != menu->caller) {
+				if (above == menu->caller) {
 					/*
 					 * Clicking, on ancestor menu, on entry
 					 * which triggers current menu.
@@ -1880,8 +1880,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				if (!(flags & RUN_ENTERED) && menu->next != NULL &&
 				    menu->next->selected != NULL &&
 				    (menu->next->selected->type & CTRLMENU_CASCADE) &&
-				    menu->next->selected->submenu->entries ==
-				    menu->entries) {
+				    menu->caller == menu->next->selected) {
 					/* navigating on parent menu to current one */
 					menu->selected = select_first_entry(menuctx, menu);
 					break;
