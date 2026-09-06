@@ -34,8 +34,3 @@ I implemented a XParseGeometry(3)-compatible geometry parsed with
 extensions for setting placement based on monitor size.
 
 I am not sure whether i should re-implement it before a major release.
-
-
-§ Fix drawing of scroll arrows on pop-up menus.
-
-The commit which made pixmap persistent may have caused this.

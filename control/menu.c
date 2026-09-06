@@ -358,57 +358,6 @@ reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase xdb)
  * entry positioning routines
  */
 
-static struct ctrlmenu_entry *
-get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
-{
-	long h = menuctx->inner_border_width;
-
-	if (menu->tearable) {
-		if (y < h + menuctx->separatorh)
-			return TEAR_OFF;
-		h += menuctx->separatorh;
-	}
-	if (menu->overflow && y < h + menuctx->separatorh) {
-		return SCROLL_UP;
-	}
-	if (menu->overflow && y >= menu->window_geometry.height - menuctx->separatorh) {
-		return SCROLL_DOWN;
-	}
-	if (menu->overflow)
-		h += menuctx->separatorh;
-	for (size_t i = menu->curr_screenful.first_entry; i < menu->nentries; i++) {
-		struct ctrlmenu_entry *entry = &menu->entries[i];
-		if (entry->type == CTRLMENU_SEPARATOR) {
-			h += menuctx->separatorh;
-			continue;
-		}
-		if (entry->disabled) {
-			h += menuctx->entryh;
-			continue;
-		}
-		if (y >= h && y < (long)h + menuctx->entryh)
-			return entry;
-		h += menuctx->entryh;
-		if (menu->overflow &&
-		    h + menuctx->entryh + menuctx->inner_border_width >=
-		    menu->window_geometry.height) {
-			break;
-		}
-	}
-	return NULL;
-}
-
-static int
-get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu_entry *entry)
-{
-	if (entry == NULL)
-		return 0;
-	if (entry->type == CTRLMENU_SEPARATOR)
-		return menuctx->separatorh;
-	else
-		return menuctx->entryh;
-}
-
 static int
 get_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		struct ctrlmenu_entry *entry)
@@ -442,6 +391,17 @@ get_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 }
 
 static int
+get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu_entry *entry)
+{
+	if (entry == NULL)
+		return 0;
+	if (entry->type == CTRLMENU_SEPARATOR)
+		return menuctx->separatorh;
+	else
+		return menuctx->entryh;
+}
+
+static int
 get_first_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	int y;
@@ -451,6 +411,49 @@ get_first_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	if (menu->overflow)
 		y += menuctx->separatorh;
 	return y;
+}
+
+static struct ctrlmenu_entry *
+get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
+{
+	long h = menuctx->inner_border_width;
+
+	if (menu->tearable) {
+		if (y < h + menuctx->separatorh)
+			return TEAR_OFF;
+		h += menuctx->separatorh;
+	}
+	if (menu->overflow && y < h + menuctx->separatorh) {
+		return SCROLL_UP;
+	}
+	if (menu->overflow &&
+	    y >= menu->window_geometry.height
+	       - menuctx->inner_border_width
+	       - get_entry_height(menuctx, SCROLL_DOWN)) {
+		return SCROLL_DOWN;
+	}
+	if (menu->overflow)
+		h += menuctx->separatorh;
+	for (size_t i = menu->curr_screenful.first_entry; i < menu->nentries; i++) {
+		struct ctrlmenu_entry *entry = &menu->entries[i];
+		if (entry->type == CTRLMENU_SEPARATOR) {
+			h += menuctx->separatorh;
+			continue;
+		}
+		if (entry->disabled) {
+			h += menuctx->entryh;
+			continue;
+		}
+		if (y >= h && y < (long)h + menuctx->entryh)
+			return entry;
+		h += menuctx->entryh;
+		if (menu->overflow &&
+		    h + menuctx->entryh + menuctx->inner_border_width >=
+		    menu->window_geometry.height) {
+			break;
+		}
+	}
+	return NULL;
 }
 
 
@@ -992,6 +995,7 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		struct ctrlmenu_entry *entry)
 {
 	int src_canvas_y, dst_canvas_y;
+	int dst_diff = (menu->tearable?0:get_entry_height(menuctx, TEAR_OFF));
 
 	XRenderFillRectangle(
 		menuctx->display,
@@ -1014,6 +1018,17 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		menu->window_geometry.width,
 		menu->window_geometry.height
 	);
+	if (menu->tearable) XRenderComposite(
+		menuctx->display, PictOpOver,
+		menu->canvas[CANVAS_NORMAL].picture,
+		None,
+		menu->canvas[CANVAS_FINAL].picture,
+		0, get_entry_ypos(menuctx, menu, TEAR_OFF),
+		0, 0,
+		0, get_entry_ypos(menuctx, menu, TEAR_OFF),
+		menu->window_geometry.width,
+		get_entry_height(menuctx, TEAR_OFF)
+	);
 	if (menu->overflow) {
 		XRenderComposite(
 			menuctx->display,
@@ -1023,7 +1038,7 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			menu->canvas[CANVAS_FINAL].picture,
 			0, get_entry_ypos(menuctx, menu, SCROLL_UP),
 			0, 0,
-			0, get_entry_ypos(menuctx, menu, SCROLL_UP),
+			0, get_entry_ypos(menuctx, menu, SCROLL_UP) - dst_diff,
 			menu->window_geometry.width,
 			get_entry_height(menuctx, SCROLL_UP)
 		);
@@ -1047,7 +1062,7 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		dst_canvas_y = menu->window_geometry.height
 		             - menuctx->separatorh - menuctx->inner_border_width;
 	else if (entry == SCROLL_UP || entry == TEAR_OFF)
-		dst_canvas_y = src_canvas_y;
+		dst_canvas_y = src_canvas_y - dst_diff;
 	else
 		dst_canvas_y = src_canvas_y - menu->curr_screenful.offset;
 	if (src_canvas_y >= 0) {
@@ -1216,6 +1231,13 @@ scroll_up(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, int diff)
 {
 	int height = 0;
 
+	if (menu->curr_screenful.first_entry == 0) {
+		if (menu->tearable)
+			menu->curr_screenful.offset = 0;
+		else
+			menu->curr_screenful.offset = get_entry_height(menuctx, TEAR_OFF);
+		return;
+	}
 	while (height < diff && menu->curr_screenful.first_entry > 0) {
 		height = get_entry_height(
 			menuctx,
@@ -1494,9 +1516,8 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	ygap = -menuctx->inner_border_width;
 	if (menu->tearable)
 		ygap -= menuctx->separatorh;
-	menu->total_height = menuctx->inner_border_width * 2;
-	if (menu->tearable)
-		menu->total_height += menuctx->separatorh;
+	menu->total_height = menuctx->inner_border_width * 2
+	                   + get_entry_height(menuctx, TEAR_OFF);
 	menu->window_geometry.height = menuctx->inner_border_width * 2;
 	menu->window_geometry.width = 0;
 	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
@@ -1534,9 +1555,10 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			menu->window_geometry.height = max_height;
 		}
 	}
-	if (menu->overflow)
+	if (menu->overflow) {
 		menu->total_height += menuctx->separatorh * 2;
-
+		menu->last_screenful.offset -= max_height % menuctx->separatorh;
+	}
 	menu->window_geometry.width += PADDING * 2 + menuctx->inner_border_width * 2;
 	if (menu->hasicon)
 		menu->window_geometry.width += menuctx->iconsize + PADDING;
@@ -2056,7 +2078,6 @@ done:
 	menu->next = NULL;
 	return close_all;
 }
-
 
 /*
  * context routines
