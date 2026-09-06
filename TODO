@@ -39,8 +39,3 @@ I am not sure whether i should re-implement it before a major release.
 § Fix drawing of scroll arrows on pop-up menus.
 
 The commit which made pixmap persistent may have caused this.
-
-
-§ Fix segfault when calling ctrlmenu_tearoff() on unmapped menu
-
-...

@@ -2236,6 +2236,7 @@ ctrlmenu_tearoff(Display *display, Window reference,
 	) == RETURN_FAILURE)
 		return;
 	menu->tornoff = true;
+	menu->canvas = menu->canvas_orig;
 	menu_map(&menuctx, menu, x_root, y_root, 0);
 	context_cleanup(&menuctx);
 }
