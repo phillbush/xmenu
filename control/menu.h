@@ -1,36 +1,5 @@
 #include <X11/Xresource.h>
 
-struct ctrlmenu_entry {
-	enum {
-		CTRLMENU_COMMAND,
-		CTRLMENU_SEPARATOR,
-		CTRLMENU_CASCADE,
-	} type;
-
-	char *label;
-
-#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
-	union {
-	struct {
-#endif
-		void (*callback)(void *ctx, void *self, bool alt);
-		void *self;
-#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
-	};
-	struct {
-#endif
-		struct ctrlmenu *submenu;
-#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
-	};
-	};
-#endif
-
-	XImage *icons;
-	size_t nicons;
-
-	bool disabled;
-};
-
 enum {
 	CANVAS_NORMAL,
 	CANVAS_SELECT,
@@ -66,6 +35,43 @@ struct ctrlmenu {
 	bool hasicon;
 	bool hassubmenu;
 	bool tornoff;
+};
+
+struct ctrlmenu_entry {
+	enum {
+		CTRLMENU_SEPARATOR = 0x0,
+		CTRLMENU_COMMAND   = 0x1,
+		CTRLMENU_CASCADE   = 0x2,
+		CTRLMENU_CASCADE_DYNAMIC = CTRLMENU_CASCADE|CTRLMENU_COMMAND,
+	} type;
+
+	char *label;
+
+#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
+	union {
+	struct {
+		union {
+#endif
+		void (*callback)(void *ctx, void *self, bool alt);
+		bool (*gen_menu)(void *ctx, void *self, struct ctrlmenu *menu);
+#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
+		};
+#endif
+		void *self;
+#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
+	};
+	struct {
+#endif
+		struct ctrlmenu *submenu;
+#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
+	};
+	};
+#endif
+
+	XImage *icons;
+	size_t nicons;
+
+	bool disabled;
 };
 
 void ctrlmenu_popup(

@@ -822,7 +822,7 @@ canvas_reset(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 			XRenderFreePicture(menuctx->display, picture);
 			XFreePixmap(menuctx->display, pixmap);
 		}
-		if (entry->type == CTRLMENU_CASCADE) {
+		if (entry->type & CTRLMENU_CASCADE) {
 			draw_triangle(
 				menuctx,
 				menu->canvas[CANVAS_NORMAL].picture,
@@ -1476,7 +1476,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		}
 		if (entry->nicons > 0)
 			menu->hasicon = true;
-		if (entry->type == CTRLMENU_CASCADE)
+		if (entry->type & CTRLMENU_CASCADE)
 			menu->hassubmenu = true;
 		menu->window_geometry.width = MAX(menu->window_geometry.width, textw);
 		if (menu->overflow) {
@@ -1775,7 +1775,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			canvas_commit(menuctx, menu, menu->selected);
 			if (menu->selected == NULL)
 				break;
-			if (menu->selected->type == CTRLMENU_CASCADE) {
+			if (menu->selected->type & CTRLMENU_CASCADE) {
 				close_all = submenu_run(
 					menuctx, menu, menu->selected->submenu,
 					RUN_ENTERED, xev.xbutton.time
@@ -1851,7 +1851,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			           ksym == XK_Return || ksym == XK_KP_Enter) {
 				if (!(flags & RUN_ENTERED) && menu->next != NULL &&
 				    menu->next->selected != NULL &&
-				    menu->next->selected->type == CTRLMENU_CASCADE &&
+				    (menu->next->selected->type & CTRLMENU_CASCADE) &&
 				    menu->next->selected->submenu->entries ==
 				    menu->entries) {
 					/* navigating on parent menu to current one */
@@ -1865,7 +1865,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				}
 				if (menu->selected == NULL)
 					break;
-				if (menu->selected->type == CTRLMENU_CASCADE) {
+				if (menu->selected->type & CTRLMENU_CASCADE) {
 					close_all = submenu_run(
 						menuctx, menu,
 						menu->selected->submenu,
@@ -1932,12 +1932,12 @@ menu_run(struct ctrlmenu_context *menuctx,
 				);
 				if (above == NULL)
 					continue;
-				if (above->type == CTRLMENU_CASCADE &&
+				if ((above->type & CTRLMENU_CASCADE) &&
 				    above->submenu->entries == m->entries)
 					break;
 				/* user selected another entry on parent menu */
 				if (!(flags&RUN_ENTERED) &&
-				    (above->type != CTRLMENU_CASCADE ||
+				    (!(above->type & CTRLMENU_CASCADE) ||
 				     above->submenu->entries != menu->entries) &&
 				    xev.xmotion.window == last_motion.window &&
 				    (double)(xev.xmotion.x - last_motion.x)/
@@ -2008,7 +2008,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			 * preview a submenu if possible
 			 */
 			if ((flags&RUN_ENTERED) && menu->selected != NULL &&
-			    menu->selected->type == CTRLMENU_CASCADE) {
+			    (menu->selected->type & CTRLMENU_CASCADE)) {
 				close_all = submenu_run(
 					menuctx, menu,
 					menu->selected->submenu,
