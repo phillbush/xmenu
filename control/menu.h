@@ -19,6 +19,7 @@ struct ctrlmenu {
 	/* caller program shall ignore these: */
 	struct ctrlmenu *next;
 	struct ctrlmenu_entry *selected;
+	struct ctrlmenu_entry *caller;
 	XRectangle window_geometry;
 	int canvas_width, canvas_height;
 	int total_height;
@@ -51,10 +52,17 @@ struct ctrlmenu_entry {
 	union {
 	struct {
 		union {
+		struct {
 #endif
 		void (*callback)(void *ctx, void *self, bool alt);
-		bool (*gen_menu)(void *ctx, void *self, struct ctrlmenu *menu);
 #if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
+		};
+		struct {
+#endif
+		bool (*gen_menu)(void *ctx, void *self, struct ctrlmenu *menu);
+		void (*del_menu)(void *ctx, void *self, struct ctrlmenu *menu);
+#if defined(_ISOC11_SOURCE) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112)
+		};
 		};
 #endif
 		void *self;

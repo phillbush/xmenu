@@ -139,6 +139,92 @@ callback(void *, void *self, bool)
 	fflush(stdout);
 }
 
+static int
+direntsel(const struct dirent *dp)
+{
+	return dp->d_name[0] != '.' && strpbrk(dp->d_name, "\t\n") == NULL;
+}
+
+static int
+direntcmp(const struct dirent **ap, const struct dirent **bp)
+{
+	const struct dirent *a = *ap;
+	const struct dirent *b = *bp;
+
+	if (a->d_type == DT_DIR && b->d_type != DT_DIR)
+		return -1;
+	if (b->d_type == DT_DIR && a->d_type != DT_DIR)
+		return 1;
+	return strcoll(a->d_name, b->d_name);
+}
+
+static void
+del_menu(void *, void *, struct ctrlmenu *menu)
+{
+	for (size_t i = 0; i < menu->nentries; i++) {
+		free(menu->entries[i].self);
+		free(menu->entries[i].label);
+	}
+	free(menu->entries);
+}
+
+static bool
+gen_menu(void *, void *self, struct ctrlmenu *menu)
+{
+	struct dirent **namelist;
+	struct ctrlmenu_entry *entries = NULL;
+	char const *dirname = self;
+	int nentries;
+
+	if (strncmp(dirname, "file:", 5) == 0) {
+		dirname += 5;
+		if (strncmp(dirname, "//", 2) == 0)
+			dirname += 2;
+	}
+	if ((nentries = scandir(dirname, &namelist, &direntsel, &direntcmp)) == -1)
+		goto error;
+	if ((entries = reallocarray(NULL, nentries, sizeof(*menu->entries))) == NULL)
+		goto error;
+	for (int i = 0; i < nentries; i++) {
+		char path[PATH_MAX + 8];
+
+		snprintf(
+			path,
+			sizeof(path),
+			"file:%s/%s",
+			dirname,
+			namelist[i]->d_name
+		);
+		if (namelist[i]->d_type == DT_DIR) {
+			entries[i] = (struct ctrlmenu_entry){
+				.type     = CTRLMENU_CASCADE_DYNAMIC,
+				.label    = strdup(namelist[i]->d_name),
+				.gen_menu = gen_menu,
+				.del_menu = del_menu,
+				.self     = strdup(path),
+			};
+		} else {
+			entries[i] = (struct ctrlmenu_entry){
+				.type     = CTRLMENU_COMMAND,
+				.label    = strdup(namelist[i]->d_name),
+				.callback = callback,
+				.self     = strdup(path),
+			};
+		}
+		free(namelist[i]);
+	}
+	menu->title = dirname;
+	menu->nentries = nentries;
+	menu->entries = entries;
+	free(namelist);
+	return true;
+error:
+	free(entries);
+	menu->entries = NULL;
+	menu->nentries = 0;
+	return false;
+}
+
 static XImage *
 load_icon(const char *file)
 {
@@ -316,13 +402,18 @@ fill_menu(struct ctrlmenu **menus, struct ctrlmenu_entry **next_entry,
 				output = entry->label;
 			else if (strcmp(output, ":") == 0)
 				output = NULL;
-			entry->self = output;
-			if (entry->label == NULL)
+			if (entry->label == NULL) {
 				entry->type = CTRLMENU_SEPARATOR;
-			else if (entry->self == NULL)
+			} else if (output == NULL) {
 				entry->disabled = true;
-			else
+			} else if (strncmp(output, "file:", 5) == 0) {
+				entry->type = CTRLMENU_CASCADE_DYNAMIC;
+				entry->gen_menu = gen_menu;
+				entry->del_menu = del_menu;
+			} else {
 				entry->type = CTRLMENU_COMMAND;
+			}
+			entry->self = output;
 			prev_entry = entry;
 			nentries++;
 		}
@@ -636,13 +727,13 @@ popup:
 			break;
 	}
 
-	free(read_data);
 	for (size_t i = 0; i < nentries; i++)
 		if (menus[0].entries[i].icons != NULL)
 			XDestroyImage(menus[0].entries[i].icons);
-	free(menus[0].entries);
 	for (size_t i = 0; i < nmenus; i++)
 		ctrlmenu_close(display, &menus[i]);
+	free(read_data);
+	free(menus[0].entries);
 	free(menus);
 	XDestroyWindow(display, reference);
 	XrmDestroyDatabase(resources);
