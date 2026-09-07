@@ -105,7 +105,7 @@ static int menu_run(struct ctrlmenu_context *,
 );
 
 /*
- * resource creators
+ * RESOURCE CREATORS
  */
 
 static int
@@ -139,7 +139,7 @@ create_picture(Display *display, Window root_window,
 }
 
 /*
- * resource parsers and setters
+ * RESOURCE PARSERS AND SETTERS
  */
 
 static void
@@ -355,7 +355,7 @@ reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase xdb)
 
 
 /*
- * entry positioning routines
+ * ENTRY POSITIONING ROUTINES
  */
 
 static int
@@ -458,7 +458,35 @@ get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 
 
 /*
- * drawing routines
+ * DRAWING ROUTINES
+ *
+ * There are three pixmaps where stuff are drawn:
+ *
+ * +------------+
+ * | Copy       | CANVAS_NORMAL: All entries are drawn in unselected
+ * | Cut        | text color on unselected background color.  It is
+ * | Paste      | drawn only when the menu is created or resized.
+ * | Save as... |
+ * +------------+
+ *
+ * +------------+
+ * |#Copy#######| CANVAS_SELECT: All entries are drawn in selected
+ * |#Cut########| text color on selected background color.  It is
+ * |#Paste######| drawn only when the menu is created or resized.
+ * |#Save#as...#|
+ * +------------+
+ *
+ * +------------+
+ * | Copy       | CANVAS_FINAL: Composition of a region of CANVAS_NORMAL,
+ * |#Cut########| and another region of the CANVAS_SELECT.  It is drawn
+ * | Paste      | whenever an entry is selected.  This pixmap is set as
+ * | Save as... | the menu window's background.
+ * +------------+
+ *
+ * If the menu overflows (i'e', there are more entries than fit the
+ * screen), the canvases are long enough to fit all entries.  Only the
+ * visible portions are composed into CANVAS_FINAL and set as the
+ * background for the menu window.
  */
 
 static void
@@ -1060,7 +1088,7 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 }
 
 /*
- * event getter
+ * EVENT GETTER
  */
 
 static Bool
@@ -1171,7 +1199,7 @@ next_event(Display *display, XEvent *event, struct ctrlmenu *menu,
 
 
 /*
- * entry scrolling routines
+ * ENTRY SCROLLING ROUTINES
  */
 
 static void
@@ -1255,7 +1283,7 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 
 
 /*
- * entry selection routines
+ * ENTRY SELECTION ROUTINES
  */
 
 static struct ctrlmenu_entry *
@@ -1354,7 +1382,7 @@ select_next_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 
 
 /*
- * entry triggering
+ * ENTRY TRIGGERING
  */
 
 static void
@@ -1423,7 +1451,7 @@ activate_entry(struct ctrlmenu_context *menuctx, jmp_buf jmpenv,
 
 
 /*
- * internal menu controlling routines
+ * INTERNAL MENU CONTROLLING ROUTINES
  */
 
 static void
@@ -2047,7 +2075,7 @@ done:
 }
 
 /*
- * context routines
+ * CONTEXT ROUTINES
  */
 
 static void
@@ -2128,7 +2156,7 @@ error:
 
 
 /*
- * exported routines
+ * EXPORTED ROUTINES
  */
 
 void
