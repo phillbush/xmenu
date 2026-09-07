@@ -954,57 +954,50 @@ canvas_reset(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 }
 
 static void
+canvas_composite(struct ctrlmenu_context *menuctx,
+		struct ctrlmenu *menu, bool selected,
+		int src_y, int dst_y, int height)
+{
+	XRenderComposite(
+		menuctx->display, PictOpOver,
+		menu->canvas[selected?CANVAS_SELECT:CANVAS_NORMAL].picture,
+		None, menu->canvas[CANVAS_FINAL].picture,
+		0, src_y, 0, 0, 0, dst_y,
+		menu->window_geometry.width, height
+	);
+}
+
+static void
 canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		struct ctrlmenu_entry *entry)
 {
 	int src_canvas_y, dst_canvas_y;
 	int dst_diff = (menu->tearable?0:get_entry_height(menuctx, TEAR_OFF));
 
-	XRenderComposite(
-		menuctx->display, PictOpOver,
-		menu->canvas[CANVAS_NORMAL].picture,
-		None,
-		menu->canvas[CANVAS_FINAL].picture,
-		0, menu->curr_screenful.offset,
-		0, 0,
-		0, 0,
-		menu->window_geometry.width,
+	canvas_composite(
+		menuctx, menu, false,
+		menu->curr_screenful.offset, 0,
 		menu->window_geometry.height
 	);
-	if (menu->tearable) XRenderComposite(
-		menuctx->display, PictOpOver,
-		menu->canvas[CANVAS_NORMAL].picture,
-		None,
-		menu->canvas[CANVAS_FINAL].picture,
-		0, get_entry_ypos(menuctx, menu, TEAR_OFF),
-		0, 0,
-		0, get_entry_ypos(menuctx, menu, TEAR_OFF),
-		menu->window_geometry.width,
+	if (menu->tearable) canvas_composite(
+		menuctx, menu, false,
+		get_entry_ypos(menuctx, menu, TEAR_OFF),
+		get_entry_ypos(menuctx, menu, TEAR_OFF),
 		get_entry_height(menuctx, TEAR_OFF)
 	);
 	if (menu->overflow) {
-		XRenderComposite(
-			menuctx->display, PictOpOver,
-			menu->canvas[CANVAS_NORMAL].picture,
-			None,
-			menu->canvas[CANVAS_FINAL].picture,
-			0, get_entry_ypos(menuctx, menu, SCROLL_UP),
-			0, 0,
-			0, get_entry_ypos(menuctx, menu, SCROLL_UP) - dst_diff,
-			menu->window_geometry.width,
+		canvas_composite(
+			menuctx, menu, false,
+			get_entry_ypos(menuctx, menu, SCROLL_UP),
+			get_entry_ypos(menuctx, menu, SCROLL_UP) - dst_diff,
 			get_entry_height(menuctx, SCROLL_UP)
 		);
-		XRenderComposite(
-			menuctx->display, PictOpOver,
-			menu->canvas[CANVAS_NORMAL].picture,
-			None,
-			menu->canvas[CANVAS_FINAL].picture,
-			0, get_entry_ypos(menuctx, menu, SCROLL_DOWN),
-			0, 0,
-			0, menu->window_geometry.height
+		canvas_composite(
+			menuctx, menu, false,
+			get_entry_ypos(menuctx, menu, SCROLL_DOWN),
+			menu->window_geometry.height
 			- get_entry_height(menuctx, SCROLL_DOWN)
 			- menuctx->inner_border_width,
-			menu->window_geometry.width,
 			get_entry_height(menuctx, SCROLL_DOWN)
 		);
 	}
@@ -1017,15 +1010,9 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	else
 		dst_canvas_y = src_canvas_y - menu->curr_screenful.offset;
 	if (src_canvas_y >= 0) {
-		XRenderComposite(
-			menuctx->display, PictOpOver,
-			menu->canvas[CANVAS_SELECT].picture,
-			None,
-			menu->canvas[CANVAS_FINAL].picture,
-			0, src_canvas_y,
-			0, 0,
-			0, dst_canvas_y,
-			menu->window_geometry.width,
+		canvas_composite(
+			menuctx, menu, true,
+			src_canvas_y, dst_canvas_y,
 			get_entry_height(menuctx, entry)
 		);
 	}
