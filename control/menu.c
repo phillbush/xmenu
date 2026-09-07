@@ -152,11 +152,7 @@ setcolor(Display *display, struct color *color, struct rgb rgb)
 		.alpha = 0xFFFF,
 	};
 	XRenderFillRectangle(
-		display,
-		PictOpSrc,
-		color->pict,
-		&color->chans,
-		0, 0, 1, 1
+		display, PictOpSrc, color->pict, &color->chans, 0, 0, 1, 1
 	);
 }
 
@@ -280,8 +276,7 @@ parse_opacity(void *ctx, void *, const char *value)
 		return false;
 	menuctx->colors[COLOR_OPACITY].chans = (XRenderColor){ .alpha = d * 0xFFFF};
 	XRenderFillRectangle(
-		menuctx->display,
-		PictOpSrc,
+		menuctx->display, PictOpSrc,
 		menuctx->colors[COLOR_OPACITY].pict,
 		&menuctx->colors[COLOR_OPACITY].chans,
 		0, 0, 1, 1
@@ -522,20 +517,14 @@ draw_dashline(struct ctrlmenu_context *menuctx, Picture picture, int width, int 
 		}
 		for (size_t i = 0; i < nrects; i++) {
 			XRenderFillRectangles(
-				menuctx->display,
-				PictOpSrc,
-				picture,
-				&menuctx->colors[COLOR_TOP].chans,
-				toprects,
-				nrects
+				menuctx->display, PictOpSrc,
+				picture, &menuctx->colors[COLOR_TOP].chans,
+				toprects, nrects
 			);
 			XRenderFillRectangles(
-				menuctx->display,
-				PictOpSrc,
-				picture,
-				&menuctx->colors[COLOR_BOT].chans,
-				botrects,
-				nrects
+				menuctx->display, PictOpSrc,
+				picture, &menuctx->colors[COLOR_BOT].chans,
+				botrects, nrects
 			);
 		}
 	}
@@ -545,20 +534,16 @@ static void
 draw_separator(struct ctrlmenu_context *menuctx, Picture picture, XRectangle *rect)
 {
 	XRenderFillRectangle(
-		menuctx->display,
-		PictOpSrc,
-		picture,
-		&menuctx->colors[COLOR_BOT].chans,
+		menuctx->display, PictOpSrc,
+		picture, &menuctx->colors[COLOR_BOT].chans,
 		menuctx->inner_border_width + PADDING,
 		rect->y + menuctx->separatorh / 2 - 1,
 		rect->width - menuctx->inner_border_width * 2 - PADDING * 2,
 		1
 	);
 	XRenderFillRectangle(
-		menuctx->display,
-		PictOpSrc,
-		picture,
-		&menuctx->colors[COLOR_TOP].chans,
+		menuctx->display, PictOpSrc,
+		picture, &menuctx->colors[COLOR_TOP].chans,
 		menuctx->inner_border_width + PADDING,
 		rect->y + menuctx->separatorh / 2,
 		rect->width - menuctx->inner_border_width * 2 - PADDING * 2,
@@ -572,36 +557,26 @@ draw_shadows(struct ctrlmenu_context *menuctx, Picture picture, XRectangle *geom
 	for (int i = 0; i < menuctx->inner_border_width; i++) {
 		/* draw light shadow */
 		XRenderFillRectangle(
-			menuctx->display,
-			PictOpSrc,
-			picture,
-			&menuctx->colors[COLOR_TOP].chans,
-			i, i,
-			1, geometry->height - (i * 2 + 1)
+			menuctx->display, PictOpSrc,
+			picture, &menuctx->colors[COLOR_TOP].chans,
+			i, i, 1, geometry->height - (i * 2 + 1)
 		);
 		XRenderFillRectangle(
-			menuctx->display,
-			PictOpSrc,
-			picture,
-			&menuctx->colors[COLOR_TOP].chans,
-			i, i,
-			geometry->width - (i * 2 + 1), 1
+			menuctx->display, PictOpSrc,
+			picture, &menuctx->colors[COLOR_TOP].chans,
+			i, i, geometry->width - (i * 2 + 1), 1
 		);
 
 		/* draw dark shadow */
 		XRenderFillRectangle(
-			menuctx->display,
-			PictOpSrc,
-			picture,
-			&menuctx->colors[COLOR_BOT].chans,
+			menuctx->display, PictOpSrc,
+			picture, &menuctx->colors[COLOR_BOT].chans,
 			geometry->width - 1 - i, i,
 			1, geometry->height - i * 2
 		);
 		XRenderFillRectangle(
-			menuctx->display,
-			PictOpSrc,
-			picture,
-			&menuctx->colors[COLOR_BOT].chans,
+			menuctx->display, PictOpSrc,
+			picture, &menuctx->colors[COLOR_BOT].chans,
 			i, geometry->height - 1 - i,
 			geometry->width - i * 2, 1
 		);
@@ -668,14 +643,9 @@ draw_triangle(struct ctrlmenu_context *menuctx, Picture picture,
 		};
 	}
 	XRenderCompositeTriangles(
-		menuctx->display,
-		PictOpOver,
-		src,
-		picture,
+		menuctx->display, PictOpOver, src, picture,
 		XRenderFindStandardFormat(menuctx->display, PictStandardA8),
-		0, 0,
-		&triangle,
-		1
+		0, 0, &triangle, 1
 	);
 }
 
@@ -780,8 +750,7 @@ draw_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		}
 
 		XRenderComposite(
-			menuctx->display, PictOpOver,
-			picture, None,
+			menuctx->display, PictOpOver, picture, None,
 			menu->canvas[CANVAS_NORMAL].picture,
 			0, 0, 0, 0,
 			menuctx->inner_border_width + PADDING
@@ -791,8 +760,7 @@ draw_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			width, height
 		);
 		XRenderComposite(
-			menuctx->display, PictOpOver,
-			picture, None,
+			menuctx->display, PictOpOver, picture, None,
 			menu->canvas[CANVAS_SELECT].picture,
 			0, 0, 0, 0,
 			menuctx->inner_border_width + PADDING
@@ -993,8 +961,7 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	int dst_diff = (menu->tearable?0:get_entry_height(menuctx, TEAR_OFF));
 
 	XRenderComposite(
-		menuctx->display,
-		PictOpOver,
+		menuctx->display, PictOpOver,
 		menu->canvas[CANVAS_NORMAL].picture,
 		None,
 		menu->canvas[CANVAS_FINAL].picture,
@@ -1017,8 +984,7 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	);
 	if (menu->overflow) {
 		XRenderComposite(
-			menuctx->display,
-			PictOpOver,
+			menuctx->display, PictOpOver,
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
@@ -1029,8 +995,7 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			get_entry_height(menuctx, SCROLL_UP)
 		);
 		XRenderComposite(
-			menuctx->display,
-			PictOpOver,
+			menuctx->display, PictOpOver,
 			menu->canvas[CANVAS_NORMAL].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
@@ -1053,8 +1018,7 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		dst_canvas_y = src_canvas_y - menu->curr_screenful.offset;
 	if (src_canvas_y >= 0) {
 		XRenderComposite(
-			menuctx->display,
-			PictOpOver,
+			menuctx->display, PictOpOver,
 			menu->canvas[CANVAS_SELECT].picture,
 			None,
 			menu->canvas[CANVAS_FINAL].picture,
