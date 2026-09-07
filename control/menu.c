@@ -581,7 +581,8 @@ draw_shadows(struct ctrlmenu_context *menuctx, Picture picture, XRectangle *geom
 }
 
 static void
-draw_triangle(struct ctrlmenu_context *menuctx, Picture picture, Picture src, int x, int y, int direction)
+draw_triangle(struct ctrlmenu_context *menuctx, Picture picture,
+		Picture src, int x, int y, int direction)
 {
 	XTriangle triangle;
 
@@ -651,11 +652,212 @@ draw_triangle(struct ctrlmenu_context *menuctx, Picture picture, Picture src, in
 }
 
 static void
+draw_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
+		struct ctrlmenu_entry *entry, int *y)
+{
+	size_t labellen;
+	int size_diff = menuctx->iconsize;
+	XImage *icon = NULL;
+	XImage *largest_icon = NULL;
+	int textw;
+	XRectangle geometry = {
+		.x = menuctx->inner_border_width + PADDING
+		   + (menu->hasicon ? menuctx->iconsize + PADDING : 0),
+		.y = *y,
+		.width = menu->window_geometry.width,
+		.height = get_entry_height(menuctx, entry),
+	};
+
+	*y += geometry.height;
+
+	if (entry->type == CTRLMENU_SEPARATOR) {
+		for (int i = 0; i < CANVAS_FINAL; i++)
+			draw_separator(
+				menuctx, menu->canvas[i].picture,
+				&geometry
+			);
+		return;
+	}
+
+	/* find best-sized icon */
+	largest_icon = entry->icons;
+	size_diff = menuctx->iconsize;
+	for (size_t nicon = 0; nicon < entry->nicons; nicon++) {
+		if (entry->icons[nicon].width > largest_icon->width &&
+		    entry->icons[nicon].height > largest_icon->height)
+			largest_icon = &entry->icons[nicon];
+		if (MAX(entry->icons[nicon].width,
+			entry->icons[nicon].height) >
+			menuctx->iconsize)
+			continue;
+		if (menuctx->iconsize - entry->icons[nicon].height <= size_diff)
+			continue;
+		size_diff = menuctx->iconsize - entry->icons[nicon].height;
+		icon = &entry->icons[nicon];
+	}
+	if (icon == NULL)
+		icon = largest_icon;
+
+	/* draw icon */
+	if (icon != NULL) {
+		Pixmap pixmap;
+		Picture picture;
+		GC gc;
+		int width = icon->width;
+		int height = icon->height;
+
+		pixmap = XCreatePixmap(
+			menuctx->display,
+			menuctx->root_window,
+			icon->width, icon->height,
+			icon->depth
+		);
+		picture = XRenderCreatePicture(
+			menuctx->display, pixmap,
+			XRenderFindFormat(
+				menuctx->display,
+				PictFormatDepth,
+				&(XRenderPictFormat){
+					.depth = icon->depth,
+				}, 0
+			), 0, NULL
+		);
+		gc = XCreateGC(menuctx->display, pixmap, 0, NULL),
+
+		XPutImage(
+			menuctx->display, pixmap, gc, icon,
+			0, 0, 0, 0, icon->width, icon->height
+		);
+
+		if (size_diff > PADDING) {
+			/* image is too small/large; scale it */
+			if (width > height) {
+				height = (height * menuctx->iconsize) / width;
+				width = menuctx->iconsize;
+			} else {
+				width = (width * menuctx->iconsize) / height;
+				height = menuctx->iconsize;
+			}
+
+			XRenderSetPictureFilter(
+				menuctx->display, picture, FilterBilinear, NULL, 0
+			);
+			XRenderSetPictureTransform(
+				menuctx->display, picture, &(XTransform){
+					{{(icon->width<<16u)/width, 0, 0},
+					{0, (icon->height<<16u)/height, 0},
+					{0, 0, 0x10000}},
+				}
+			);
+		}
+
+		XRenderComposite(
+			menuctx->display, PictOpOver,
+			picture, None,
+			menu->canvas[CANVAS_NORMAL].picture,
+			0, 0, 0, 0,
+			menuctx->inner_border_width + PADDING
+			+ (menuctx->iconsize - width)/2,
+			geometry.y
+			+ (menuctx->entryh - height)/2,
+			width, height
+		);
+		XRenderComposite(
+			menuctx->display, PictOpOver,
+			picture, None,
+			menu->canvas[CANVAS_SELECT].picture,
+			0, 0, 0, 0,
+			menuctx->inner_border_width + PADDING
+			+ (menuctx->iconsize - width)/2,
+			geometry.y
+			+ (menuctx->entryh - height)/2,
+			width, height
+		);
+
+		XFreeGC(menuctx->display, gc);
+		XRenderFreePicture(menuctx->display, picture);
+		XFreePixmap(menuctx->display, pixmap);
+	}
+
+	/* draw triangle, if cascade menu */
+	if (entry->type & CTRLMENU_CASCADE) {
+		int x = geometry.width - PADDING
+		      - TRIANGLE_WIDTH(menuctx) - TRIANGLE_PAD(menuctx)/2;
+		int y = geometry.y + menuctx->entryh/2
+		      - TRIANGLE_HEIGHT(menuctx)/2;
+
+		draw_triangle(
+			menuctx, menu->canvas[CANVAS_NORMAL].picture,
+			menuctx->colors[COLOR_FG].pict, x, y, DIR_RIGHT
+		);
+		draw_triangle(
+			menuctx, menu->canvas[CANVAS_SELECT].picture,
+			menuctx->colors[COLOR_SELFG].pict, x, y, DIR_RIGHT
+		);
+	}
+
+	/* draw label */
+	labellen = strlen(entry->label);
+	textw = ctrlfnt_width(menuctx->fontset, entry->label, labellen);
+	if (menuctx->alignment == ALIGN_RIGHT && menu->hassubmenu) {
+		geometry.x = geometry.width - textw
+		           - PADDING - TRIANGLE_WIDTH(menuctx)
+		           - TRIANGLE_PAD(menuctx);
+	} else if (menuctx->alignment == ALIGN_RIGHT) {
+		geometry.x = geometry.width - textw - PADDING;
+	} else if (menuctx->alignment == ALIGN_CENTER) {
+		geometry.x = geometry.x
+		           + (menu->window_geometry.width - textw) / 2;
+	} else {
+		geometry.x = geometry.x;
+	}
+	if (entry->disabled) {
+		ctrlfnt_draw(
+			menuctx->fontset,
+			menu->canvas[CANVAS_NORMAL].picture,
+			menuctx->colors[COLOR_TOP].pict,
+			geometry, entry->label, labellen
+		);
+		ctrlfnt_draw(
+			menuctx->fontset,
+			menu->canvas[CANVAS_SELECT].picture,
+			menuctx->colors[COLOR_TOP].pict,
+			geometry, entry->label, labellen
+		);
+		geometry.x--;
+		geometry.y--;
+		ctrlfnt_draw(
+			menuctx->fontset,
+			menu->canvas[CANVAS_NORMAL].picture,
+			menuctx->colors[COLOR_BOT].pict,
+			geometry, entry->label, labellen
+		);
+		ctrlfnt_draw(
+			menuctx->fontset,
+			menu->canvas[CANVAS_SELECT].picture,
+			menuctx->colors[COLOR_BOT].pict,
+			geometry, entry->label, labellen
+		);
+	} else {
+		ctrlfnt_draw(
+			menuctx->fontset,
+			menu->canvas[CANVAS_NORMAL].picture,
+			menuctx->colors[COLOR_FG].pict,
+			geometry, entry->label, labellen
+		);
+		ctrlfnt_draw(
+			menuctx->fontset,
+			menu->canvas[CANVAS_SELECT].picture,
+			menuctx->colors[COLOR_SELFG].pict,
+			geometry, entry->label, labellen
+		);
+	}
+}
+
+static void
 canvas_reset(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
-	XRectangle entry_geometry;
-	int textx, textw;
-
+	/* (re-)create canvas for menu */
 	if (menu->canvas_width  < menu->window_geometry.width ||
 	    menu->canvas_height < menu->window_geometry.height) {
 		menu->canvas_width = MAX(
@@ -676,303 +878,65 @@ canvas_reset(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 			if (menu->canvas[i].pixmap != None)
 				XFreePixmap(menuctx->display, menu->canvas[i].pixmap);
 			menu->canvas[i].pixmap = XCreatePixmap(
-				menuctx->display,
-				menu->window,
-				menu->canvas_width,
-				menu->canvas_height,
+				menuctx->display, menu->window,
+				menu->canvas_width, menu->canvas_height,
 				menuctx->depth
 			);
 			menu->canvas[i].picture = XRenderCreatePicture(
-				menuctx->display,
-				menu->canvas[i].pixmap,
+				menuctx->display, menu->canvas[i].pixmap,
 				XRenderFindVisualFormat(menuctx->display, menuctx->visual),
-				0,
-				NULL
+				0, NULL
 			);
 			XRenderFillRectangle(
-				menuctx->display,
-				PictOpClear,
-				menu->canvas[i].picture,
-				&(XRenderColor){ 0 },
-				0, 0,
-				menu->canvas_width,
-				menu->canvas_height
+				menuctx->display, PictOpClear,
+				menu->canvas[i].picture, &(XRenderColor){ 0 },
+				0, 0, menu->canvas_width, menu->canvas_height
 			);
 		}
 	}
+
+	/* clear canvases */
 	for (size_t i = 0; i < CANVAS_LAST; i++) {
 		XRenderComposite(
-			menuctx->display,
-			PictOpSrc,
+			menuctx->display, PictOpSrc,
 			menuctx->colors[i==CANVAS_SELECT ?  COLOR_SELBG : COLOR_BG].pict,
 			menuctx->colors[COLOR_OPACITY].pict,
 			menu->canvas[i].picture,
-			0, 0,
-			0, 0,
-			0, 0,
+			0, 0, 0, 0, 0, 0,
 			menu->canvas_width, menu->canvas_height
 		);
 	}
-	entry_geometry.x = menuctx->inner_border_width + PADDING;
-	if (menu->hasicon)
-		entry_geometry.x += menuctx->iconsize + PADDING;
-	entry_geometry.y = get_first_entry_ypos(menuctx, menu);
-	entry_geometry.width = menu->window_geometry.width;
-	for (size_t entryc = 0; entryc < menu->nentries; entryc++) {
-		struct ctrlmenu_entry *entry = &menu->entries[entryc];
-		size_t labellen;
-		int size_diff = menuctx->iconsize;
-		XImage *icon = NULL;
-		XImage *largest_icon = NULL;
 
-		if (entry->type == CTRLMENU_SEPARATOR) {
-			entry_geometry.height = menuctx->separatorh;
-			draw_separator(
-				menuctx,
-				menu->canvas[CANVAS_NORMAL].picture,
-				&entry_geometry
-			);
-			draw_separator(
-				menuctx,
-				menu->canvas[CANVAS_SELECT].picture,
-				&entry_geometry
-			);
-			goto next;
-		}
-		entry_geometry.height = menuctx->entryh;
-
-		/* find best-sized icon */
-		largest_icon = entry->icons;
-		size_diff = menuctx->iconsize;
-		for (size_t nicon = 0; nicon < entry->nicons; nicon++) {
-			if (entry->icons[nicon].width > largest_icon->width &&
-			    entry->icons[nicon].height > largest_icon->height)
-				largest_icon = &entry->icons[nicon];
-			if (MAX(entry->icons[nicon].width,
-			        entry->icons[nicon].height) >
-				menuctx->iconsize)
-				continue;
-			if (menuctx->iconsize - entry->icons[nicon].height <= size_diff)
-				continue;
-			size_diff = menuctx->iconsize - entry->icons[nicon].height;
-			icon = &entry->icons[nicon];
-		}
-		if (icon == NULL)
-			icon = largest_icon;
-		if (icon != NULL) {
-			Pixmap pixmap;
-			Picture picture;
-			GC gc;
-			int width = icon->width;
-			int height = icon->height;
-
-			pixmap = XCreatePixmap(
-				menuctx->display,
-				menuctx->root_window,
-				icon->width, icon->height,
-				icon->depth
-			);
-			picture = XRenderCreatePicture(
-				menuctx->display, pixmap,
-				XRenderFindFormat(
-					menuctx->display,
-					PictFormatDepth,
-					&(XRenderPictFormat){
-						.depth = icon->depth,
-					}, 0
-				), 0, NULL
-			);
-			gc = XCreateGC(menuctx->display, pixmap, 0, NULL),
-
-			XPutImage(
-				menuctx->display, pixmap, gc, icon,
-				0, 0, 0, 0, icon->width, icon->height
-			);
-
-			if (size_diff > PADDING) {
-				/* image is too small/large; scale it */
-				if (width > height) {
-					height = (height * menuctx->iconsize) / width;
-					width = menuctx->iconsize;
-				} else {
-					width = (width * menuctx->iconsize) / height;
-					height = menuctx->iconsize;
-				}
-
-				XRenderSetPictureFilter(
-					menuctx->display, picture, FilterBilinear, NULL, 0
-				);
-				XRenderSetPictureTransform(
-					menuctx->display, picture, &(XTransform){
-						{{(icon->width<<16u)/width, 0, 0},
-						{0, (icon->height<<16u)/height, 0},
-						{0, 0, 0x10000}},
-					}
-				);
-			}
-
-			XRenderComposite(
-				menuctx->display, PictOpOver,
-				picture, None,
-				menu->canvas[CANVAS_NORMAL].picture,
-				0, 0, 0, 0,
-				menuctx->inner_border_width + PADDING
-				+ (menuctx->iconsize - width)/2,
-				entry_geometry.y
-				+ (menuctx->entryh - height)/2,
-				width, height
-			);
-			XRenderComposite(
-				menuctx->display, PictOpOver,
-				picture, None,
-				menu->canvas[CANVAS_SELECT].picture,
-				0, 0, 0, 0,
-				menuctx->inner_border_width + PADDING
-				+ (menuctx->iconsize - width)/2,
-				entry_geometry.y
-				+ (menuctx->entryh - height)/2,
-				width, height
-			);
-
-			XFreeGC(menuctx->display, gc);
-			XRenderFreePicture(menuctx->display, picture);
-			XFreePixmap(menuctx->display, pixmap);
-		}
-		if (entry->type & CTRLMENU_CASCADE) {
-			draw_triangle(
-				menuctx,
-				menu->canvas[CANVAS_NORMAL].picture,
-				menuctx->colors[COLOR_FG].pict,
-				entry_geometry.width - PADDING - TRIANGLE_WIDTH(menuctx) - TRIANGLE_PAD(menuctx)/2,
-				entry_geometry.y + menuctx->entryh/2 - TRIANGLE_HEIGHT(menuctx)/2,
-				DIR_RIGHT
-			);
-			draw_triangle(
-				menuctx,
-				menu->canvas[CANVAS_SELECT].picture,
-				menuctx->colors[COLOR_SELFG].pict,
-				entry_geometry.width - PADDING - TRIANGLE_WIDTH(menuctx) - TRIANGLE_PAD(menuctx)/2,
-				entry_geometry.y + menuctx->entryh/2 - TRIANGLE_HEIGHT(menuctx)/2,
-				DIR_RIGHT
-			);
-		}
-		labellen = strlen(entry->label);
-		textw = ctrlfnt_width(menuctx->fontset, entry->label, labellen);
-		if (menuctx->alignment == ALIGN_RIGHT && menu->hassubmenu)
-			textx = entry_geometry.width - textw - PADDING - TRIANGLE_WIDTH(menuctx) - TRIANGLE_PAD(menuctx);
-		else if (menuctx->alignment == ALIGN_RIGHT)
-			textx = entry_geometry.width - textw - PADDING;
-		else if (menuctx->alignment == ALIGN_CENTER)
-			textx = entry_geometry.x + (menu->window_geometry.width - textw) / 2;
-		else
-			textx = entry_geometry.x;
-		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			ctrlfnt_draw(
-				menuctx->fontset,
-				menu->canvas[CANVAS_NORMAL].picture,
-				menuctx->colors[COLOR_FG].pict,
-				(XRectangle){
-					.x = textx,
-					.y = entry_geometry.y,
-					.width = entry_geometry.width,
-					.height = entry_geometry.height,
-				},
-				entry->label, labellen
-			);
-			ctrlfnt_draw(
-				menuctx->fontset,
-				menu->canvas[CANVAS_SELECT].picture,
-				menuctx->colors[COLOR_SELFG].pict,
-				(XRectangle){
-					.x = textx,
-					.y = entry_geometry.y,
-					.width = entry_geometry.width,
-					.height = entry_geometry.height,
-				},
-				entry->label, labellen
-			);
-		} else {
-			ctrlfnt_draw(
-				menuctx->fontset,
-				menu->canvas[CANVAS_NORMAL].picture,
-				menuctx->colors[COLOR_TOP].pict,
-				(XRectangle){
-					.x = textx + 1,
-					.y = entry_geometry.y + 1,
-					.width = entry_geometry.width,
-					.height = entry_geometry.height,
-				},
-				entry->label, labellen
-			);
-			ctrlfnt_draw(
-				menuctx->fontset,
-				menu->canvas[CANVAS_NORMAL].picture,
-				menuctx->colors[COLOR_BOT].pict,
-				(XRectangle){
-					.x = textx,
-					.y = entry_geometry.y,
-					.width = entry_geometry.width,
-					.height = entry_geometry.height,
-				},
-				entry->label, labellen
-			);
-			ctrlfnt_draw(
-				menuctx->fontset,
-				menu->canvas[CANVAS_SELECT].picture,
-				menuctx->colors[COLOR_TOP].pict,
-				(XRectangle){
-					.x = textx + 1,
-					.y = entry_geometry.y + 1,
-					.width = entry_geometry.width,
-					.height = entry_geometry.height,
-				},
-				entry->label, labellen
-			);
-			ctrlfnt_draw(
-				menuctx->fontset,
-				menu->canvas[CANVAS_SELECT].picture,
-				menuctx->colors[COLOR_BOT].pict,
-				(XRectangle){
-					.x = textx,
-					.y = entry_geometry.y,
-					.width = entry_geometry.width,
-					.height = entry_geometry.height,
-				},
-				entry->label, labellen
-			);
-		}
-next:
-		entry_geometry.y += entry_geometry.height;
+	/* draw entries */
+	{
+		int y = get_first_entry_ypos(menuctx, menu);
+		for (size_t entryc = 0; entryc < menu->nentries; entryc++)
+			draw_entry(menuctx, menu, &menu->entries[entryc], &y);
 	}
 
 	/* draw tear-off line */
 	draw_dashline(
-		menuctx,
-		menu->canvas[CANVAS_NORMAL].picture,
-		menu->window_geometry.width,
-		menuctx->inner_border_width
+		menuctx, menu->canvas[CANVAS_NORMAL].picture,
+		menu->window_geometry.width, menuctx->inner_border_width
 	);
 	draw_dashline(
-		menuctx,
-		menu->canvas[CANVAS_SELECT].picture,
-		menu->window_geometry.width,
-		menuctx->inner_border_width
+		menuctx, menu->canvas[CANVAS_SELECT].picture,
+		menu->window_geometry.width, menuctx->inner_border_width
 	);
 
+	/* draw scroller arrows */
 	for (size_t i = 0; i < CANVAS_FINAL; i++) {
 		int y = menuctx->inner_border_width + get_entry_height(menuctx, TEAR_OFF);
 		if (menu->overflow) {
 			draw_triangle(
-				menuctx,
-				menu->canvas[i].picture,
+				menuctx, menu->canvas[i].picture,
 				menuctx->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
 				menu->window_geometry.width / 2 - TRIANGLE_HEIGHT(menuctx) / 2,
 				y + menuctx->separatorh /2 - TRIANGLE_WIDTH(menuctx) / 2,
 				DIR_UP
 			);
 			draw_triangle(
-				menuctx,
-				menu->canvas[i].picture,
+				menuctx, menu->canvas[i].picture,
 				menuctx->colors[i==CANVAS_SELECT ?  COLOR_SELFG : COLOR_FG].pict,
 				menu->window_geometry.width / 2 - TRIANGLE_HEIGHT(menuctx) / 2,
 				menu->total_height - menuctx->separatorh /2
@@ -981,12 +945,15 @@ next:
 			);
 		}
 	}
+
 	XSetWindowBackgroundPixmap(
-		menuctx->display,
-		menu->window,
+		menuctx->display, menu->window,
 		menu->canvas[CANVAS_NORMAL].pixmap
 	);
-	XSetWindowBorderPixmap(menuctx->display, menu->window, menuctx->colors[COLOR_BORDER].pix);
+	XSetWindowBorderPixmap(
+		menuctx->display, menu->window,
+		menuctx->colors[COLOR_BORDER].pix
+	);
 	XClearWindow(menuctx->display, menu->window);
 }
 
