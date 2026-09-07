@@ -992,15 +992,6 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	int src_canvas_y, dst_canvas_y;
 	int dst_diff = (menu->tearable?0:get_entry_height(menuctx, TEAR_OFF));
 
-	XRenderFillRectangle(
-		menuctx->display,
-		PictOpClear,
-		menu->canvas[CANVAS_FINAL].picture,
-		&(XRenderColor){ 0 },
-		0, 0,
-		menu->window_geometry.width,
-		menu->window_geometry.height
-	);
 	XRenderComposite(
 		menuctx->display,
 		PictOpOver,
