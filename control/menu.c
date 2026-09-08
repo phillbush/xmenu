@@ -457,31 +457,67 @@ get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
  *
  * There are three pixmaps where stuff are drawn:
  *
- * +------------+
- * | Copy       | CANVAS_NORMAL: All entries are drawn in unselected
- * | Cut        | text color on unselected background color.  It is
- * | Paste      | drawn only when the menu is created or resized.
- * | Save as... |
- * +------------+
+ * +--------------+
+ * | Copy         | CANVAS_NORMAL: All entries are drawn in unselected
+ * | Cut          | text color on unselected background color.  It is
+ * | Paste        | drawn only when the menu is created or resized.
+ * | ------------ |
+ * | Save as...   |
+ * +--------------+
  *
- * +------------+
- * |#Copy#######| CANVAS_SELECT: All entries are drawn in selected
- * |#Cut########| text color on selected background color.  It is
- * |#Paste######| drawn only when the menu is created or resized.
- * |#Save#as...#|
- * +------------+
+ * +--------------+
+ * |#Copy#########| CANVAS_SELECT: All entries are drawn in selected
+ * |#Cut##########| text color on selected background color.  It is
+ * |#Paste########| drawn only when the menu is created or resized.
+ * | ------------ |
+ * |#Save#as...###|
+ * +--------------+
  *
- * +------------+
- * | Copy       | CANVAS_FINAL: Composition of a region of CANVAS_NORMAL,
- * |#Cut########| and another region of the CANVAS_SELECT.  It is drawn
- * | Paste      | whenever an entry is selected.  This pixmap is set as
- * | Save as... | the menu window's background.
- * +------------+
+ * +--------------+
+ * | Copy         | CANVAS_FINAL: Composition of a region of CANVAS_NORMAL,
+ * |#Cut##########| and another region of the CANVAS_SELECT.  It is drawn
+ * | Paste        | whenever an entry is selected.  This pixmap is set as
+ * | ------------ | the menu window's background.
+ * | Save as...   |
+ * +--------------+
  *
  * If the menu overflows (i'e', there are more entries than fit the
  * screen), the canvases are long enough to fit all entries.  Only the
- * visible portions are composed into CANVAS_FINAL and set as the
+ * visible portions are composited into CANVAS_FINAL and set as the
  * background for the menu window.
+ *
+ * The vertical position where the normal and select canvas must be
+ * composited from into the final canvas is hold in the menu structure
+ * at menu->curr_screenful.offset; and the first visible is hold
+ * at menu->curr_screenful.first_entry.
+ *
+ *  CANVAS_NORMAL            CANVAS_SELECT
+ * +--------------+         +--------------+
+ * | ============ |         |#============#| `
+ * |      ^       |         |######^#######| |
+ * | File       > |         |#File#######>#| |
+ * | Edit       > |         |#Edit#######>#| | menu->curr_screenful.offset
+ * | View       > |         |#View#######>#| |
+ * | ------------ |         |#-------------| |
+ * | New          |         |#New##########| |         CANVAS_FINAL
+ * | Delete       |         |#Delete#######| ,       +--------------+
+ * | Copy         |~~~~~~~~~|#Copy#########|~~~~~~~~~| Copy         |
+ * | Cut          |~~~~~~~~~|#Cut##########|~~~~~~~~~|#Cut##########|
+ * | Paste        |~~~~~~~~~|#Paste########|~~~~~~~~~| Paste        |
+ * | ------------ |~~~~~~~~~|#------------#|~~~~~~~~~| ------------ |
+ * | Save as...   |~~~~~~~~~|#Save#as...###|~~~~~~~~~| Save as...   |
+ * | Save         |         |#Save#########|         +--------------+
+ * | Open with... |         |#Open#with...#|
+ * | ------------ |         |#------------#|
+ * | Settings   > |         |#Settings###>#|
+ * | Help       > |         |#Help#######>#|
+ * |      v       |         |######v#######|
+ * +--------------+         +--------------+
+ *
+ * To get where, in the canvas, an entry is located at, use the function
+ * get_canvas_position().  Note that the entries TEAR_OFF, SCROLL_UP, and
+ * SCROLL_DOWN are also drawn in both source canvases, for each entry
+ * state (unselected and selected).
  */
 
 static void
@@ -1699,9 +1735,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			x_root = parent->window_geometry.x;
 			y_root = parent->window_geometry.y + get_entry_ypos(
 				menuctx, parent, parent->selected
-			);
-			if (!parent->tearable)
-				y_root -= get_entry_height(menuctx, TEAR_OFF);
+			) - parent->curr_screenful.offset;
 			if (parent->tornoff)
 				y_root -= menuctx->outer_border_width;
 			width = parent->window_geometry.width;
