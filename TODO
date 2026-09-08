@@ -34,3 +34,9 @@ I implemented a XParseGeometry(3)-compatible geometry parsed with
 extensions for setting placement based on monitor size.
 
 I am not sure whether i should re-implement it before a major release.
+
+
+§ Remove scroll buttons when fully scrolled
+
+When at the top, do not draw scroll-up button.
+When at the bottom, do not draw scroll-down button.
