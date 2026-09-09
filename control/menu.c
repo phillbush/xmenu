@@ -970,7 +970,7 @@ canvas_composite(struct ctrlmenu_context *menuctx,
 }
 
 static void
-canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
+canvas_redraw(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		struct ctrlmenu_entry *entry)
 {
 	int src_canvas_y, dst_canvas_y;
@@ -1227,7 +1227,7 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			else
 				scroll_up(menuctx, menu, menuctx->entryh);
 			if (menu->curr_screenful.offset != last_offset)
-				canvas_commit(menuctx, menu, entry);
+				canvas_redraw(menuctx, menu, entry);
 			last_offset = menu->curr_screenful.offset;
 			XFlush(menuctx->display);
 			break;
@@ -1386,13 +1386,13 @@ activate_entry(struct ctrlmenu_context *menuctx, jmp_buf jmpenv,
 			longjmp(jmpenv, 1);
 	} else if (entry->type == CTRLMENU_COMMAND) {
 		/* blink */
-		canvas_commit(menuctx, menu, NULL);
+		canvas_redraw(menuctx, menu, NULL);
 		XSync(menuctx->display, False); xsleep(60000);
-		canvas_commit(menuctx, menu, entry);
+		canvas_redraw(menuctx, menu, entry);
 		XSync(menuctx->display, False); xsleep(60000);
-		canvas_commit(menuctx, menu, NULL);
+		canvas_redraw(menuctx, menu, NULL);
 		XSync(menuctx->display, False); xsleep(60000);
-		canvas_commit(menuctx, menu, entry);
+		canvas_redraw(menuctx, menu, entry);
 		while (XCheckMaskEvent(
 			menuctx->display,
 			ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
@@ -1635,7 +1635,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			break;
 		}
 	}
-	canvas_commit(menuctx, menu, menu->selected);
+	canvas_redraw(menuctx, menu, menu->selected);
 	XMapRaised(menuctx->display, menu->window);
 	(void)XSelectInput(
 		menuctx->display, menu->window,
@@ -1721,7 +1721,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 		menu_map(menuctx, menu, x_root, y_root, width);
 	} else {
 		menu = orig_menu;
-		canvas_commit(menuctx, menu, menu->selected);
+		canvas_redraw(menuctx, menu, menu->selected);
 	}
 	menu->next = parent;
 	prevselected = menu->selected;
@@ -1781,7 +1781,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				close_all = true;
 				goto done;
 			}
-			canvas_commit(menuctx, menu, menu->selected);
+			canvas_redraw(menuctx, menu, menu->selected);
 			if (menu->selected == NULL)
 				break;
 			activate_entry(
@@ -1806,7 +1806,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			menu->window_geometry.width = xev.xconfigure.width;
 			menu->window_geometry.height = xev.xconfigure.height;
 			canvas_reset(menuctx, menu);
-			canvas_commit(menuctx, menu, menu->selected);
+			canvas_redraw(menuctx, menu, menu->selected);
 			break;
 		case KeyPress:
 			KeySym ksym = XkbKeycodeToKeysym(menuctx->display, xev.xkey.keycode, 0, 0);
@@ -1929,7 +1929,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 					 * Motion is not quick rightwards movement.
 					 */
 					m->next->selected = above;
-					canvas_commit(
+					canvas_redraw(
 						menuctx, m->next,
 						m->next->selected
 					);
@@ -1970,7 +1970,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				if (menu->next->selected == pointed_entry)
 					break;
 				menu->next->selected = pointed_entry;
-				canvas_commit(
+				canvas_redraw(
 					menuctx, menu->next,
 					menu->next->selected
 				);
@@ -2011,14 +2011,14 @@ menu_run(struct ctrlmenu_context *menuctx,
 		}
 
 		if (menu->selected != prevselected) {
-			canvas_commit(menuctx, menu, menu->selected);
+			canvas_redraw(menuctx, menu, menu->selected);
 			prevselected = menu->selected;
 			timeout = MOTION_TIMEOUT;
 		}
 	}
 done:
 	menu->selected = NULL;
-	canvas_commit(menuctx, menu, menu->selected);
+	canvas_redraw(menuctx, menu, menu->selected);
 	if (buf_menu.window != None) {
 		XSelectInput(menuctx->display, buf_menu.window, 0);
 		XSync(menuctx->display, false);
