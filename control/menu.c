@@ -105,40 +105,6 @@ static int menu_run(struct ctrlmenu_context *,
 );
 
 /*
- * RESOURCE CREATORS
- */
-
-static int
-create_picture(Display *display, Window root_window,
-		Visual *visual, int depth,
-		Picture *picture, Pixmap *pixmap,
-		XRenderColor *color, bool isalpha)
-{
-	*pixmap = XCreatePixmap(display, root_window, 1, 1, isalpha ? 8 : depth);
-	if (*pixmap == None) {
-		warnx("could not create pixmap");
-		return RETURN_FAILURE;
-	}
-	*picture = XRenderCreatePicture(
-		display,
-		*pixmap,
-		isalpha
-			? XRenderFindStandardFormat(display, PictStandardA8)
-			: XRenderFindVisualFormat(display, visual),
-		CPRepeat,
-		&(XRenderPictureAttributes){
-			.repeat = RepeatNormal,
-		}
-	);
-	if (*picture == None) {
-		warnx("could not create picture");
-		return RETURN_FAILURE;
-	}
-	XRenderFillRectangle(display, PictOpSrc, *picture, color, 0, 0, 1, 1);
-	return RETURN_SUCCESS;
-}
-
-/*
  * RESOURCE PARSERS AND SETTERS
  */
 
@@ -517,7 +483,7 @@ get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
  * To get where, in the canvas, an entry is located at, use the function
  * get_canvas_position().  Note that the entries TEAR_OFF, SCROLL_UP, and
  * SCROLL_DOWN are also drawn in both source canvases, for each entry
- * state (unselected and selected).
+ * state (unselected and selected .
  */
 
 static void
@@ -2106,17 +2072,29 @@ context_setup(struct ctrlmenu_context *menuctx, void *ctx, Display *display,
 	};
 
 	for (size_t color = 0; color < COLOR_LAST; color++) {
-		int retval;
-		retval = create_picture(
-			display,
-			menuctx->root_window, menuctx->visual, menuctx->depth,
-			&menuctx->colors[color].pict,
-			&menuctx->colors[color].pix,
-			&menuctx->colors[color].chans,
-			false
+		menuctx->colors[color].pix = XCreatePixmap(
+			display, menuctx->root_window,
+			1, 1, menuctx->depth
 		);
-		if (retval == RETURN_FAILURE)
+		if (menuctx->colors[color].pix == None) {
+			warnx("could not create pixmap");
 			goto error;
+		}
+		menuctx->colors[color].pict = XRenderCreatePicture(
+			display, menuctx->colors[color].pix,
+			XRenderFindVisualFormat(display, menuctx->visual),
+			CPRepeat, &(XRenderPictureAttributes){
+				.repeat = RepeatNormal,
+			}
+		);
+		if (menuctx->colors[color].pict == None) {
+			warnx("could not create picture");
+			goto error;
+		}
+		XRenderFillRectangle(
+			display, PictOpSrc, menuctx->colors[color].pict,
+			&menuctx->colors[color].chans, 0, 0, 1, 1
+		);
 	}
 	setfont(menuctx, NULL, 0.0);
 	reload_resources(menuctx, xdb);
