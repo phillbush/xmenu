@@ -976,6 +976,18 @@ canvas_commit(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	int src_canvas_y, dst_canvas_y;
 	int dst_diff = (menu->tearable?0:get_entry_height(menuctx, TEAR_OFF));
 
+	XRenderFillRectangle(
+		/*
+		 * Clearing the final canvas is needed when using
+		 * opacity lesser than 1.0, to avoid old content
+		 * to appear behind the new one.
+		 */
+		menuctx->display, PictOpClear,
+		menu->canvas[CANVAS_FINAL].picture,
+		&(XRenderColor){ 0 }, 0, 0,
+		menu->window_geometry.width,
+		menu->window_geometry.height
+	);
 	canvas_composite(
 		menuctx, menu, false,
 		menu->curr_screenful.offset, 0,
