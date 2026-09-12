@@ -1008,8 +1008,7 @@ canvas_composite_entry(struct ctrlmenu_context *menuctx,
 }
 
 static void
-canvas_redraw(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
-		struct ctrlmenu_entry *entry)
+canvas_redraw(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	int content_size, top_size;
 
@@ -1045,8 +1044,8 @@ canvas_redraw(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			&menu->entries[menu->curr_screenful.first_entry]
 		), top_size, content_size
 	);
-	if (entry != NULL)
-		canvas_composite_entry(menuctx, menu, entry, true);
+	if (menu->selected != NULL)
+		canvas_composite_entry(menuctx, menu, menu->selected, true);
 	draw_shadows(
 		menuctx,
 		menu->canvas[CANVAS_FINAL].picture,
@@ -1244,7 +1243,7 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			else
 				scroll_up(menuctx, menu, menuctx->entryh);
 			if (menu->curr_screenful.offset != last_offset)
-				canvas_redraw(menuctx, menu, entry);
+				canvas_redraw(menuctx, menu);
 			last_offset = menu->curr_screenful.offset;
 			XFlush(menuctx->display);
 			break;
@@ -1676,7 +1675,7 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			break;
 		}
 	}
-	canvas_redraw(menuctx, menu, menu->selected);
+	canvas_redraw(menuctx, menu);
 	XMapRaised(menuctx->display, menu->window);
 	(void)XSelectInput(
 		menuctx->display, menu->window,
@@ -1763,7 +1762,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 		menu_map(menuctx, menu, x_root, y_root, width);
 	} else {
 		menu = orig_menu;
-		canvas_redraw(menuctx, menu, menu->selected);
+		canvas_redraw(menuctx, menu);
 	}
 	menu->next = parent;
 	prevselected = menu->selected;
@@ -1850,7 +1849,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			menu->window_geometry.width = xev.xconfigure.width;
 			menu->window_geometry.height = xev.xconfigure.height;
 			canvas_reset(menuctx, menu);
-			canvas_redraw(menuctx, menu, menu->selected);
+			canvas_redraw(menuctx, menu);
 			break;
 		case KeyPress:
 			KeySym ksym = XkbKeycodeToKeysym(menuctx->display, xev.xkey.keycode, 0, 0);
@@ -1989,9 +1988,9 @@ menu_run(struct ctrlmenu_context *menuctx,
 			if (xev.xmotion.window == menu->window) {
 				struct ctrlmenu_entry *entry;
 				entry = get_entry(menuctx, menu, xev.xmotion.y);
+				select_entry(menuctx, menu, entry);
 				if (entry == SCROLL_UP || entry == SCROLL_DOWN)
 					scroll_loop(menuctx, menu, entry);
-				select_entry(menuctx, menu, entry);
 			}
 			last_motion = xev.xmotion;
 			break;
