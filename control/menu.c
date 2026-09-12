@@ -383,7 +383,6 @@ get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 	return NULL;
 }
 
-
 static int
 get_entry_position_on_canvas(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		struct ctrlmenu_entry *entry)
@@ -995,10 +994,13 @@ canvas_composite_region(struct ctrlmenu_context *menuctx,
 
 static void
 canvas_composite_entry(struct ctrlmenu_context *menuctx,
-		struct ctrlmenu *menu, struct ctrlmenu_entry *entry)
+		struct ctrlmenu *menu, struct ctrlmenu_entry *entry,
+		bool selected)
 {
+	if (entry == NULL)
+		return;
 	canvas_composite_region(
-		menuctx, menu, entry == menu->selected,
+		menuctx, menu, selected,
 		get_entry_position_on_canvas(menuctx, menu, entry),
 		get_entry_position_on_window(menuctx, menu, entry),
 		get_entry_height(menuctx, entry)
@@ -1026,13 +1028,13 @@ canvas_redraw(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 	content_size = menu->window_geometry.height;
 	top_size = menuctx->inner_border_width;
 	if (menu->tearable) {
-		canvas_composite_entry(menuctx, menu, TEAR_OFF);
+		canvas_composite_entry(menuctx, menu, TEAR_OFF, false);
 		top_size += get_entry_height(menuctx, TEAR_OFF);
 	}
 	if (menu->overflow) {
-		canvas_composite_entry(menuctx, menu, SCROLL_UP);
+		canvas_composite_entry(menuctx, menu, SCROLL_UP, false);
 		top_size += get_entry_height(menuctx, SCROLL_UP);
-		canvas_composite_entry(menuctx, menu, SCROLL_DOWN);
+		canvas_composite_entry(menuctx, menu, SCROLL_DOWN, false);
 		content_size -= get_entry_height(menuctx, SCROLL_DOWN);
 	}
 	content_size -= top_size;
@@ -1044,7 +1046,7 @@ canvas_redraw(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		), top_size, content_size
 	);
 	if (entry != NULL)
-		canvas_composite_entry(menuctx, menu, entry);
+		canvas_composite_entry(menuctx, menu, entry, true);
 	draw_shadows(
 		menuctx,
 		menu->canvas[CANVAS_FINAL].picture,
@@ -1258,6 +1260,32 @@ scroll_loop(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
  */
 
 static struct ctrlmenu_entry *
+select_entry(struct ctrlmenu_context *menuctx,
+	struct ctrlmenu *menu, struct ctrlmenu_entry *entry)
+{
+	if (menu->selected == entry)
+		return menu->selected;
+	if (menu->selected != NULL)
+		canvas_composite_entry(menuctx, menu, menu->selected, false);
+	if (entry != NULL)
+		canvas_composite_entry(menuctx, menu, entry, true);
+	XSetWindowBackgroundPixmap(
+		menuctx->display,
+		menu->window,
+		menu->canvas[CANVAS_FINAL].pixmap
+	);
+	XClearWindow(menuctx->display, menu->window);
+	menu->selected = entry;
+	return menu->selected;
+}
+
+static struct ctrlmenu_entry *
+select_none(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
+{
+	return select_entry(menuctx, menu, NULL);
+}
+
+static struct ctrlmenu_entry *
 select_first_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	menu->curr_screenful.first_entry = 0;
@@ -1268,25 +1296,25 @@ select_first_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	for (size_t i = 0; i < menu->nentries; i++) {
 		struct ctrlmenu_entry *entry = &menu->entries[i];
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return entry;
+			return select_entry(menuctx, menu, entry);
 		}
 	}
-	return NULL;
+	return select_none(menuctx, menu);
 }
 
 static struct ctrlmenu_entry *
-select_last_entry(struct ctrlmenu_context *, struct ctrlmenu *menu)
+select_last_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	menu->curr_screenful = menu->last_screenful;
 	if (menu->nentries == 0)
-		return NULL;
+		return select_none(menuctx, menu);
 	for (size_t i = menu->nentries - 1; i >= 0; i--) {
 		struct ctrlmenu_entry *entry = &menu->entries[i];
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return entry;
+			return select_entry(menuctx, menu, entry);
 		}
 	}
-	return NULL;
+	return select_none(menuctx, menu);
 }
 
 static struct ctrlmenu_entry *
@@ -1316,7 +1344,7 @@ select_prev_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 			}
 		}
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return entry;
+			return select_entry(menuctx, menu, entry);
 		}
 	}
 	return select_last_entry(menuctx, menu);
@@ -1345,7 +1373,7 @@ select_next_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 			}
 		}
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return entry;
+			return select_entry(menuctx, menu, entry);
 		}
 	}
 	return select_first_entry(menuctx, menu);
@@ -1401,13 +1429,13 @@ activate_entry(struct ctrlmenu_context *menuctx, jmp_buf jmpenv,
 			longjmp(jmpenv, 1);
 	} else if (entry->type == CTRLMENU_COMMAND) {
 		/* blink */
-		canvas_redraw(menuctx, menu, NULL);
+		select_none(menuctx, menu);
 		XSync(menuctx->display, False); xsleep(60000);
-		canvas_redraw(menuctx, menu, entry);
+		select_entry(menuctx, menu, entry);
 		XSync(menuctx->display, False); xsleep(60000);
-		canvas_redraw(menuctx, menu, NULL);
+		select_none(menuctx, menu);
 		XSync(menuctx->display, False); xsleep(60000);
-		canvas_redraw(menuctx, menu, entry);
+		select_entry(menuctx, menu, entry);
 		while (XCheckMaskEvent(
 			menuctx->display,
 			ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
@@ -1692,9 +1720,9 @@ menu_run(struct ctrlmenu_context *menuctx,
 	jmp_buf jmpenv;
 
 	if (flags & RUN_SELECT)
-		orig_menu->selected = select_first_entry(menuctx, orig_menu);
+		select_first_entry(menuctx, orig_menu);
 	else
-		orig_menu->selected = NULL;
+		select_none(menuctx, orig_menu);
 	orig_menu->canvas = orig_menu->canvas_orig;
 	if (flags & RUN_POPUP) {
 		unsigned int width = 0;
@@ -1781,7 +1809,10 @@ menu_run(struct ctrlmenu_context *menuctx,
 				XPutBackEvent(menuctx->display, &xev);
 				goto done;
 			}
-			menu->selected = get_entry(menuctx, menu, xev.xbutton.y);
+			select_entry(
+				menuctx, menu,
+				get_entry(menuctx, menu, xev.xbutton.y)
+			);
 			if (menu->selected == TEAR_OFF) {
 				if (orig_menu->tornoff) {
 					menu_untear(menuctx->display, orig_menu);
@@ -1795,7 +1826,6 @@ menu_run(struct ctrlmenu_context *menuctx,
 				close_all = true;
 				goto done;
 			}
-			canvas_redraw(menuctx, menu, menu->selected);
 			if (menu->selected == NULL)
 				break;
 			activate_entry(
@@ -1830,7 +1860,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				ksym = XK_ISO_Left_Tab;
 			if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab) {
 				if (flags & RUN_ENTERED) {
-					menu->selected = select_prev_entry(menuctx, menu);
+					select_prev_entry(menuctx, menu);
 				} else if (menu->next != NULL) {
 					/* navigating on parent menu */
 					XPutBackEvent(menuctx->display, &xev);
@@ -1838,7 +1868,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				}
 			} else if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab) {
 				if (flags & RUN_ENTERED) {
-					menu->selected = select_next_entry(menuctx, menu);
+					select_next_entry(menuctx, menu);
 				} else if (menu->next != NULL) {
 					/* navigating on parent menu */
 					XPutBackEvent(menuctx->display, &xev);
@@ -1846,7 +1876,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				}
 			} else if (ksym == XK_Home || ksym == XK_KP_Home) {
 				if (flags & RUN_ENTERED) {
-					menu->selected = select_first_entry(menuctx, menu);
+					select_first_entry(menuctx, menu);
 				} else if (menu->next != NULL) {
 					/* navigating on parent menu */
 					XPutBackEvent(menuctx->display, &xev);
@@ -1854,7 +1884,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				}
 			} else if (ksym == XK_End || ksym == XK_KP_End) {
 				if (flags & RUN_ENTERED) {
-					menu->selected = select_last_entry(menuctx, menu);
+					select_last_entry(menuctx, menu);
 				} else if (menu->next != NULL) {
 					/* navigating on parent menu */
 					XPutBackEvent(menuctx->display, &xev);
@@ -1867,7 +1897,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				    (menu->next->selected->type & CTRLMENU_CASCADE) &&
 				    menu->caller == menu->next->selected) {
 					/* navigating on parent menu to current one */
-					menu->selected = select_first_entry(menuctx, menu);
+					select_first_entry(menuctx, menu);
 					break;
 				}
 				if (!(flags & RUN_ENTERED) && menu->next != NULL) {
@@ -1899,7 +1929,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				}
 				if (flags & RUN_ENTERED) {
 					/* navigate on parent menu */
-					menu->selected = NULL;
+					select_none(menuctx, menu);
 					flags &= ~RUN_ENTERED;
 					break;
 				}
@@ -1915,7 +1945,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 			break;
 		case LeaveNotify:
 			if (flags & RUN_POPUP) {
-				menu->selected = NULL;
+				select_none(menuctx, menu);
 				break;
 			}
 			if (xev.xcrossing.window == menu->window)
@@ -1942,11 +1972,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 					 * Current menu has not been entered yet;
 					 * Motion is not quick rightwards movement.
 					 */
-					m->next->selected = above;
-					canvas_redraw(
-						menuctx, m->next,
-						m->next->selected
-					);
+					select_entry(menuctx, m->next, above);
 					XPutBackEvent(menuctx->display, &xev);
 					goto done;
 				} else {
@@ -1965,7 +1991,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				entry = get_entry(menuctx, menu, xev.xmotion.y);
 				if (entry == SCROLL_UP || entry == SCROLL_DOWN)
 					scroll_loop(menuctx, menu, entry);
-				menu->selected = entry;
+				select_entry(menuctx, menu, entry);
 			}
 			last_motion = xev.xmotion;
 			break;
@@ -1983,10 +2009,8 @@ menu_run(struct ctrlmenu_context *menuctx,
 				);
 				if (menu->next->selected == pointed_entry)
 					break;
-				menu->next->selected = pointed_entry;
-				canvas_redraw(
-					menuctx, menu->next,
-					menu->next->selected
+				select_entry(
+					menuctx, menu->next, pointed_entry
 				);
 				timeout = MOTION_TIMEOUT;
 				goto done;
@@ -2025,14 +2049,12 @@ menu_run(struct ctrlmenu_context *menuctx,
 		}
 
 		if (menu->selected != prevselected) {
-			canvas_redraw(menuctx, menu, menu->selected);
 			prevselected = menu->selected;
 			timeout = MOTION_TIMEOUT;
 		}
 	}
 done:
-	menu->selected = NULL;
-	canvas_redraw(menuctx, menu, menu->selected);
+	select_none(menuctx, menu);
 	if (buf_menu.window != None) {
 		XSelectInput(menuctx->display, buf_menu.window, 0);
 		XSync(menuctx->display, false);
