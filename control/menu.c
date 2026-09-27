@@ -316,40 +316,8 @@ reload_resources(struct ctrlmenu_context *menuctx, XrmDatabase xdb)
 
 
 /*
- * ENTRY POSITIONING ROUTINES
+ * ENTRY PLACEMENT CHECK ROUTINES
  */
-
-static int
-get_canvas_position(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
-		struct ctrlmenu_entry *entry)
-{
-	int ypos = menuctx->inner_border_width;
-
-	if (entry == NULL)
-		return -1;
-	if (entry == TEAR_OFF)
-		return ypos;
-	ypos += menuctx->separatorh;
-	if (menu->overflow) {
-		if (entry == SCROLL_DOWN)
-			return menu->total_height - menuctx->separatorh
-			- menuctx->inner_border_width;
-		if (entry == SCROLL_UP)
-			return ypos;
-		ypos += menuctx->separatorh;
-	}
-	for (size_t i = 0; i < menu->nentries; i++) {
-		struct ctrlmenu_entry *e = &menu->entries[i];
-
-		if (e == entry)
-			return ypos;
-		if (e->type == CTRLMENU_SEPARATOR)
-			ypos += menuctx->separatorh;
-		else
-			ypos += menuctx->entryh;
-	}
-	return -1;
-}
 
 static int
 get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu_entry *entry)
@@ -380,21 +348,19 @@ get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 	long h = menuctx->inner_border_width;
 
 	if (menu->tearable) {
-		if (y < h + menuctx->separatorh)
+		h += get_entry_height(menuctx, TEAR_OFF);
+		if (y < h)
 			return TEAR_OFF;
-		h += menuctx->separatorh;
 	}
-	if (menu->overflow && y < h + menuctx->separatorh) {
-		return SCROLL_UP;
+	if (menu->overflow) {
+		h += get_entry_height(menuctx, SCROLL_UP);
+		if (y < h)
+			return SCROLL_UP;
+		if (y >= menu->window_geometry.height
+		       - menuctx->inner_border_width
+		       - get_entry_height(menuctx, SCROLL_DOWN))
+			return SCROLL_DOWN;
 	}
-	if (menu->overflow &&
-	    y >= menu->window_geometry.height
-	       - menuctx->inner_border_width
-	       - get_entry_height(menuctx, SCROLL_DOWN)) {
-		return SCROLL_DOWN;
-	}
-	if (menu->overflow)
-		h += menuctx->separatorh;
 	for (size_t i = menu->curr_screenful.first_entry; i < menu->nentries; i++) {
 		struct ctrlmenu_entry *entry = &menu->entries[i];
 		if (entry->type == CTRLMENU_SEPARATOR) {
@@ -417,6 +383,61 @@ get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 	return NULL;
 }
 
+
+static int
+get_entry_position_on_canvas(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
+		struct ctrlmenu_entry *entry)
+{
+	int ypos = menuctx->inner_border_width;
+
+	if (entry == NULL)
+		return -1;
+	if (entry == TEAR_OFF)
+		return ypos;
+	ypos += get_entry_height(menuctx, TEAR_OFF);
+	if (menu->overflow) {
+		if (entry == SCROLL_DOWN)
+			return menu->total_height
+			     - get_entry_height(menuctx, SCROLL_DOWN)
+			     - menuctx->inner_border_width;
+		if (entry == SCROLL_UP)
+			return ypos;
+		ypos += get_entry_height(menuctx, SCROLL_UP);
+	}
+	for (size_t i = 0; i < menu->nentries; i++) {
+		struct ctrlmenu_entry *e = &menu->entries[i];
+
+		if (e == entry)
+			return ypos;
+		ypos += get_entry_height(menuctx, e);
+	}
+	return -1;
+}
+
+static int
+get_entry_position_on_window(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
+		struct ctrlmenu_entry *entry)
+{
+	int ypos = menuctx->inner_border_width;
+
+	if (entry == NULL)
+		return -1;
+	if (menu->tearable) {
+		if (entry == TEAR_OFF)
+			return ypos;
+		ypos += get_entry_height(menuctx, TEAR_OFF);
+	}
+	if (menu->overflow) {
+		if (entry == SCROLL_DOWN)
+			return menu->window_geometry.height
+			     - get_entry_height(menuctx, SCROLL_DOWN)
+			     - menuctx->inner_border_width;
+		if (entry == SCROLL_UP)
+			return ypos;
+	}
+	return get_entry_position_on_canvas(menuctx, menu, entry)
+	     - menu->curr_screenful.offset;
+}
 
 /*
  * DRAWING ROUTINES
@@ -481,7 +502,7 @@ get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
  * +--------------+         +--------------+
  *
  * To get where, in the canvas, an entry is located at, use the function
- * get_canvas_position().  Note that the entries TEAR_OFF, SCROLL_UP, and
+ * get_entry_position_on_canvas().  Note that the entries TEAR_OFF, SCROLL_UP, and
  * SCROLL_DOWN are also drawn in both source canvases, for each entry
  * state (unselected and selected .
  */
@@ -956,7 +977,7 @@ canvas_reset(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 }
 
 static void
-canvas_composite(struct ctrlmenu_context *menuctx,
+canvas_composite_region(struct ctrlmenu_context *menuctx,
 		struct ctrlmenu *menu, bool selected,
 		int src_y, int dst_y, int height)
 {
@@ -964,8 +985,23 @@ canvas_composite(struct ctrlmenu_context *menuctx,
 		menuctx->display, PictOpOver,
 		menu->canvas[selected?CANVAS_SELECT:CANVAS_NORMAL].picture,
 		None, menu->canvas[CANVAS_FINAL].picture,
-		0, src_y, 0, 0, 0, dst_y,
-		menu->window_geometry.width, height
+		menuctx->inner_border_width, src_y,
+		0, 0,
+		menuctx->inner_border_width, dst_y,
+		menu->window_geometry.width - 2*menuctx->inner_border_width,
+		height
+	);
+}
+
+static void
+canvas_composite_entry(struct ctrlmenu_context *menuctx,
+		struct ctrlmenu *menu, struct ctrlmenu_entry *entry)
+{
+	canvas_composite_region(
+		menuctx, menu, entry == menu->selected,
+		get_entry_position_on_canvas(menuctx, menu, entry),
+		get_entry_position_on_window(menuctx, menu, entry),
+		get_entry_height(menuctx, entry)
 	);
 }
 
@@ -973,8 +1009,7 @@ static void
 canvas_redraw(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		struct ctrlmenu_entry *entry)
 {
-	int src_canvas_y, dst_canvas_y;
-	int dst_diff = (menu->tearable?0:get_entry_height(menuctx, TEAR_OFF));
+	int content_size, top_size;
 
 	XRenderFillRectangle(
 		/*
@@ -984,52 +1019,32 @@ canvas_redraw(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 		 */
 		menuctx->display, PictOpClear,
 		menu->canvas[CANVAS_FINAL].picture,
-		&(XRenderColor){ 0 }, 0, 0,
+		&menuctx->colors[COLOR_BG].chans, 0, 0,
 		menu->window_geometry.width,
 		menu->window_geometry.height
 	);
-	canvas_composite(
-		menuctx, menu, false,
-		menu->curr_screenful.offset, 0,
-		menu->window_geometry.height
-	);
-	if (menu->tearable) canvas_composite(
-		menuctx, menu, false,
-		get_canvas_position(menuctx, menu, TEAR_OFF),
-		get_canvas_position(menuctx, menu, TEAR_OFF),
-		get_entry_height(menuctx, TEAR_OFF)
-	);
+	content_size = menu->window_geometry.height;
+	top_size = menuctx->inner_border_width;
+	if (menu->tearable) {
+		canvas_composite_entry(menuctx, menu, TEAR_OFF);
+		top_size += get_entry_height(menuctx, TEAR_OFF);
+	}
 	if (menu->overflow) {
-		canvas_composite(
-			menuctx, menu, false,
-			get_canvas_position(menuctx, menu, SCROLL_UP),
-			get_canvas_position(menuctx, menu, SCROLL_UP) - dst_diff,
-			get_entry_height(menuctx, SCROLL_UP)
-		);
-		canvas_composite(
-			menuctx, menu, false,
-			get_canvas_position(menuctx, menu, SCROLL_DOWN),
-			menu->window_geometry.height
-			- get_entry_height(menuctx, SCROLL_DOWN)
-			- menuctx->inner_border_width,
-			get_entry_height(menuctx, SCROLL_DOWN)
-		);
+		canvas_composite_entry(menuctx, menu, SCROLL_UP);
+		top_size += get_entry_height(menuctx, SCROLL_UP);
+		canvas_composite_entry(menuctx, menu, SCROLL_DOWN);
+		content_size -= get_entry_height(menuctx, SCROLL_DOWN);
 	}
-	src_canvas_y = get_canvas_position(menuctx, menu, entry);
-	if (entry == SCROLL_DOWN)
-		dst_canvas_y = menu->window_geometry.height
-		             - menuctx->separatorh - menuctx->inner_border_width;
-	else if (entry == SCROLL_UP || entry == TEAR_OFF)
-		dst_canvas_y = src_canvas_y - dst_diff;
-	else
-		dst_canvas_y = src_canvas_y - menu->curr_screenful.offset;
-	if (src_canvas_y >= 0) {
-		canvas_composite(
-			menuctx, menu, true,
-			src_canvas_y, dst_canvas_y,
-			get_entry_height(menuctx, entry)
-		);
-	}
+	content_size -= top_size;
+	content_size -= menuctx->inner_border_width;
+	canvas_composite_region(
+		menuctx, menu, false, get_entry_position_on_canvas(
+			menuctx, menu,
+			&menu->entries[menu->curr_screenful.first_entry]
+		), top_size, content_size
+	);
+	if (entry != NULL)
+		canvas_composite_entry(menuctx, menu, entry);
 	draw_shadows(
 		menuctx,
 		menu->canvas[CANVAS_FINAL].picture,
@@ -1288,7 +1303,7 @@ select_prev_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	                 + get_entry_height(menuctx, SCROLL_UP);
 	if (menu->tearable)
 		scroll_threshold += get_entry_height(menuctx, TEAR_OFF);
-	ypos = get_canvas_position(menuctx, menu, menu->selected);
+	ypos = get_entry_position_on_canvas(menuctx, menu, menu->selected);
 	height = get_entry_height(menuctx, menu->selected);
 	for (struct ctrlmenu_entry *entry = menu->selected;
 	     entry > menu->entries; ) {
@@ -1318,7 +1333,7 @@ select_next_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	    menu->selected == TEAR_OFF || menu->selected == SCROLL_UP ||
 	    menu->selected == menu->entries + menu->nentries - 1)
 		return select_first_entry(menuctx, menu);
-	ypos = get_canvas_position(menuctx, menu, menu->selected);
+	ypos = get_entry_position_on_canvas(menuctx, menu, menu->selected);
 	height = get_entry_height(menuctx, menu->selected);
 	for (struct ctrlmenu_entry *entry = menu->selected;
 	     ++entry < menu->entries + menu->nentries; ) {
@@ -1506,10 +1521,8 @@ menu_map(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu,
 			menu->window_geometry.height = max_height;
 		}
 	}
-	if (menu->overflow) {
+	if (menu->overflow)
 		menu->total_height += menuctx->separatorh * 2;
-		menu->last_screenful.offset -= max_height % menuctx->separatorh;
-	}
 	menu->window_geometry.width += PADDING * 2 + menuctx->inner_border_width * 2;
 	if (menu->hasicon)
 		menu->window_geometry.width += menuctx->iconsize + PADDING;
@@ -1711,9 +1724,10 @@ menu_run(struct ctrlmenu_context *menuctx,
 			return true;
 		if (parent != NULL) {
 			x_root = parent->window_geometry.x;
-			y_root = parent->window_geometry.y + get_canvas_position(
-				menuctx, parent, parent->selected
-			) - parent->curr_screenful.offset;
+			y_root = parent->window_geometry.y;
+			y_root += get_entry_position_on_window(
+			       menuctx, parent, parent->selected
+			);
 			if (parent->tornoff)
 				y_root -= menuctx->outer_border_width;
 			width = parent->window_geometry.width;
