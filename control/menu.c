@@ -330,18 +330,6 @@ get_entry_height(struct ctrlmenu_context *menuctx, struct ctrlmenu_entry *entry)
 		return menuctx->entryh;
 }
 
-static int
-get_first_entry_ypos(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
-{
-	int y;
-
-	y = menuctx->inner_border_width;
-	y += get_entry_height(menuctx, TEAR_OFF);
-	if (menu->overflow)
-		y += menuctx->separatorh;
-	return y;
-}
-
 static struct ctrlmenu_entry *
 get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 {
@@ -927,7 +915,11 @@ canvas_reset(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 
 	/* draw entries */
 	{
-		int y = get_first_entry_ypos(menuctx, menu);
+		int y = menuctx->inner_border_width;
+		y += get_entry_height(menuctx, TEAR_OFF);
+		if (menu->overflow)
+			y += menuctx->separatorh;
+
 		for (size_t entryc = 0; entryc < menu->nentries; entryc++)
 			draw_entry(menuctx, menu, &menu->entries[entryc], &y);
 	}
