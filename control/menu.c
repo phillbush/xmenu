@@ -1308,6 +1308,7 @@ select_first_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 {
 	menu->curr_screenful.first_entry = 0;
 	menu->curr_screenful.offset = get_first_screenful_offset(menuctx);
+	canvas_redraw(menuctx, menu);
 	for (size_t i = 0; i < menu->nentries; i++) {
 		struct ctrlmenu_entry *entry = &menu->entries[i];
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
@@ -1323,6 +1324,7 @@ select_last_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	menu->curr_screenful = menu->last_screenful;
 	if (menu->nentries == 0)
 		return select_none(menuctx, menu);
+	canvas_redraw(menuctx, menu);
 	for (size_t i = menu->nentries - 1; i >= 0; i--) {
 		struct ctrlmenu_entry *entry = &menu->entries[i];
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
@@ -1359,6 +1361,7 @@ select_prev_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 			}
 		}
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
+			canvas_redraw(menuctx, menu);
 			return select_entry(menuctx, menu, entry);
 		}
 	}
@@ -1388,6 +1391,7 @@ select_next_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 			}
 		}
 		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
+			canvas_redraw(menuctx, menu);
 			return select_entry(menuctx, menu, entry);
 		}
 	}
