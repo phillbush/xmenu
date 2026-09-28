@@ -1968,12 +1968,6 @@ menu_run(struct ctrlmenu_context *menuctx,
 			}
 			break;
 		case EnterNotify:
-			if (xev.xcrossing.window != menu->window)
-				break;
-			if (!(flags&RUN_ENTERED)) {
-				flags |= RUN_ENTERED;
-				break;
-			}
 			break;
 		case LeaveNotify:
 			if (flags & RUN_POPUP) {
@@ -2018,14 +2012,32 @@ menu_run(struct ctrlmenu_context *menuctx,
 					break;
 				}
 			}
-			if (xev.xmotion.window == menu->window) {
-				struct ctrlmenu_entry *entry;
-				entry = get_entry(menuctx, menu, xev.xmotion.y);
-				select_entry(menuctx, menu, entry);
-				if (entry == SCROLL_UP || entry == SCROLL_DOWN)
-					scroll_loop(menuctx, menu, entry);
-			}
 			last_motion = xev.xmotion;
+			if (xev.xmotion.window != menu->window)
+				break;
+
+			/*
+			 * We may get an EnterNotify event when the menu
+			 * windows pops up under the mouse cursor.  That
+			 * may change the RUN_ENTERED status of the menu
+			 * unpredictably.
+			 *
+			 * We are only interested in the case when the
+			 * user willingly moves the mouse pointer into
+			 * the menu, not on other automatic situations.
+			 * So EnterNotify should not be used for this.
+			 */
+			if (xev.xmotion.x >= 0 && xev.xmotion.y >= 0 &&
+			    xev.xmotion.x < menu->window_geometry.width &&
+			    xev.xmotion.y < menu->window_geometry.height) {
+				flags |= RUN_ENTERED;
+			}
+
+			struct ctrlmenu_entry *entry;
+			entry = get_entry(menuctx, menu, xev.xmotion.y);
+			select_entry(menuctx, menu, entry);
+			if (entry == SCROLL_UP || entry == SCROLL_DOWN)
+				scroll_loop(menuctx, menu, entry);
 			break;
 		case TimeoutNotify:
 			/*
