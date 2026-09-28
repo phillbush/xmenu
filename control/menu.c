@@ -1887,6 +1887,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				ksym = XK_ISO_Left_Tab;
 			if (ksym == XK_Up || ksym == XK_KP_Up || ksym == XK_ISO_Left_Tab) {
 				if (flags & RUN_ENTERED) {
+					flags |= RUN_ENTERED;
 					select_prev_entry(menuctx, menu);
 				} else if (menu->next != NULL) {
 					/* navigating on parent menu */
@@ -1895,6 +1896,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				}
 			} else if (ksym == XK_Down || ksym == XK_KP_Down || ksym == XK_Tab) {
 				if (flags & RUN_ENTERED) {
+					flags |= RUN_ENTERED;
 					select_next_entry(menuctx, menu);
 				} else if (menu->next != NULL) {
 					/* navigating on parent menu */
@@ -1903,6 +1905,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				}
 			} else if (ksym == XK_Home || ksym == XK_KP_Home) {
 				if (flags & RUN_ENTERED) {
+					flags |= RUN_ENTERED;
 					select_first_entry(menuctx, menu);
 				} else if (menu->next != NULL) {
 					/* navigating on parent menu */
@@ -1911,6 +1914,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				}
 			} else if (ksym == XK_End || ksym == XK_KP_End) {
 				if (flags & RUN_ENTERED) {
+					flags |= RUN_ENTERED;
 					select_last_entry(menuctx, menu);
 				} else if (menu->next != NULL) {
 					/* navigating on parent menu */
@@ -1924,6 +1928,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 				    (menu->next->selected->type & CTRLMENU_CASCADE) &&
 				    menu->caller == menu->next->selected) {
 					/* navigating on parent menu to current one */
+					flags |= RUN_ENTERED;
 					select_first_entry(menuctx, menu);
 					break;
 				}
