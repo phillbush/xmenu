@@ -371,6 +371,32 @@ get_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu, long y)
 	return NULL;
 }
 
+static struct ctrlmenu_entry *
+get_first_entry(struct ctrlmenu *menu)
+{
+	for (size_t i = 0; i < menu->nentries; i++) {
+		struct ctrlmenu_entry *entry = &menu->entries[i];
+		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
+			return entry;
+		}
+	}
+	return NULL;
+}
+
+static struct ctrlmenu_entry *
+get_last_entry(struct ctrlmenu *menu)
+{
+	if (menu->nentries == 0)
+		return NULL;
+	for (size_t i = menu->nentries - 1; i >= 0; i--) {
+		struct ctrlmenu_entry *entry = &menu->entries[i];
+		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
+			return entry;
+		}
+	}
+	return NULL;
+}
+
 static int
 get_first_screenful_offset(struct ctrlmenu_context *menuctx)
 {
@@ -1309,13 +1335,7 @@ select_first_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	menu->curr_screenful.first_entry = 0;
 	menu->curr_screenful.offset = get_first_screenful_offset(menuctx);
 	canvas_redraw(menuctx, menu);
-	for (size_t i = 0; i < menu->nentries; i++) {
-		struct ctrlmenu_entry *entry = &menu->entries[i];
-		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return select_entry(menuctx, menu, entry);
-		}
-	}
-	return select_none(menuctx, menu);
+	return select_entry(menuctx, menu, get_first_entry(menu));
 }
 
 static struct ctrlmenu_entry *
@@ -1325,13 +1345,7 @@ select_last_entry(struct ctrlmenu_context *menuctx, struct ctrlmenu *menu)
 	if (menu->nentries == 0)
 		return select_none(menuctx, menu);
 	canvas_redraw(menuctx, menu);
-	for (size_t i = menu->nentries - 1; i >= 0; i--) {
-		struct ctrlmenu_entry *entry = &menu->entries[i];
-		if (entry->type != CTRLMENU_SEPARATOR && !entry->disabled) {
-			return select_entry(menuctx, menu, entry);
-		}
-	}
-	return select_none(menuctx, menu);
+	return select_entry(menuctx, menu, get_last_entry(menu));
 }
 
 static struct ctrlmenu_entry *
@@ -1735,10 +1749,7 @@ menu_run(struct ctrlmenu_context *menuctx,
 	bool close_all = false;
 	jmp_buf jmpenv;
 
-	if (flags & RUN_SELECT)
-		select_first_entry(menuctx, orig_menu);
-	else
-		select_none(menuctx, orig_menu);
+	orig_menu->selected = (flags&RUN_SELECT) ? get_first_entry(menu) : NULL;
 	orig_menu->canvas = orig_menu->canvas_orig;
 	if (flags & RUN_POPUP) {
 		unsigned int width = 0;
